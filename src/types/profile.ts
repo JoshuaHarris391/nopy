@@ -19,6 +19,11 @@ export interface PsychologicalProfile {
   growthAreas: string[]
   strengths: string[]
   frameworkInsights: string[]
+  averageMood: number
+  journalingStreak: number
+  avgEntryLength: number
+  reflectionDepth: 'Low' | 'Medium' | 'High'
+  emotionalDistribution: { label: string; percentage: number; color: string }[]
   updatedAt: string
   entriesAnalysed: number
 }

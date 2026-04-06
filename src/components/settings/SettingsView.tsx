@@ -1,7 +1,10 @@
-import { useState } from 'react'
-import { Eye, EyeOff, FolderOpen } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { Eye, EyeOff, FolderOpen, Zap } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
+import { ProgressBar } from '../ui/ProgressBar'
+import { Button } from '../ui/Button'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useJournalStore } from '../../stores/journalStore'
 import { hasFileSystem, pickJournalDirectory } from '../../services/fs'
 
 export function SettingsView() {
@@ -9,6 +12,27 @@ export function SettingsView() {
   const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
+  const [forceProcessing, setForceProcessing] = useState(false)
+  const [forceProgress, setForceProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
+  const [forceResult, setForceResult] = useState<string | null>(null)
+
+  const handleForceUpdate = useCallback(async () => {
+    if (forceProcessing || !apiKey) return
+    setForceProcessing(true)
+    setForceResult(null)
+    try {
+      const count = await useJournalStore.getState().processEntries(apiKey, true, (current, total, title) => {
+        setForceProgress({ current, total, title })
+      })
+      setForceResult(`${count} ${count === 1 ? 'entry' : 'entries'} reprocessed`)
+      setTimeout(() => setForceResult(null), 3000)
+    } catch (e) {
+      setForceResult('Reprocessing failed')
+      setTimeout(() => setForceResult(null), 3000)
+    } finally {
+      setForceProcessing(false)
+    }
+  }, [forceProcessing, apiKey])
 
   const handleKeyBlur = () => {
     setApiKey(keyInput.trim())
@@ -172,6 +196,40 @@ export function SettingsView() {
               )}
             </div>
           </div>
+
+          {/* Maintenance */}
+          {apiKey && (
+            <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid var(--stone)' }}>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 14 }}>
+                Maintenance
+              </h3>
+
+              <div style={{ padding: '10px 0' }}>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Force Update Index</div>
+                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+                    Reprocess all entries with AI, overwriting existing metadata
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button variant="secondary" onClick={handleForceUpdate} disabled={forceProcessing}>
+                    <Zap size={13} strokeWidth={1.8} />
+                    {forceProcessing ? 'Reprocessing...' : 'Force Update Index'}
+                  </Button>
+                  {forceResult && (
+                    <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)', fontWeight: 500 }}>
+                      {forceResult}
+                    </span>
+                  )}
+                </div>
+                {forceProcessing && (
+                  <div style={{ marginTop: 12 }}>
+                    <ProgressBar current={forceProgress.current} total={forceProgress.total} label={forceProgress.title} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* About */}
           <div>

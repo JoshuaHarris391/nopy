@@ -1,16 +1,41 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Search, BookOpen } from 'lucide-react'
+import { Search, BookOpen, Sparkles } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { MoodDot } from '../ui/MoodDot'
+import { ProgressBar } from '../ui/ProgressBar'
+import { Button } from '../ui/Button'
 import { useJournalStore } from '../../stores/journalStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 
 export function IndexView() {
   const navigate = useNavigate()
   const { entries, loaded, loadEntries } = useJournalStore()
   const [search, setSearch] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
+  const [result, setResult] = useState<string | null>(null)
+  const apiKey = useSettingsStore((s) => s.apiKey)
+
+  const handleUpdateIndex = useCallback(async () => {
+    if (processing || !apiKey) return
+    setProcessing(true)
+    setResult(null)
+    try {
+      const count = await useJournalStore.getState().processEntries(apiKey, false, (current, total, title) => {
+        setProgress({ current, total, title })
+      })
+      setResult(count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date')
+      setTimeout(() => setResult(null), 3000)
+    } catch (e) {
+      setResult('Indexing failed')
+      setTimeout(() => setResult(null), 3000)
+    } finally {
+      setProcessing(false)
+    }
+  }, [processing, apiKey])
 
   useEffect(() => {
     if (!loaded) loadEntries()
@@ -33,6 +58,17 @@ export function IndexView() {
         <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
+        {apiKey && (
+          <Button variant="secondary" onClick={handleUpdateIndex} disabled={processing}>
+            <Sparkles size={13} strokeWidth={1.8} />
+            {processing ? 'Updating...' : 'Update Index'}
+          </Button>
+        )}
+        {result && (
+          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)', fontWeight: 500 }}>
+            {result}
+          </span>
+        )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 840 }}>
@@ -44,6 +80,13 @@ export function IndexView() {
             />
           ) : (
             <>
+              {/* Progress */}
+              {processing && (
+                <div style={{ marginBottom: 16 }}>
+                  <ProgressBar current={progress.current} total={progress.total} label={progress.title} />
+                </div>
+              )}
+
               {/* Search */}
               <div
                 className="flex items-center gap-2.5"

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { get, set } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
+import { processAllEntries } from '../services/entryProcessor'
 import { useSettingsStore } from './settingsStore'
 
 function getJournalPath(): string {
@@ -17,6 +18,7 @@ interface JournalState {
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
+  processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void) => Promise<number>
 }
 
 export const useJournalStore = create<JournalState>()((setState, getState) => ({
@@ -122,5 +124,32 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     } finally {
       setState({ syncing: false })
     }
+  },
+
+  processEntries: async (apiKey, force, onProgress) => {
+    const { entries } = getState()
+    const results = await processAllEntries(entries, apiKey, force, onProgress)
+
+    if (results.size === 0) return 0
+
+    // Batch update all entries in state
+    const now = new Date().toISOString()
+    const updated = entries.map((e) => {
+      const meta = results.get(e.id)
+      if (!meta) return e
+      return { ...e, mood: meta.mood, tags: meta.tags, summary: meta.summary, emotionalValence: meta.emotionalValence, indexed: true, updatedAt: now }
+    })
+
+    setState({ entries: updated })
+    await set('nopy-entries', updated)
+
+    // Save each processed entry to disk
+    const journalPath = getJournalPath()
+    for (const [id] of results) {
+      const entry = updated.find((e) => e.id === id)
+      if (entry) await saveEntryToDisk(entry, journalPath)
+    }
+
+    return results.size
   },
 }))
