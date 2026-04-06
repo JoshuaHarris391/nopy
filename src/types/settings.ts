@@ -4,4 +4,5 @@ export interface UserSettings {
   onboardingComplete: boolean
   sidebarCollapsed: boolean
   journalPath: string
+  theme: 'light' | 'dark'
 }

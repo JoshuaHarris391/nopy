@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { BookOpen, MessageCircle, Target, List, Settings, Leaf } from 'lucide-react'
+import { BookOpen, MessageCircle, Target, List, Settings, Flower, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
 
 export function Sidebar() {
   const collapsed = useSettingsStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const apiKey = useSettingsStore((s) => s.apiKey)
 
   return (
@@ -35,25 +36,20 @@ export function Sidebar() {
           style={{
             width: 32,
             height: 32,
-            background: 'linear-gradient(145deg, var(--bark), var(--amber))',
+            background: 'linear-gradient(145deg, var(--forest), var(--gentle-green))',
             borderRadius: 8,
             boxShadow: '0 2px 8px rgba(139, 115, 85, 0.3)',
           }}
         >
-          <Leaf size={18} color="white" strokeWidth={1.8} />
+          <Flower size={18} color="white" strokeWidth={1.8} />
         </div>
         {!collapsed && (
-          <div>
-            <h1
-              className="leading-tight"
-              style={{ fontFamily: 'var(--font-display)', fontSize: 21, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.015em' }}
-            >
-              nopy
-            </h1>
-            <p style={{ fontFamily: 'var(--font-ui)', fontSize: 10.5, color: 'var(--sage)', letterSpacing: '0.03em', fontStyle: 'italic' }}>
-              shelter for your inner world
-            </p>
-          </div>
+          <h1
+            className="leading-tight"
+            style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.015em' }}
+          >
+            nopy
+          </h1>
         )}
       </div>
 
@@ -63,17 +59,31 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t" style={{ padding: '14px 18px', borderColor: 'var(--stone)' }}>
-        <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
-          <div
-            style={{
-              width: 10, height: 10, borderRadius: '50%',
-              background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
-              boxShadow: apiKey ? '0 0 5px rgba(123, 175, 123, 0.45)' : '0 0 5px rgba(196, 131, 106, 0.45)',
-            }}
-          />
-          <span>{apiKey ? 'Connected' : 'No API key'}</span>
-        </div>
+      <div className="border-t flex items-center justify-between" style={{ padding: collapsed ? '14px 16px' : '14px 18px', borderColor: 'var(--stone)' }}>
+        {!collapsed && (
+          <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
+            <div
+              style={{
+                width: 10, height: 10, borderRadius: '50%',
+                background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
+                boxShadow: apiKey ? '0 0 5px rgba(123, 175, 123, 0.45)' : '0 0 5px rgba(196, 131, 106, 0.45)',
+              }}
+            />
+            <span>{apiKey ? 'Connected' : 'No API key'}</span>
+          </div>
+        )}
+        <button
+          onClick={toggleSidebar}
+          className="flex items-center justify-center cursor-pointer"
+          style={{
+            width: 28, height: 28, borderRadius: 'var(--radius-sm)',
+            background: 'transparent', border: 'none', color: 'var(--sage)',
+            transition: 'all var(--transition-gentle)',
+            margin: collapsed ? '0 auto' : undefined,
+          }}
+        >
+          {collapsed ? <ChevronsRight size={16} strokeWidth={1.8} /> : <ChevronsLeft size={16} strokeWidth={1.8} />}
+        </button>
       </div>
     </aside>
   )

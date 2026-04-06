@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { MessageCircle, Save, Check, Trash2 } from 'lucide-react'
+import { MessageCircle, Check, Trash2, Loader2 } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { Button } from '../ui/Button'
 import { useJournalStore } from '../../stores/journalStore'
@@ -136,11 +136,26 @@ export function EntryEditor() {
     }
   }, [id, entries, loaded])
 
+  // Autosave with debounce
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!dirty) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      handleSave()
+    }, 1500)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [dirty, title, content, moodValue])
+
   // Keyboard shortcut: Cmd+S / Ctrl+S
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
+        if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
         handleSave()
       }
     }
@@ -219,8 +234,17 @@ export function EntryEditor() {
   return (
     <>
       <MainHeader title={isNew ? 'New Entry' : 'Edit Entry'}>
-        {/* Save indicator */}
-        {justSaved && (
+        {/* Autosave indicator */}
+        {saving && (
+          <div
+            className="flex items-center gap-1.5"
+            style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}
+          >
+            <Loader2 size={14} strokeWidth={2} className="animate-spin" />
+            Saving
+          </div>
+        )}
+        {justSaved && !saving && (
           <div
             className="flex items-center gap-1.5"
             style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)' }}
@@ -229,17 +253,6 @@ export function EntryEditor() {
             Saved
           </div>
         )}
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          disabled={saving || (!dirty && !isNew)}
-          style={{
-            opacity: saving || (!dirty && !isNew) ? 0.5 : 1,
-          }}
-        >
-          <Save size={14} strokeWidth={2} />
-          {saving ? 'Saving...' : dirty ? 'Save' : 'Saved'}
-        </Button>
         <Button variant="secondary" onClick={() => navigate('/')}>
           Close
         </Button>

@@ -9,6 +9,7 @@ interface SettingsState extends UserSettings {
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setJournalPath: (path: string) => void
+  setTheme: (theme: 'light' | 'dark') => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -19,6 +20,7 @@ export const useSettingsStore = create<SettingsState>()(
       onboardingComplete: false,
       sidebarCollapsed: false,
       journalPath: '',
+      theme: 'light',
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
@@ -26,6 +28,7 @@ export const useSettingsStore = create<SettingsState>()(
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       setJournalPath: (path) => set({ journalPath: path }),
+      setTheme: (theme) => set({ theme }),
     }),
     { name: 'nopy-settings' }
   )

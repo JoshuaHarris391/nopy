@@ -26,12 +26,43 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --font-agent: 'p22-mackinac-pro', 'Lora', Georgia, serif;
 
-  --sidebar-width: 260px;
+  --sidebar-width: 208px;
   --content-max: 720px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --transition-gentle: 280ms ease-out;
+}
+
+/* ── Dark Mode (Midnight) ── */
+[data-theme="dark"] {
+  --parchment: #0F1420;
+  --warm-cream: #171D2E;
+  --ink: #E8E4DF;
+  --manuscript: #C8C4BF;
+  --forest: #6B9F6E;
+  --sage: #7BA07B;
+  --amber: #E0B584;
+  --bark: #A08A6C;
+  --stone: #2A3040;
+  --gentle-green: #8BC18B;
+  --soft-coral: #D49580;
+  --dusk-blue: #92A8BC;
+  --sunlight: #E0C48A;
+  --shadow-warm: rgba(0, 0, 0, 0.2);
+  --shadow-warm-hover: rgba(0, 0, 0, 0.3);
+  --shadow-warm-deep: rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] body::before {
+  opacity: 0.01;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #2A3040;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #3A4458;
 }
 
 /* ── Reset & Base ── */

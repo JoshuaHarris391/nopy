@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Target, RefreshCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
-import { EmptyState } from '../ui/EmptyState'
+import { LeafCatcherGame } from './LeafCatcherGame'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Button } from '../ui/Button'
 import { useProfileStore } from '../../stores/profileStore'
@@ -10,40 +10,21 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 export function ProfileView() {
-  const { profile, loaded, loadProfile } = useProfileStore()
+  const { profile, loaded, loadProfile, generating, phase, progress } = useProfileStore()
   const { loaded: journalLoaded, loadEntries } = useJournalStore()
   const apiKey = useSettingsStore((s) => s.apiKey)
-  const [generating, setGenerating] = useState(false)
   const [showFullProfile, setShowFullProfile] = useState(false)
-  const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
-  const [phase, setPhase] = useState('')
 
   useEffect(() => {
     if (!loaded) loadProfile()
     if (!journalLoaded) loadEntries()
   }, [loaded, loadProfile, journalLoaded, loadEntries])
 
-  const handleGenerateProfile = useCallback(async () => {
+  const handleGenerateProfile = () => {
     if (generating || !apiKey) return
-    setGenerating(true)
-    try {
-      const entries = useJournalStore.getState().entries
-      await useProfileStore.getState().generateProfile(
-        entries,
-        apiKey,
-        (phase) => setPhase(phase),
-        (current, total, title) => setProgress({ current, total, title }),
-      )
-    } catch (e) {
-      console.error('Profile generation failed:', e)
-      setPhase('Generation failed — check console for details')
-    } finally {
-      setTimeout(() => {
-        setGenerating(false)
-        setPhase('')
-      }, 2000)
-    }
-  }, [generating, apiKey])
+    const entries = useJournalStore.getState().entries
+    useProfileStore.getState().generateProfile(entries, apiKey)
+  }
 
   return (
     <>
@@ -78,20 +59,29 @@ export function ProfileView() {
           </>
         )}
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
-        <div style={{ maxWidth: 760, margin: '0 auto' }}>
-          {/* Progress bar during generation */}
-          {generating && (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: 8 }}>
-                {phase}
+      <div className="flex-1 overflow-y-auto" style={{ padding: generating && !profile ? 0 : '36px 44px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        {(!profile || generating) && !showFullProfile ? (
+          <>
+            <LeafCatcherGame />
+            {generating && (
+              <div style={{ position: 'absolute', top: 36, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 760, padding: '0 44px', zIndex: 1 }}>
+                <div style={{
+                  background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)',
+                  borderRadius: 'var(--radius-md)', padding: '16px 20px',
+                  border: '1px solid var(--stone)',
+                }}>
+                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: 8 }}>
+                    {phase}
+                  </div>
+                  {progress.total > 0 && (
+                    <ProgressBar current={progress.current} total={progress.total} label={progress.title} />
+                  )}
+                </div>
               </div>
-              {progress.total > 0 && (
-                <ProgressBar current={progress.current} total={progress.total} label={progress.title} />
-              )}
-            </div>
-          )}
-
+            )}
+          </>
+        ) : (
+        <div style={{ maxWidth: 760, margin: '0 auto', width: '100%' }}>
           {showFullProfile && profile?.fullProfile ? (
             <div
               className="profile-markdown"
@@ -105,15 +95,12 @@ export function ProfileView() {
               }}
               dangerouslySetInnerHTML={{ __html: marked(profile.fullProfile) as string }}
             />
-          ) : !profile ? (
-            <EmptyState
-              icon={<Target size={48} strokeWidth={1.2} />}
-              title="Your profile will grow here"
-              description="After you've written a few journal entries and they've been analysed, nopy will build a psychological profile reflecting your patterns, themes, and growth."
-            />
           ) : (
             <>
               {/* Summary */}
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
+                Summary
+              </div>
               <div
                 style={{
                   fontFamily: 'var(--font-agent)',
@@ -259,6 +246,7 @@ export function ProfileView() {
             </>
           )}
         </div>
+        )}
       </div>
     </>
   )

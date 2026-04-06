@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Eye, EyeOff, FolderOpen, Zap, BookOpen } from 'lucide-react'
+import { Eye, EyeOff, FolderOpen, Zap, BookOpen, Sun, Moon } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Button } from '../ui/Button'
@@ -10,7 +10,7 @@ import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../service
 import { del } from 'idb-keyval'
 
 export function SettingsView() {
-  const { apiKey, setApiKey, preferredModel, setPreferredModel, sidebarCollapsed, toggleSidebar, journalPath, setJournalPath } = useSettingsStore()
+  const { apiKey, setApiKey, preferredModel, setPreferredModel, journalPath, setJournalPath, theme, setTheme } = useSettingsStore()
   const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
@@ -74,6 +74,56 @@ export function SettingsView() {
       <MainHeader title="Settings" />
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
+
+          {/* Appearance */}
+          <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid var(--stone)' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 14 }}>
+              Appearance
+            </h3>
+            <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Theme</div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+                  Switch between light and dark mode
+                </div>
+              </div>
+              <div className="flex" style={{ border: '1px solid var(--stone)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                <button
+                  onClick={() => setTheme('light')}
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  style={{
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: 12,
+                    padding: '6px 12px',
+                    border: 'none',
+                    background: theme === 'light' ? 'var(--forest)' : 'transparent',
+                    color: theme === 'light' ? '#fff' : 'var(--ink)',
+                    transition: 'all var(--transition-gentle)',
+                  }}
+                >
+                  <Sun size={13} strokeWidth={1.8} />
+                  Light
+                </button>
+                <button
+                  onClick={() => setTheme('dark')}
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  style={{
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: 12,
+                    padding: '6px 12px',
+                    border: 'none',
+                    borderLeft: '1px solid var(--stone)',
+                    background: theme === 'dark' ? 'var(--forest)' : 'transparent',
+                    color: theme === 'dark' ? '#fff' : 'var(--ink)',
+                    transition: 'all var(--transition-gentle)',
+                  }}
+                >
+                  <Moon size={13} strokeWidth={1.8} />
+                  Dark
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* API Configuration */}
           <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid var(--stone)' }}>
@@ -145,48 +195,6 @@ export function SettingsView() {
                 <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
                 <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
               </select>
-            </div>
-          </div>
-
-          {/* Preferences */}
-          <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid var(--stone)' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 14 }}>
-              Preferences
-            </h3>
-
-            <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
-              <div>
-                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Compact sidebar</div>
-                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
-                  Show only icons in the sidebar
-                </div>
-              </div>
-              <button
-                onClick={toggleSidebar}
-                className="relative flex-shrink-0 cursor-pointer"
-                style={{
-                  width: 42,
-                  height: 23,
-                  borderRadius: 12,
-                  background: sidebarCollapsed ? 'var(--amber)' : 'var(--stone)',
-                  border: 'none',
-                  transition: 'background var(--transition-gentle)',
-                }}
-              >
-                <div
-                  className="absolute rounded-full"
-                  style={{
-                    width: 19,
-                    height: 19,
-                    background: 'white',
-                    top: 2,
-                    left: 2,
-                    transition: 'transform var(--transition-gentle)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-                    transform: sidebarCollapsed ? 'translateX(19px)' : 'translateX(0)',
-                  }}
-                />
-              </button>
             </div>
           </div>
 

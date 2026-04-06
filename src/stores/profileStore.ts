@@ -11,19 +11,23 @@ import { saveEntryToDisk } from '../services/fs'
 interface ProfileState {
   profile: PsychologicalProfile | null
   loaded: boolean
+  generating: boolean
+  phase: string
+  progress: { current: number; total: number; title: string }
   loadProfile: () => Promise<void>
   setProfile: (profile: PsychologicalProfile) => Promise<void>
   generateProfile: (
     entries: JournalEntry[],
     apiKey: string,
-    onPhase: (phase: string) => void,
-    onProgress: (current: number, total: number, title: string) => void,
   ) => Promise<void>
 }
 
 export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   profile: null,
   loaded: false,
+  generating: false,
+  phase: '',
+  progress: { current: 0, total: 0, title: '' },
 
   loadProfile: async () => {
     const profile = await get<PsychologicalProfile>('nopy-profile')
@@ -36,12 +40,16 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
   },
 
-  generateProfile: async (entries, apiKey, onPhase = (_p: string) => {}, onProgress = (_c: number, _t: number, _l: string) => {}) => {
+  generateProfile: async (entries, apiKey) => {
+    const setPhase = (phase: string) => setState({ phase })
+    const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
+    setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
+    try {
     // Step 1: Process unindexed entries via Haiku
     const unindexed = entries.filter((e) => !e.indexed)
     if (unindexed.length > 0) {
-      onPhase(`Step 1/5 — Indexing ${unindexed.length} unprocessed entries...`)
-      const results = await processAllEntries(entries, apiKey, false, onProgress)
+      setPhase(`Step 1/5 — Indexing ${unindexed.length} unprocessed entries...`)
+      const results = await processAllEntries(entries, apiKey, false, setProgress)
       if (results.size > 0) {
         const journalStore = useJournalStore.getState()
         const now = new Date().toISOString()
@@ -61,30 +69,30 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
         entries = updated
       }
     } else {
-      onPhase('Step 1/5 — All entries already indexed')
+      setPhase('Step 1/5 — All entries already indexed')
     }
 
     // Step 2: Compute local stats
-    onPhase('Step 2/5 — Computing metrics...')
-    onProgress?.(0, 0, '')
+    setPhase('Step 2/5 — Computing metrics...')
+    setProgress(0, 0, '')
     const localStats = computeLocalStats(entries)
 
     // Step 3: Generate summary profile via Haiku
-    onPhase('Step 3/5 — Generating summary profile (Haiku)...')
+    setPhase('Step 3/5 — Generating summary profile (Haiku)...')
     const narrative = await generateProfileFromEntries(entries, apiKey)
 
     // Step 4: Generate full psychological profile via Opus
-    onPhase('Step 4/5 — Writing full psychological profile (Opus 4.6)...')
+    setPhase('Step 4/5 — Writing full psychological profile (Opus 4.6)...')
     let fullProfile: string | null = null
     try {
       fullProfile = await generateFullProfile(entries, apiKey)
     } catch (e) {
       console.error('[profile] Full profile generation failed:', e)
-      onPhase('Step 4/5 — Full profile generation failed, continuing...')
+      setPhase('Step 4/5 — Full profile generation failed, continuing...')
     }
 
     // Step 5: Save everything
-    onPhase('Step 5/5 — Saving profile...')
+    setPhase('Step 5/5 — Saving profile...')
     const profile: PsychologicalProfile = {
       ...narrative,
       ...localStats,
@@ -95,6 +103,12 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     const { setProfile } = getState()
     await setProfile(profile)
-    onPhase('Profile generated successfully')
+    setPhase('Profile generated successfully')
+    } catch (e) {
+      console.error('Profile generation failed:', e)
+      setState({ phase: 'Generation failed — check console for details' })
+    } finally {
+      setTimeout(() => setState({ generating: false, phase: '' }), 2000)
+    }
   },
 }))

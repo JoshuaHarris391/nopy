@@ -12,6 +12,7 @@ import { grantFsScope } from './services/fs'
 
 export default function App() {
   const journalPath = useSettingsStore((s) => s.journalPath)
+  const theme = useSettingsStore((s) => s.theme)
 
   // Grant fs scope on startup for saved journal path
   useEffect(() => {
@@ -19,6 +20,11 @@ export default function App() {
       grantFsScope(journalPath)
     }
   }, [journalPath])
+
+  // Sync theme to document
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
 
   return (
     <BrowserRouter>
