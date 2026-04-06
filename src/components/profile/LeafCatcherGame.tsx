@@ -13,7 +13,7 @@ interface Leaf {
 }
 
 const COLORS = ['#5B7F5E', '#8B7355', '#C49A6C', '#7A9E7E', '#A67C52']
-const GRAVITY = 0.005
+const GRAVITY = 0.00325
 const WIND_STRENGTH = 0.5
 const RIM_WIDTH = 60
 const BOTTOM_WIDTH = 36
