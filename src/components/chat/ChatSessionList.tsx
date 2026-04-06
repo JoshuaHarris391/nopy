@@ -50,7 +50,7 @@ export function ChatSessionList({ sessions, activeSessionId, onSelect, onCreate 
                 transition: 'all var(--transition-gentle)',
               }}
             >
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {session.title}
               </div>
               <div style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--sage)' }}>
