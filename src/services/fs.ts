@@ -63,7 +63,7 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string):
 
   try {
     const { mkdir, writeTextFile, exists } = await import('@tauri-apps/plugin-fs')
-    const journalDir = `${journalPath}/journal`
+    const journalDir = journalPath
 
     console.log('[fs] Saving entry to disk:', { id: entry.id, title: entry.title, dir: journalDir })
 
@@ -88,7 +88,7 @@ export async function deleteEntryFromDisk(id: string, journalPath: string, sourc
 
   try {
     const { remove, exists } = await import('@tauri-apps/plugin-fs')
-    const journalDir = `${journalPath}/journal`
+    const journalDir = journalPath
 
     if (sourceFilename) {
       const filePath = `${journalDir}/${sourceFilename}`
@@ -160,7 +160,7 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
 
   try {
     const { readDir, readTextFile, exists } = await import('@tauri-apps/plugin-fs')
-    const journalDir = `${journalPath}/journal`
+    const journalDir = journalPath
 
     if (!(await exists(journalDir))) return []
 

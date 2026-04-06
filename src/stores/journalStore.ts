@@ -58,6 +58,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
 
   syncFromDisk: async () => {
     const journalPath = getJournalPath()
+    console.log('[sync] syncFromDisk called with journalPath:', journalPath)
     if (!journalPath) return { added: 0, updated: 0, removed: 0 }
 
     setState({ syncing: true })
@@ -127,6 +128,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   processEntries: async (apiKey, force, onProgress) => {
+    console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
     const { entries } = getState()
     const results = await processAllEntries(entries, apiKey, force, onProgress)
 

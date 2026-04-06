@@ -1,17 +1,21 @@
 import { useState, useCallback } from 'react'
-import { Eye, EyeOff, FolderOpen, Zap } from 'lucide-react'
+import { Eye, EyeOff, FolderOpen, Zap, BookOpen } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Button } from '../ui/Button'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useJournalStore } from '../../stores/journalStore'
-import { hasFileSystem, pickJournalDirectory } from '../../services/fs'
+import { useProfileStore } from '../../stores/profileStore'
+import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../services/fs'
+import { del } from 'idb-keyval'
 
 export function SettingsView() {
   const { apiKey, setApiKey, preferredModel, setPreferredModel, sidebarCollapsed, toggleSidebar, journalPath, setJournalPath } = useSettingsStore()
   const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
+  const [showNewJournalConfirm, setShowNewJournalConfirm] = useState(false)
+  const [newJournalStatus, setNewJournalStatus] = useState<string | null>(null)
   const [forceProcessing, setForceProcessing] = useState(false)
   const [forceProgress, setForceProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
   const [forceResult, setForceResult] = useState<string | null>(null)
@@ -33,6 +37,33 @@ export function SettingsView() {
       setForceProcessing(false)
     }
   }, [forceProcessing, apiKey])
+
+  const handleNewJournal = useCallback(async () => {
+    const path = await pickJournalDirectory()
+    if (!path) return
+
+    console.log('[new-journal] Selected path:', path)
+
+    // Clear IndexedDB entries and profile
+    await del('nopy-entries')
+    await del('nopy-profile')
+    useJournalStore.setState({ entries: [], loaded: false })
+    useProfileStore.setState({ profile: null, loaded: false })
+
+    // Set new path and grant scope
+    setJournalPath(path)
+    await grantFsScope(path)
+
+    console.log('[new-journal] Path set, scope granted. Current settings path:', useSettingsStore.getState().journalPath)
+
+    // Sync from the new location
+    await useJournalStore.getState().loadEntries()
+    console.log('[new-journal] Entries after loadEntries:', useJournalStore.getState().entries.length)
+    const { added } = await useJournalStore.getState().syncFromDisk()
+    setNewJournalStatus(`Switched to new journal — ${added} entries loaded`)
+    setTimeout(() => setNewJournalStatus(null), 4000)
+    setShowNewJournalConfirm(false)
+  }, [setJournalPath])
 
   const handleKeyBlur = () => {
     setApiKey(keyInput.trim())
@@ -195,6 +226,41 @@ export function SettingsView() {
                 </button>
               )}
             </div>
+
+            {/* New Journal */}
+            {canPickDirectory && (
+              <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Switch journal</div>
+                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+                    Point to a different folder — clears current entries from the app and loads from the new location
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNewJournalConfirm(true)}
+                  className="flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+                  style={{
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: 12,
+                    padding: '6px 12px',
+                    border: '1px solid var(--stone)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'transparent',
+                    color: 'var(--ink)',
+                    transition: 'all var(--transition-gentle)',
+                  }}
+                >
+                  <BookOpen size={13} strokeWidth={1.8} />
+                  New Journal
+                </button>
+              </div>
+            )}
+
+            {newJournalStatus && (
+              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)', padding: '8px 0' }}>
+                {newJournalStatus}
+              </div>
+            )}
           </div>
 
           {/* Maintenance */}
@@ -242,6 +308,44 @@ export function SettingsView() {
           </div>
         </div>
       </div>
+
+      {/* New Journal confirmation */}
+      {showNewJournalConfirm && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ background: 'rgba(44, 62, 44, 0.3)' }}
+          onClick={() => setShowNewJournalConfirm(false)}
+        >
+          <div
+            className="flex flex-col gap-4"
+            style={{
+              background: 'var(--parchment)',
+              border: '1px solid var(--stone)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '28px 32px',
+              maxWidth: 420,
+              boxShadow: '0 12px 40px var(--shadow-warm-deep)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
+              Switch to a new journal?
+            </h3>
+            <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
+              This will clear the current entries and profile from the app and load entries from the new folder you select. Your existing files on disk are not affected.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="secondary" onClick={() => setShowNewJournalConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleNewJournal}>
+                <FolderOpen size={14} strokeWidth={2} />
+                Choose folder
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
