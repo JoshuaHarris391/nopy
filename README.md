@@ -1,12 +1,24 @@
 # nopy
 
-Nopy is an open source, locally deployed, AI-assisted journal.
+Nopy is an open source, locally deployed, AI-assisted journal. Your data never leaves your machine — entries are stored as plain Markdown files on your filesystem, and AI features use your own Anthropic API key.
 
 ## Tech Stack
 
-- **React 19** — UI framework
-- **TypeScript** — Type-safe JavaScript
+- **React 19** + **TypeScript** — UI framework
 - **Vite** — Build tool and dev server
+- **Tailwind CSS** — Utility-first styling
+- **Tauri** — Lightweight desktop shell (Rust) for native file system access
+- **Zustand** — State management with IndexedDB + filesystem persistence
+- **Anthropic SDK** — AI chat (Claude Opus 4.6) and entry indexing (Claude Haiku 4.5)
+
+## Features
+
+- **Structured journaling** — Simple markdown editor with manual save
+- **AI psychologist chat** — CBT/ACT-grounded conversational agent with streaming responses and session continuity
+- **Psychological profile** — Auto-generated insights from your journal entries
+- **Entry indexing** — Mood tracking, theme extraction, and searchable index
+- **Local-first storage** — Entries saved as `.md` files to a directory you choose; profile and index as JSON
+- **Privacy by design** — No cloud, no telemetry, no accounts
 
 ## Prerequisites
 
@@ -14,6 +26,7 @@ Nopy is an open source, locally deployed, AI-assisted journal.
 |------|---------|---------|
 | **Node.js** | 20 LTS (v20.x) | [nodejs.org](https://nodejs.org/) or via [nvm](https://github.com/nvm-sh/nvm) |
 | **npm** | 10.x (bundled with Node 20) | Comes with Node.js |
+| **Rust** | Latest stable | [rustup.rs](https://rustup.rs/) (required for Tauri desktop app) |
 
 ### Recommended: Use nvm
 
@@ -38,21 +51,41 @@ nvm use
 
 # Install dependencies
 npm install
+```
 
-# Start the development server
+### Run in browser (no file system access)
+
+```bash
 npm run dev
 ```
 
-The dev server runs at `http://localhost:5173`. Changes to source files are reflected in the browser instantly.
+Open `http://localhost:5173`. Entries are stored in browser IndexedDB only.
+
+### Run as desktop app (recommended)
+
+```bash
+npm run tauri dev
+```
+
+Opens a native window with full file system access. Set your journal location in **Settings > Data & Privacy** to save entries as Markdown files on disk.
 
 ## Available Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start the local dev server with hot reload |
+| `npm run dev` | Start the browser dev server with hot reload |
 | `npm run build` | Type-check and build for production (output in `dist/`) |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run ESLint to check code style |
+| `npm run tauri dev` | Run the desktop app with hot reload |
+| `npm run tauri build` | Build the desktop app for distribution |
+
+## Configuration
+
+On first launch, go to **Settings** and configure:
+
+1. **Anthropic API Key** — required for AI chat and entry indexing. Your key stays local.
+2. **Journal location** — choose where to save your entries as Markdown files (desktop app only).
 
 ## Documentation
 
