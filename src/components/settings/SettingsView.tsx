@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, FolderOpen } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { hasFileSystem, pickJournalDirectory } from '../../services/fs'
 
 export function SettingsView() {
-  const { apiKey, setApiKey, preferredModel, setPreferredModel, sidebarCollapsed, toggleSidebar } = useSettingsStore()
+  const { apiKey, setApiKey, preferredModel, setPreferredModel, sidebarCollapsed, toggleSidebar, journalPath, setJournalPath } = useSettingsStore()
+  const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
 
@@ -130,6 +132,44 @@ export function SettingsView() {
                   }}
                 />
               </button>
+            </div>
+          </div>
+
+          {/* Data & Privacy */}
+          <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid var(--stone)' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 14 }}>
+              Data & Privacy
+            </h3>
+
+            <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Journal location</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--sage)', marginTop: 2 }}>
+                  {journalPath || (canPickDirectory ? 'Not set — entries stored in browser only' : 'Run the desktop app to save entries as local files')}
+                </div>
+              </div>
+              {canPickDirectory && (
+                <button
+                  onClick={async () => {
+                    const path = await pickJournalDirectory()
+                    if (path) setJournalPath(path)
+                  }}
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  style={{
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: 12,
+                    padding: '6px 12px',
+                    border: '1px solid var(--stone)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'transparent',
+                    color: 'var(--ink)',
+                    transition: 'all var(--transition-gentle)',
+                  }}
+                >
+                  <FolderOpen size={13} strokeWidth={1.8} />
+                  Change
+                </button>
+              )}
             </div>
           </div>
 

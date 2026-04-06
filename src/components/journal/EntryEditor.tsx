@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, Save, Check } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { Button } from '../ui/Button'
 import { useJournalStore } from '../../stores/journalStore'
@@ -16,10 +16,10 @@ export function EntryEditor() {
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
   const entryIdRef = useRef<string | null>(id ?? null)
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isNewRef = useRef(!id || id === 'new')
+  const isNewRef = useRef(isNew)
 
   // Load entries if not loaded
   useEffect(() => {
@@ -36,13 +36,24 @@ export function EntryEditor() {
         setContent(entry.content)
         entryIdRef.current = entry.id
         isNewRef.current = false
-        setSaved(true)
+        setDirty(false)
       }
     }
   }, [id, entries, loaded])
 
-  // Create new entry on first edit
-  const ensureEntry = useCallback(async () => {
+  // Keyboard shortcut: Cmd+S / Ctrl+S
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        handleSave()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
+
+  const ensureEntry = useCallback(async (): Promise<string> => {
     if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
       const newId = crypto.randomUUID()
       const now = new Date().toISOString()
@@ -60,46 +71,38 @@ export function EntryEditor() {
       await addEntry(entry)
       entryIdRef.current = newId
       isNewRef.current = false
-      // Replace URL without adding to history
       window.history.replaceState(null, '', `/journal/${newId}`)
       return newId
     }
     return entryIdRef.current!
   }, [addEntry])
 
-  // Autosave with 2s debounce
-  const scheduleSave = useCallback(
-    (newTitle: string, newContent: string) => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-      setSaved(false)
+  const handleSave = useCallback(async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const entryId = await ensureEntry()
+      await updateEntry(entryId, { title, content })
+      setDirty(false)
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 2000)
+    } catch (e) {
+      console.error('[editor] Save failed:', e)
+    } finally {
       setSaving(false)
-
-      saveTimeoutRef.current = setTimeout(async () => {
-        setSaving(true)
-        const entryId = await ensureEntry()
-        await updateEntry(entryId, { title: newTitle, content: newContent })
-        setSaving(false)
-        setSaved(true)
-      }, 2000)
-    },
-    [ensureEntry, updateEntry]
-  )
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     }
-  }, [])
+  }, [saving, ensureEntry, updateEntry, title, content])
 
   const handleTitleChange = (value: string) => {
     setTitle(value)
-    scheduleSave(value, content)
+    setDirty(true)
+    setJustSaved(false)
   }
 
   const handleContentChange = (value: string) => {
     setContent(value)
-    scheduleSave(title, value)
+    setDirty(true)
+    setJustSaved(false)
   }
 
   const wordCount = content.split(/\s+/).filter(Boolean).length
@@ -110,31 +113,28 @@ export function EntryEditor() {
 
   return (
     <>
-      <MainHeader title={id && id !== 'new' ? 'Edit Entry' : 'New Entry'}>
-        {/* Autosave indicator */}
-        <div
-          className="flex items-center gap-1.5"
+      <MainHeader title={isNew ? 'New Entry' : 'Edit Entry'}>
+        {/* Save indicator */}
+        {justSaved && (
+          <div
+            className="flex items-center gap-1.5"
+            style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)' }}
+          >
+            <Check size={14} strokeWidth={2} />
+            Saved
+          </div>
+        )}
+        <Button
+          variant="primary"
+          onClick={handleSave}
+          disabled={saving || (!dirty && !isNew)}
           style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: 12,
-            color: saving ? 'var(--sage)' : saved ? 'var(--gentle-green)' : 'transparent',
+            opacity: saving || (!dirty && !isNew) ? 0.5 : 1,
           }}
         >
-          {(saving || saved) && (
-            <>
-              <div
-                className="rounded-full"
-                style={{
-                  width: 6,
-                  height: 6,
-                  background: saving ? 'var(--sage)' : 'var(--gentle-green)',
-                  animation: saving ? 'pulse 1s ease-in-out infinite' : 'pulse 2s ease-in-out infinite',
-                }}
-              />
-              {saving ? 'Saving...' : 'Saved'}
-            </>
-          )}
-        </div>
+          <Save size={14} strokeWidth={2} />
+          {saving ? 'Saving...' : dirty ? 'Save' : 'Saved'}
+        </Button>
         <Button variant="secondary" onClick={() => navigate('/')}>
           Close
         </Button>
