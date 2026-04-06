@@ -71,7 +71,7 @@ export function IndexView() {
         )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
-        <div style={{ maxWidth: 840 }}>
+        <div>
           {loaded && entries.length === 0 ? (
             <EmptyState
               icon={<BookOpen size={48} strokeWidth={1.2} />}
@@ -115,21 +115,14 @@ export function IndexView() {
               </div>
 
               {/* Table */}
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontFamily: 'var(--font-ui)', fontSize: 13 }}>
+              <table className="w-full table-auto" style={{ borderCollapse: 'separate', borderSpacing: 0, fontFamily: 'var(--font-ui)', fontSize: 15.5 }}>
                 <thead>
                   <tr>
-                    {['Date', 'Title', 'Mood', 'Tags', 'Summary'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: 'left', padding: '9px 12px', fontSize: 10.5,
-                          textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)',
-                          fontWeight: 600, borderBottom: '2px solid var(--stone)', whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
+                    <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Date</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Title</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Mood</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Tags</th>
+                    <th className="text-left px-3 py-2 font-semibold w-full" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Summary</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,18 +130,15 @@ export function IndexView() {
                     <tr
                       key={entry.id}
                       onClick={() => navigate(`/journal/${entry.id}`)}
-                      className="cursor-pointer"
-                      style={{ transition: 'background var(--transition-gentle)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--warm-cream)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      className="cursor-pointer transition-colors hover:bg-[var(--warm-cream)]"
                     >
-                      <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(212, 201, 184, 0.35)', width: 100, color: 'var(--sage)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <td className="px-3 py-2.5 align-top" style={{ borderBottom: '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--sage)', fontWeight: 500 }}>
                         {format(new Date(entry.createdAt), 'd MMM')}
                       </td>
-                      <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(212, 201, 184, 0.35)', fontWeight: 500, color: 'var(--ink)' }}>
+                      <td className="px-3 py-2.5 align-top" style={{ borderBottom: '1px solid rgba(212, 201, 184, 0.35)', fontWeight: 500, color: 'var(--ink)', minWidth: 300 }}>
                         {entry.title || 'Untitled'}
                       </td>
-                      <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(212, 201, 184, 0.35)', width: 50 }}>
+                      <td className="px-3 py-2.5 align-top" style={{ borderBottom: '1px solid rgba(212, 201, 184, 0.35)' }}>
                         {entry.mood && (
                           <span className="flex items-center gap-1">
                             <MoodDot mood={entry.mood} />
@@ -156,21 +146,23 @@ export function IndexView() {
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(212, 201, 184, 0.35)', width: 170 }}>
-                        {entry.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            style={{
-                              fontSize: 9.5, padding: '1px 6px', background: 'var(--warm-cream)',
-                              border: '1px solid rgba(212, 201, 184, 0.5)', borderRadius: 10,
-                              color: 'var(--bark)', display: 'inline-block', margin: '1px 2px', whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                      <td className="px-3 py-2.5 align-top" style={{ borderBottom: '1px solid rgba(212, 201, 184, 0.35)' }}>
+                        <div className="flex flex-wrap gap-1">
+                          {entry.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              style={{
+                                fontSize: 11.5, padding: '1px 6px', background: 'var(--warm-cream)',
+                                border: '1px solid rgba(212, 201, 184, 0.5)', borderRadius: 10,
+                                color: 'var(--bark)', whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </td>
-                      <td style={{ padding: '11px 12px', borderBottom: '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--manuscript)', opacity: 0.7, fontSize: 12, maxWidth: 240, lineHeight: 1.5 }}>
+                      <td className="px-3 py-2.5 align-top" style={{ borderBottom: '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--manuscript)', opacity: 0.7, fontSize: 14.5, lineHeight: 1.5 }}>
                         {entry.summary || '\u2014'}
                       </td>
                     </tr>
