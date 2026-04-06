@@ -64,10 +64,10 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t" style={{ padding: '14px 18px', borderColor: 'var(--stone)' }}>
-        <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
+        <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
           <div
             style={{
-              width: 6, height: 6, borderRadius: '50%',
+              width: 10, height: 10, borderRadius: '50%',
               background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
               boxShadow: apiKey ? '0 0 5px rgba(123, 175, 123, 0.45)' : '0 0 5px rgba(196, 131, 106, 0.45)',
             }}
