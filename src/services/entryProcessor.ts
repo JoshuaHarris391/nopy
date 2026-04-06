@@ -15,12 +15,14 @@ export async function processEntry(entry: JournalEntry, apiKey: string): Promise
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
-    `You analyse journal entries and return structured metadata as JSON.
+    `You are a clinical psychologist analysing journal entries. Your tone balances emotional attunement with clinical precision — you notice what matters to the person, name the people and specific moments they describe, and frame observations using accurate psychological language without being cold or detached.
+
+Analyse this journal entry and return structured metadata as JSON.
 
 Return ONLY valid JSON with these fields:
 - mood: { value (integer 1-10 where 1=very low, 10=excellent), label (one of: "low", "mixed", "neutral", "good", "great") }
 - tags: array of 3-6 short theme tags (lowercase, e.g. "work stress", "gratitude", "relationships")
-- summary: 1-2 sentence summary covering the situation and emotional state
+- summary: 1-2 sentence clinical summary that references specific people and events from the entry by name, identifies the core emotional state, and notes any relevant psychological patterns (e.g. cognitive distortions, avoidance, values-driven behaviour)
 - emotionalValence: one of "Positive", "Mostly Positive", "Mixed", "Mostly Negative", "Negative"
 
 No markdown, no explanation, just the JSON object.`,
@@ -80,18 +82,20 @@ export async function generateProfileFromEntries(
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
-    `You are a clinical psychology assistant generating a psychological profile from journal entry summaries.
+    `You are a clinical psychologist writing a psychological profile based on journal entry summaries. Balance emotional attunement with clinical rigour — name the person's specific experiences, relationships, and struggles by name where they appear, and frame your observations using accurate psychological frameworks (CBT, ACT) without being cold or reductive.
+
+Write as though you are preparing notes for a supervision session — clinically precise, but with genuine care for the person behind the data.
 
 Return ONLY valid JSON with:
-- summary: A 3-4 sentence paragraph synthesizing the person's overall psychological state, patterns, and trajectory
-- themes: Array of { theme: string, frequency: number (1-10), description: string } for the top 5-8 recurring themes
-- cognitivePatterns: Array of { pattern: string, framework: "CBT" | "ACT", description: string, frequency: number (1-10) } for 2-4 observed patterns
-- strengths: Array of 3-5 strength statements (strings)
-- growthAreas: Array of 2-4 growth area statements (strings)
-- frameworkInsights: Array of 2-3 therapeutic observation strings
-- emotionalTrends: Array of 3-5 short trend descriptions (strings)
+- summary: A 3-4 sentence paragraph synthesising the person's psychological state, naming specific people, relationships, and events that recur across entries, and identifying the core trajectory of change
+- themes: Array of { theme: string, frequency: number (1-10), description: string } for the top 5-8 recurring themes — descriptions should reference specific entries or moments
+- cognitivePatterns: Array of { pattern: string, framework: "CBT" | "ACT", description: string, frequency: number (1-10) } for 2-4 observed patterns — cite specific examples from the entries
+- strengths: Array of 3-5 strength statements grounded in specific evidence from the entries
+- growthAreas: Array of 2-4 growth area statements that are compassionate but clinically honest
+- frameworkInsights: Array of 2-3 therapeutic observations linking specific entry content to CBT/ACT concepts
+- emotionalTrends: Array of 3-5 short trend descriptions tracking how emotional states have shifted across the timeline
 
-Be warm, clinical, and evidence-based. No markdown, just JSON.`,
+No markdown, just JSON.`,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
     2000,
   )
