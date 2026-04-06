@@ -52,6 +52,18 @@ npm install
 - `npm install` read `package.json` (our `requirements.txt` equivalent) and downloaded every dependency into the `node_modules/` folder (our `venv/lib/` equivalent).
 - It also created/updated `package-lock.json`, which pins exact versions (like a `pip freeze` output).
 
+## Anthropic API Key (for AI Features)
+
+The chat feature uses the Anthropic API to talk to Claude. You'll need an API key:
+
+1. Sign up at [console.anthropic.com](https://console.anthropic.com/)
+2. Create an API key
+3. In the app, go to **Settings** and paste your API key
+
+The key is stored locally in your browser (IndexedDB) — it's never sent to any server other than Anthropic's API.
+
+**Note:** The app works without an API key — you just won't be able to use the AI chat features.
+
 ## Running the Dev Server
 
 ```bash
@@ -87,3 +99,7 @@ npm run lint
 ```
 
 Runs ESLint to check code style and catch common errors. Similar to running `flake8` or `ruff` in Python.
+
+## Note on Tailwind CSS
+
+Tailwind CSS is configured automatically via the Vite plugin in `vite.config.ts`. You don't need to install or configure anything extra — just use Tailwind utility classes in your components and they work. See [Concepts](./concepts.md#tailwind-css--pre-built-utility-functions-for-styling) for details.
