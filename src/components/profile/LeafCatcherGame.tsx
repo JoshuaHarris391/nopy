@@ -13,13 +13,14 @@ interface Leaf {
 }
 
 const COLORS = ['#5B7F5E', '#8B7355', '#C49A6C', '#7A9E7E', '#A67C52']
-const GRAVITY = 0.012
-const WIND_STRENGTH = 0.6
+const GRAVITY = 0.005
+const WIND_STRENGTH = 0.5
 const RIM_WIDTH = 60
 const BOTTOM_WIDTH = 36
 const BASKET_HEIGHT = 30
 const BASKET_DAMPING = 0.2
 const BASKET_SPRING = 0.5
+const LEAF_SPAWN_INTERVAL = 30
 
 export function LeafCatcherGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -195,7 +196,7 @@ export function LeafCatcherGame() {
       s.frame++
 
       // Spawn leaves
-      if (s.frame % 60 === 0) spawnLeaf()
+      if (s.frame % LEAF_SPAWN_INTERVAL === 0) spawnLeaf()
 
       // Rim follows cursor directly
       s.rimX = s.targetX
@@ -233,17 +234,6 @@ export function LeafCatcherGame() {
       // Draw
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Tree canopy at top
-      ctx.fillStyle = '#5B7F5E'
-      ctx.globalAlpha = 0.12
-      for (let i = 0; i < 5; i++) {
-        const cx = canvas.width * (0.15 + i * 0.175)
-        const cy = -10
-        ctx.beginPath()
-        ctx.ellipse(cx, cy, 60 + i * 10, 40, 0, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.globalAlpha = 1
 
       s.leaves.forEach(drawLeaf)
       drawBasket()
