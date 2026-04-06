@@ -10,6 +10,7 @@ A collection of guides that explain how this project works, written for people w
 | [Project Structure](project-structure.md) | What each file and folder does, and how they relate to each other |
 | [Editing Code](editing-code.md) | How to modify components, add new pages, and change styles |
 | [Concepts](concepts.md) | Core React, TypeScript, and Vite concepts explained with Python analogies |
+| [Data Storage](data-storage.md) | How and where your data is stored locally (localStorage vs IndexedDB) |
 
 ## How to Use These Guides
 

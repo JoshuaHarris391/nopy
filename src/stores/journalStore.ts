@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { get, set } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
+import { saveEntryToDisk, deleteEntryFromDisk } from '../services/fs'
+import { useSettingsStore } from './settingsStore'
+
+function getJournalPath(): string {
+  return useSettingsStore.getState().journalPath
+}
 
 interface JournalState {
   entries: JournalEntry[]
@@ -24,6 +30,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const entries = [entry, ...getState().entries]
     setState({ entries })
     await set('nopy-entries', entries)
+    await saveEntryToDisk(entry, getJournalPath())
   },
 
   updateEntry: async (id, updates) => {
@@ -32,11 +39,14 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     )
     setState({ entries })
     await set('nopy-entries', entries)
+    const updated = entries.find((e) => e.id === id)
+    if (updated) await saveEntryToDisk(updated, getJournalPath())
   },
 
   deleteEntry: async (id) => {
     const entries = getState().entries.filter((e) => e.id !== id)
     setState({ entries })
     await set('nopy-entries', entries)
+    await deleteEntryFromDisk(id, getJournalPath())
   },
 }))

@@ -12,7 +12,8 @@ export function EntryEditor() {
   const navigate = useNavigate()
   const { entries, loaded, loadEntries, addEntry, updateEntry } = useJournalStore()
 
-  const [title, setTitle] = useState('')
+  const isNew = !id || id === 'new'
+  const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -47,7 +48,7 @@ export function EntryEditor() {
       const now = new Date().toISOString()
       const entry: JournalEntry = {
         id: newId,
-        title: '',
+        title: format(new Date(), 'yyyy-MM-dd'),
         content: '',
         createdAt: now,
         updatedAt: now,

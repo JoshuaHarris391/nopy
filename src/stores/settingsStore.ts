@@ -8,6 +8,7 @@ interface SettingsState extends UserSettings {
   completeOnboarding: () => void
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setJournalPath: (path: string) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -17,12 +18,14 @@ export const useSettingsStore = create<SettingsState>()(
       preferredModel: 'claude-opus-4-6',
       onboardingComplete: false,
       sidebarCollapsed: false,
+      journalPath: '',
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
       completeOnboarding: () => set({ onboardingComplete: true }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      setJournalPath: (path) => set({ journalPath: path }),
     }),
     { name: 'nopy-settings' }
   )

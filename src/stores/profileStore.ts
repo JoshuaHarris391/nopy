@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { get, set } from 'idb-keyval'
 import type { PsychologicalProfile } from '../types/profile'
+import { saveProfileToDisk } from '../services/fs'
+import { useSettingsStore } from './settingsStore'
 
 interface ProfileState {
   profile: PsychologicalProfile | null
@@ -21,5 +23,6 @@ export const useProfileStore = create<ProfileState>()((setState) => ({
   setProfile: async (profile) => {
     setState({ profile })
     await set('nopy-profile', profile)
+    await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
   },
 }))

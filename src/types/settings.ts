@@ -3,4 +3,5 @@ export interface UserSettings {
   preferredModel: string
   onboardingComplete: boolean
   sidebarCollapsed: boolean
+  journalPath: string
 }
