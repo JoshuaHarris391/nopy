@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { MessageCircle, Save, Check } from 'lucide-react'
+import { MessageCircle, Save, Check, Trash2 } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { Button } from '../ui/Button'
 import { useJournalStore } from '../../stores/journalStore'
@@ -10,7 +10,8 @@ import type { JournalEntry } from '../../types/journal'
 export function EntryEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries, addEntry, updateEntry } = useJournalStore()
+  const { entries, loaded, loadEntries, addEntry, updateEntry, deleteEntry } = useJournalStore()
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const isNew = !id || id === 'new'
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
@@ -93,6 +94,13 @@ export function EntryEditor() {
     }
   }, [saving, ensureEntry, updateEntry, title, content])
 
+  const handleDelete = useCallback(async () => {
+    const entryId = entryIdRef.current
+    if (!entryId) return
+    await deleteEntry(entryId)
+    navigate('/')
+  }, [deleteEntry, navigate])
+
   const handleTitleChange = (value: string) => {
     setTitle(value)
     setDirty(true)
@@ -138,6 +146,26 @@ export function EntryEditor() {
         <Button variant="secondary" onClick={() => navigate('/')}>
           Close
         </Button>
+        {!isNew && entryIdRef.current && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex items-center justify-center cursor-pointer"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--soft-coral)',
+              transition: 'all var(--transition-gentle)',
+              opacity: 0.6,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+          >
+            <Trash2 size={16} strokeWidth={1.8} />
+          </button>
+        )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
@@ -216,6 +244,58 @@ export function EntryEditor() {
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ background: 'rgba(44, 62, 44, 0.3)' }}
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div
+            className="flex flex-col gap-4"
+            style={{
+              background: 'var(--parchment)',
+              border: '1px solid var(--stone)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '28px 32px',
+              maxWidth: 400,
+              boxShadow: '0 12px 40px var(--shadow-warm-deep)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
+              Delete this entry?
+            </h3>
+            <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
+              This will permanently delete the entry from the app and remove the Markdown file from your journal folder. This cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </Button>
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-1.5 cursor-pointer"
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  padding: '7px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--soft-coral)',
+                  color: 'white',
+                  border: 'none',
+                  transition: 'all var(--transition-gentle)',
+                }}
+              >
+                <Trash2 size={14} strokeWidth={2} />
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

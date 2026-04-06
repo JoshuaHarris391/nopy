@@ -15,4 +15,5 @@ export interface JournalEntry {
   tags: string[]
   summary: string | null
   indexed: boolean
+  sourceFilename?: string // original filename on disk, used for overwriting/deleting
 }

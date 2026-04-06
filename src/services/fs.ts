@@ -62,7 +62,7 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string):
   }
 
   try {
-    const { mkdir, writeTextFile, exists, readTextFile, remove } = await import('@tauri-apps/plugin-fs')
+    const { mkdir, writeTextFile, exists } = await import('@tauri-apps/plugin-fs')
     const journalDir = `${journalPath}/journal`
 
     console.log('[fs] Saving entry to disk:', { id: entry.id, title: entry.title, dir: journalDir })
@@ -72,59 +72,48 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string):
       await mkdir(journalDir, { recursive: true })
     }
 
-    const filename = `${slugify(entry.title, entry.id)}.md`
+    // Use original filename if available, otherwise generate from title
+    const filename = entry.sourceFilename || `${slugify(entry.title, entry.id)}.md`
     const filePath = `${journalDir}/${filename}`
     console.log('[fs] Writing file:', filePath)
     await writeTextFile(filePath, entryToMarkdown(entry))
     console.log('[fs] File written successfully:', filePath)
-
-    // Maintain ID map for title-change tracking
-    const mapPath = `${journalDir}/.idmap.json`
-    let idMap: Record<string, string> = {}
-    try {
-      if (await exists(mapPath)) {
-        idMap = JSON.parse(await readTextFile(mapPath))
-      }
-    } catch (e) {
-      console.error('[fs] Error reading idmap:', e)
-    }
-
-    // Remove old filename if title changed
-    const oldFilename = idMap[entry.id]
-    if (oldFilename && oldFilename !== filename) {
-      try {
-        await remove(`${journalDir}/${oldFilename}`)
-        console.log('[fs] Removed old file:', oldFilename)
-      } catch (e) {
-        console.error('[fs] Error removing old file:', e)
-      }
-    }
-
-    idMap[entry.id] = filename
-    await writeTextFile(mapPath, JSON.stringify(idMap, null, 2))
   } catch (e) {
     console.error('[fs] saveEntryToDisk FAILED:', e)
   }
 }
 
-export async function deleteEntryFromDisk(id: string, journalPath: string): Promise<void> {
+export async function deleteEntryFromDisk(id: string, journalPath: string, sourceFilename?: string): Promise<void> {
   if (!hasFileSystem() || !journalPath) return
 
   try {
-    const { readTextFile, remove, writeTextFile, exists } = await import('@tauri-apps/plugin-fs')
+    const { remove, exists } = await import('@tauri-apps/plugin-fs')
     const journalDir = `${journalPath}/journal`
-    const mapPath = `${journalDir}/.idmap.json`
 
-    if (await exists(mapPath)) {
-      const idMap: Record<string, string> = JSON.parse(await readTextFile(mapPath))
-      const filename = idMap[id]
-      if (filename) {
-        await remove(`${journalDir}/${filename}`)
-        delete idMap[id]
-        await writeTextFile(mapPath, JSON.stringify(idMap, null, 2))
-        console.log('[fs] Deleted entry from disk:', filename)
+    if (sourceFilename) {
+      const filePath = `${journalDir}/${sourceFilename}`
+      if (await exists(filePath)) {
+        await remove(filePath)
+        console.log('[fs] Deleted entry from disk:', sourceFilename)
+        return
       }
     }
+
+    // Fallback: scan directory for a file containing this ID in frontmatter
+    const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs')
+    const files = await readDir(journalDir)
+    for (const file of files) {
+      if (!file.name?.endsWith('.md')) continue
+      try {
+        const text = await readTextFile(`${journalDir}/${file.name}`)
+        if (text.includes(`id: "${id}"`)) {
+          await remove(`${journalDir}/${file.name}`)
+          console.log('[fs] Deleted entry from disk (by ID scan):', file.name)
+          return
+        }
+      } catch { /* skip unreadable */ }
+    }
+    console.warn('[fs] Could not find file to delete for entry:', id)
   } catch (e) {
     console.error('[fs] deleteEntryFromDisk FAILED:', e)
   }
@@ -145,6 +134,21 @@ export async function saveProfileToDisk(profile: PsychologicalProfile, journalPa
   }
 }
 
+function extractDateFromFilename(filename: string): string | null {
+  const match = filename.match(/(\d{4}-\d{2}-\d{2})/)
+  if (!match) return null
+  try {
+    // Use the date from filename + current time as an estimate
+    const now = new Date()
+    const [year, month, day] = match[1].split('-').map(Number)
+    const date = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds())
+    if (isNaN(date.getTime())) return null
+    return date.toISOString()
+  } catch {
+    return null
+  }
+}
+
 export async function loadEntriesFromDisk(journalPath: string): Promise<JournalEntry[]> {
   if (!hasFileSystem() || !journalPath) return []
 
@@ -162,22 +166,41 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
       try {
         const text = await readTextFile(`${journalDir}/${file.name}`)
         const { frontmatter, content } = parseMarkdown(text)
+        const hasFrontmatter = Object.keys(frontmatter).length > 0
+
+        // For files with frontmatter (created by nopy), use it directly
+        // For plain markdown imports, infer metadata from filename
+        const filenameDate = extractDateFromFilename(file.name)
+        const nameWithoutExt = file.name.replace('.md', '')
+        const titleAfterDate = nameWithoutExt
+          .replace(/^\d{4}-\d{2}-\d{2}[-_]?/, '') // strip date prefix
+          .replace(/[-_]/g, ' ')
+          .trim()
+        // If filename is just a date (e.g. "2026-04-07.md"), keep date as title
+        // If filename has text after date (e.g. "2026-04-07-morning-light.md"), use that text
+        // If no date at all (e.g. "my-note.md"), use cleaned filename
+        const titleFromFilename = titleAfterDate || nameWithoutExt
+
         entries.push({
           id: (frontmatter.id as string) || crypto.randomUUID(),
-          title: (frontmatter.title as string) || file.name.replace('.md', ''),
-          content,
-          createdAt: (frontmatter.createdAt as string) || new Date().toISOString(),
-          updatedAt: (frontmatter.updatedAt as string) || new Date().toISOString(),
+          title: hasFrontmatter
+            ? (frontmatter.title as string) || file.name.replace('.md', '')
+            : titleFromFilename || file.name.replace('.md', ''),
+          content: hasFrontmatter ? content : text, // plain imports use full text as content
+          createdAt: (frontmatter.createdAt as string) || filenameDate || new Date().toISOString(),
+          updatedAt: (frontmatter.updatedAt as string) || filenameDate || new Date().toISOString(),
           mood: (frontmatter.mood as JournalEntry['mood']) || null,
           tags: (frontmatter.tags as string[]) || [],
           summary: (frontmatter.summary as string) || null,
           indexed: (frontmatter.indexed as boolean) || false,
+          sourceFilename: file.name,
         })
       } catch (e) {
         console.error('[fs] Error reading entry file:', file.name, e)
       }
     }
 
+    console.log(`[fs] Loaded ${entries.length} entries from disk`)
     return entries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   } catch (e) {
     console.error('[fs] loadEntriesFromDisk FAILED:', e)

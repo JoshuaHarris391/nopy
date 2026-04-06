@@ -1,12 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, BookOpen } from 'lucide-react'
+import { Plus, BookOpen, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { MainHeader } from '../ui/MainHeader'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { EntryCard } from './EntryCard'
 import { useJournalStore } from '../../stores/journalStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { hasFileSystem } from '../../services/fs'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -17,15 +19,39 @@ function getGreeting(): string {
 
 export function JournalView() {
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries } = useJournalStore()
+  const { entries, loaded, loadEntries, syncFromDisk, syncing } = useJournalStore()
+  const journalPath = useSettingsStore((s) => s.journalPath)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const canSync = hasFileSystem() && !!journalPath
 
   useEffect(() => {
     if (!loaded) loadEntries()
   }, [loaded, loadEntries])
 
+  const handleSync = async () => {
+    setSyncResult(null)
+    const { added, updated, removed } = await syncFromDisk()
+    if (added === 0 && updated === 0 && removed === 0) {
+      setSyncResult('Already up to date')
+    } else {
+      const parts = []
+      if (added > 0) parts.push(`${added} new`)
+      if (updated > 0) parts.push(`${updated} updated`)
+      if (removed > 0) parts.push(`${removed} removed`)
+      setSyncResult(parts.join(', '))
+    }
+    setTimeout(() => setSyncResult(null), 3000)
+  }
+
   return (
     <>
       <MainHeader title="Journal">
+        {canSync && (
+          <Button variant="secondary" onClick={handleSync} disabled={syncing}>
+            <RefreshCw size={14} strokeWidth={2} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing...' : 'Sync'}
+          </Button>
+        )}
         <Button variant="primary" onClick={() => navigate('/journal/new')}>
           <Plus size={14} strokeWidth={2} />
           New Entry
@@ -39,6 +65,11 @@ export function JournalView() {
         <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)', marginBottom: 28 }}>
           {format(new Date(), 'EEEE, d MMMM yyyy')}
           {entries.length > 0 && ` · ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`}
+          {syncResult && (
+            <span style={{ color: 'var(--gentle-green)', marginLeft: 8 }}>
+              · {syncResult}
+            </span>
+          )}
         </div>
 
         {/* Entries */}

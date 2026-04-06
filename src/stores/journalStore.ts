@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { get, set } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
-import { saveEntryToDisk, deleteEntryFromDisk } from '../services/fs'
+import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
 import { useSettingsStore } from './settingsStore'
 
 function getJournalPath(): string {
@@ -11,15 +11,18 @@ function getJournalPath(): string {
 interface JournalState {
   entries: JournalEntry[]
   loaded: boolean
+  syncing: boolean
   loadEntries: () => Promise<void>
   addEntry: (entry: JournalEntry) => Promise<void>
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
+  syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
 }
 
 export const useJournalStore = create<JournalState>()((setState, getState) => ({
   entries: [],
   loaded: false,
+  syncing: false,
 
   loadEntries: async () => {
     const entries = await get<JournalEntry[]>('nopy-entries')
@@ -44,9 +47,80 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   deleteEntry: async (id) => {
+    const entry = getState().entries.find((e) => e.id === id)
     const entries = getState().entries.filter((e) => e.id !== id)
     setState({ entries })
     await set('nopy-entries', entries)
-    await deleteEntryFromDisk(id, getJournalPath())
+    await deleteEntryFromDisk(id, getJournalPath(), entry?.sourceFilename)
+  },
+
+  syncFromDisk: async () => {
+    const journalPath = getJournalPath()
+    if (!journalPath) return { added: 0, updated: 0, removed: 0 }
+
+    setState({ syncing: true })
+    try {
+      const diskEntries = await loadEntriesFromDisk(journalPath)
+      const existing = getState().entries
+
+      // Index disk entries by ID and title
+      const diskById = new Map(diskEntries.map((e) => [e.id, e]))
+      const diskByTitle = new Map(diskEntries.map((e) => [e.title.toLowerCase(), e]))
+
+      // Index existing entries by ID
+      const existingById = new Map(existing.map((e) => [e.id, e]))
+
+      let added = 0
+      let updated = 0
+      let removed = 0
+      const result: JournalEntry[] = []
+
+      // 1. Process disk entries: add new, update changed
+      for (const diskEntry of diskEntries) {
+        const match = existingById.get(diskEntry.id)
+        if (match) {
+          // Exists in both — disk wins on tie or if newer
+          if (new Date(diskEntry.updatedAt) >= new Date(match.updatedAt)) {
+            if (diskEntry.content !== match.content || diskEntry.title !== match.title) {
+              updated++
+            }
+            result.push(diskEntry)
+          } else {
+            result.push(match)
+          }
+        } else {
+          // New on disk — add
+          result.push(diskEntry)
+          added++
+        }
+      }
+
+      // 2. Remove entries that are in IndexedDB but not on disk
+      for (const entry of existing) {
+        const onDisk = diskById.has(entry.id) || diskByTitle.has(entry.title.toLowerCase())
+        if (!onDisk) {
+          removed++
+          // Don't add to result — it's gone
+        }
+      }
+
+      // Sort by createdAt descending
+      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+      setState({ entries: result })
+      await set('nopy-entries', result)
+
+      // Write back any new entries that lacked frontmatter (so they get IDs for future syncs)
+      for (const diskEntry of diskEntries) {
+        if (!existingById.has(diskEntry.id)) {
+          await saveEntryToDisk(diskEntry, journalPath)
+        }
+      }
+
+      console.log(`[sync] Complete: ${added} added, ${updated} updated, ${removed} removed`)
+      return { added, updated, removed }
+    } finally {
+      setState({ syncing: false })
+    }
   },
 }))
