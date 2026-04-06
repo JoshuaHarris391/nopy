@@ -11,7 +11,7 @@ interface EntryMetadata {
   emotionalValence: string
 }
 
-export async function processEntry(entry: JournalEntry, apiKey: string): Promise<EntryMetadata> {
+export async function processEntry(entry: JournalEntry, apiKey: string, signal?: AbortSignal): Promise<EntryMetadata> {
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
@@ -28,6 +28,7 @@ Return ONLY valid JSON with these fields:
 No markdown, no explanation, just the JSON object.`,
     [{ role: 'user', content: `Title: ${entry.title}\n\n${entry.content}` }],
     500,
+    signal,
   )
 
   try {
@@ -50,15 +51,17 @@ export async function processAllEntries(
   apiKey: string,
   force: boolean,
   onProgress: (current: number, total: number, entryTitle: string) => void,
+  signal?: AbortSignal,
 ): Promise<Map<string, EntryMetadata>> {
   const toProcess = force ? entries : entries.filter((e) => !e.indexed)
   const results = new Map<string, EntryMetadata>()
 
   for (let i = 0; i < toProcess.length; i++) {
+    if (signal?.aborted) break
     const entry = toProcess[i]
     onProgress(i + 1, toProcess.length, entry.title)
     try {
-      const metadata = await processEntry(entry, apiKey)
+      const metadata = await processEntry(entry, apiKey, signal)
       results.set(entry.id, metadata)
     } catch (e) {
       console.error(`[processor] Failed to process entry "${entry.title}":`, e)
@@ -72,6 +75,7 @@ export async function processAllEntries(
 export async function generateProfileFromEntries(
   entries: JournalEntry[],
   apiKey: string,
+  signal?: AbortSignal,
 ): Promise<Omit<PsychologicalProfile, 'averageMood' | 'journalingStreak' | 'avgEntryLength' | 'reflectionDepth' | 'emotionalDistribution' | 'updatedAt' | 'entriesAnalysed'>> {
   // Build context from all indexed entries
   const indexed = entries.filter((e) => e.indexed && e.summary)
@@ -98,6 +102,7 @@ Return ONLY valid JSON with:
 No markdown, just JSON.`,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
     4000,
+    signal,
   )
 
   try {
@@ -114,6 +119,7 @@ const OPUS_MODEL = 'claude-opus-4-6'
 export async function generateFullProfile(
   entries: JournalEntry[],
   apiKey: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const indexed = entries.filter((e) => e.indexed)
 
@@ -183,6 +189,7 @@ Guidelines:
 - Output as clean markdown with proper heading hierarchy`,
     [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],
     8000,
+    signal,
   )
 
   return response

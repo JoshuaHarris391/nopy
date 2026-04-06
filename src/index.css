@@ -148,6 +148,20 @@ body::before {
   background: var(--sage);
 }
 
+/* ── Cancellable Button ── */
+.btn-cancellable {
+  display: inline-grid !important;
+}
+.btn-cancellable > * {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-cancellable:active {
+  transform: scale(0.95);
+}
+
 /* ── Reduced Motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

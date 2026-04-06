@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Search, BookOpen, Sparkles } from 'lucide-react'
@@ -18,21 +18,34 @@ export function IndexView() {
   const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
   const [result, setResult] = useState<string | null>(null)
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const abortRef = useRef<AbortController | null>(null)
+  const [hovered, setHovered] = useState(false)
 
   const handleUpdateIndex = useCallback(async () => {
-    if (processing || !apiKey) return
+    if (!apiKey) return
+    if (processing) {
+      abortRef.current?.abort()
+      return
+    }
+    const controller = new AbortController()
+    abortRef.current = controller
     setProcessing(true)
     setResult(null)
     try {
       const count = await useJournalStore.getState().processEntries(apiKey, false, (current, total, title) => {
         setProgress({ current, total, title })
-      })
+      }, controller.signal)
       setResult(count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date')
       setTimeout(() => setResult(null), 3000)
     } catch (e) {
-      setResult('Indexing failed')
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setResult('Cancelled')
+      } else {
+        setResult('Indexing failed')
+      }
       setTimeout(() => setResult(null), 3000)
     } finally {
+      abortRef.current = null
       setProcessing(false)
     }
   }, [processing, apiKey])
@@ -59,9 +72,21 @@ export function IndexView() {
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
         {apiKey && (
-          <Button variant="secondary" onClick={handleUpdateIndex} disabled={processing}>
-            <Sparkles size={13} strokeWidth={1.8} />
-            {processing ? 'Updating...' : 'Update Index'}
+          <Button
+            variant="secondary"
+            onClick={handleUpdateIndex}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            className={processing ? 'btn-cancellable' : undefined}
+          >
+            {processing ? (
+              <>
+                <span style={{ visibility: hovered ? 'hidden' : 'visible' }}><Sparkles size={13} strokeWidth={1.8} />Updating...</span>
+                <span style={{ visibility: hovered ? 'visible' : 'hidden' }}><Sparkles size={13} strokeWidth={1.8} />Stop</span>
+              </>
+            ) : (
+              <><Sparkles size={13} strokeWidth={1.8} />Update Index</>
+            )}
           </Button>
         )}
         {result && (

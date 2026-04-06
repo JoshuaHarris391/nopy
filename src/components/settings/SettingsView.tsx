@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Eye, EyeOff, FolderOpen, Zap, BookOpen, Sun, Moon } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { ProgressBar } from '../ui/ProgressBar'
@@ -19,21 +19,34 @@ export function SettingsView() {
   const [forceProcessing, setForceProcessing] = useState(false)
   const [forceProgress, setForceProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
   const [forceResult, setForceResult] = useState<string | null>(null)
+  const forceAbortRef = useRef<AbortController | null>(null)
+  const [forceHovered, setForceHovered] = useState(false)
 
   const handleForceUpdate = useCallback(async () => {
-    if (forceProcessing || !apiKey) return
+    if (!apiKey) return
+    if (forceProcessing) {
+      forceAbortRef.current?.abort()
+      return
+    }
+    const controller = new AbortController()
+    forceAbortRef.current = controller
     setForceProcessing(true)
     setForceResult(null)
     try {
       const count = await useJournalStore.getState().processEntries(apiKey, true, (current, total, title) => {
         setForceProgress({ current, total, title })
-      })
+      }, controller.signal)
       setForceResult(`${count} ${count === 1 ? 'entry' : 'entries'} reprocessed`)
       setTimeout(() => setForceResult(null), 3000)
     } catch (e) {
-      setForceResult('Reprocessing failed')
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setForceResult('Cancelled')
+      } else {
+        setForceResult('Reprocessing failed')
+      }
       setTimeout(() => setForceResult(null), 3000)
     } finally {
+      forceAbortRef.current = null
       setForceProcessing(false)
     }
   }, [forceProcessing, apiKey])
@@ -286,9 +299,21 @@ export function SettingsView() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Button variant="secondary" onClick={handleForceUpdate} disabled={forceProcessing}>
-                    <Zap size={13} strokeWidth={1.8} />
-                    {forceProcessing ? 'Reprocessing...' : 'Force Update Index'}
+                  <Button
+                    variant="secondary"
+                    onClick={handleForceUpdate}
+                    onMouseEnter={() => setForceHovered(true)}
+                    onMouseLeave={() => setForceHovered(false)}
+                    className={forceProcessing ? 'btn-cancellable' : undefined}
+                  >
+                    {forceProcessing ? (
+                      <>
+                        <span style={{ visibility: forceHovered ? 'hidden' : 'visible' }}><Zap size={13} strokeWidth={1.8} />Reprocessing...</span>
+                        <span style={{ visibility: forceHovered ? 'visible' : 'hidden' }}><Zap size={13} strokeWidth={1.8} />Stop</span>
+                      </>
+                    ) : (
+                      <><Zap size={13} strokeWidth={1.8} />Force Update Index</>
+                    )}
                   </Button>
                   {forceResult && (
                     <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)', fontWeight: 500 }}>

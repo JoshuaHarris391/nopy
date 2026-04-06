@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
@@ -14,6 +14,8 @@ export function ProfileView() {
   const { loaded: journalLoaded, loadEntries } = useJournalStore()
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [showFullProfile, setShowFullProfile] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const [profileHovered, setProfileHovered] = useState(false)
 
   useEffect(() => {
     if (!loaded) loadProfile()
@@ -21,9 +23,17 @@ export function ProfileView() {
   }, [loaded, loadProfile, journalLoaded, loadEntries])
 
   const handleGenerateProfile = () => {
-    if (generating || !apiKey) return
+    if (!apiKey) return
+    if (generating) {
+      abortRef.current?.abort()
+      return
+    }
+    const controller = new AbortController()
+    abortRef.current = controller
     const entries = useJournalStore.getState().entries
-    useProfileStore.getState().generateProfile(entries, apiKey)
+    useProfileStore.getState().generateProfile(entries, apiKey, controller.signal).finally(() => {
+      abortRef.current = null
+    })
   }
 
   return (
@@ -47,9 +57,21 @@ export function ProfileView() {
         )}
         {apiKey && (
           <>
-            <Button variant="primary" onClick={handleGenerateProfile} disabled={generating}>
-              <RefreshCw size={13} strokeWidth={1.8} style={generating ? { animation: 'spin 1s linear infinite' } : undefined} />
-              {generating ? phase || 'Generating...' : 'Generate Profile'}
+            <Button
+              variant="primary"
+              onClick={handleGenerateProfile}
+              onMouseEnter={() => setProfileHovered(true)}
+              onMouseLeave={() => setProfileHovered(false)}
+              className={generating ? 'btn-cancellable' : undefined}
+            >
+              {generating ? (
+                <>
+                  <span style={{ visibility: profileHovered ? 'hidden' : 'visible' }}><RefreshCw size={13} strokeWidth={1.8} style={{ animation: 'spin 1s linear infinite' }} />{phase || 'Generating...'}</span>
+                  <span style={{ visibility: profileHovered ? 'visible' : 'hidden' }}><RefreshCw size={13} strokeWidth={1.8} />Stop</span>
+                </>
+              ) : (
+                <><RefreshCw size={13} strokeWidth={1.8} />Generate Profile</>
+              )}
             </Button>
             {profile?.fullProfile && (
               <Button variant="secondary" onClick={() => setShowFullProfile(!showFullProfile)}>

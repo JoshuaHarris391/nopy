@@ -18,7 +18,7 @@ interface JournalState {
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
-  processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void) => Promise<number>
+  processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
 }
 
 export const useJournalStore = create<JournalState>()((setState, getState) => ({
@@ -127,10 +127,10 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     }
   },
 
-  processEntries: async (apiKey, force, onProgress) => {
+  processEntries: async (apiKey, force, onProgress, signal) => {
     console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
     const { entries } = getState()
-    const results = await processAllEntries(entries, apiKey, force, onProgress)
+    const results = await processAllEntries(entries, apiKey, force, onProgress, signal)
 
     if (results.size === 0) return 0
 

@@ -53,14 +53,18 @@ export async function sendMessage(
   system: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
   maxTokens: number = 500,
+  signal?: AbortSignal,
 ): Promise<string> {
   const client = getClient(apiKey)
-  const response = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages,
-  })
+  const response = await client.messages.create(
+    {
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+    },
+    { signal },
+  )
   const block = response.content[0]
   return block?.type === 'text' ? block.text : ''
 }

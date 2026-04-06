@@ -19,6 +19,7 @@ interface ProfileState {
   generateProfile: (
     entries: JournalEntry[],
     apiKey: string,
+    signal?: AbortSignal,
   ) => Promise<void>
 }
 
@@ -40,7 +41,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
   },
 
-  generateProfile: async (entries, apiKey) => {
+  generateProfile: async (entries, apiKey, signal) => {
     const setPhase = (phase: string) => setState({ phase })
     const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
@@ -49,7 +50,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const unindexed = entries.filter((e) => !e.indexed)
     if (unindexed.length > 0) {
       setPhase(`Step 1/5 — Indexing ${unindexed.length} unprocessed entries...`)
-      const results = await processAllEntries(entries, apiKey, false, setProgress)
+      const results = await processAllEntries(entries, apiKey, false, setProgress, signal)
       if (results.size > 0) {
         const journalStore = useJournalStore.getState()
         const now = new Date().toISOString()
@@ -72,24 +73,32 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       setPhase('Step 1/5 — All entries already indexed')
     }
 
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+
     // Step 2: Compute local stats
     setPhase('Step 2/5 — Computing metrics...')
     setProgress(0, 0, '')
     const localStats = computeLocalStats(entries)
 
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+
     // Step 3: Generate summary profile via Haiku
     setPhase('Step 3/5 — Generating summary profile (Haiku)...')
-    const narrative = await generateProfileFromEntries(entries, apiKey)
+    const narrative = await generateProfileFromEntries(entries, apiKey, signal)
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
     // Step 4: Generate full psychological profile via Opus
     setPhase('Step 4/5 — Writing full psychological profile (Opus 4.6)...')
     let fullProfile: string | null = null
     try {
-      fullProfile = await generateFullProfile(entries, apiKey)
+      fullProfile = await generateFullProfile(entries, apiKey, signal)
     } catch (e) {
       console.error('[profile] Full profile generation failed:', e)
       setPhase('Step 4/5 — Full profile generation failed, continuing...')
     }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
     // Step 5: Save everything
     setPhase('Step 5/5 — Saving profile...')
@@ -105,8 +114,12 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     await setProfile(profile)
     setPhase('Profile generated successfully')
     } catch (e) {
-      console.error('Profile generation failed:', e)
-      setState({ phase: 'Generation failed — check console for details' })
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setState({ phase: 'Cancelled' })
+      } else {
+        console.error('Profile generation failed:', e)
+        setState({ phase: 'Generation failed — check console for details' })
+      }
     } finally {
       setTimeout(() => setState({ generating: false, phase: '' }), 2000)
     }
