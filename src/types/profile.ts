@@ -26,4 +26,5 @@ export interface PsychologicalProfile {
   emotionalDistribution: { label: string; percentage: number; color: string }[]
   updatedAt: string
   entriesAnalysed: number
+  fullProfile: string | null  // Full markdown psychological profile document
 }

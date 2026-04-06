@@ -87,17 +87,17 @@ export async function generateProfileFromEntries(
 Write as though you are preparing notes for a supervision session — clinically precise, but with genuine care for the person behind the data.
 
 Return ONLY valid JSON with:
-- summary: A 3-4 sentence paragraph synthesising the person's psychological state, naming specific people, relationships, and events that recur across entries, and identifying the core trajectory of change
-- themes: Array of { theme: string, frequency: number (1-10), description: string } for the top 5-8 recurring themes — descriptions should reference specific entries or moments
-- cognitivePatterns: Array of { pattern: string, framework: "CBT" | "ACT", description: string, frequency: number (1-10) } for 2-4 observed patterns — cite specific examples from the entries
-- strengths: Array of 3-5 strength statements grounded in specific evidence from the entries
-- growthAreas: Array of 2-4 growth area statements that are compassionate but clinically honest
-- frameworkInsights: Array of 2-3 therapeutic observations linking specific entry content to CBT/ACT concepts
-- emotionalTrends: Array of 3-5 short trend descriptions tracking how emotional states have shifted across the timeline
+- summary: 2-3 sentence paragraph naming specific people and the core trajectory of change
+- themes: Array of { theme: string, frequency: number (1-10), description: string (1-2 sentences max) } for the top 5-6 recurring themes
+- cognitivePatterns: Array of { pattern: string, framework: "CBT" | "ACT", description: string (1-2 sentences max), frequency: number (1-10) } for 2-3 observed patterns
+- strengths: Array of 3-4 short strength statements (1 sentence each)
+- growthAreas: Array of 2-3 short growth area statements (1 sentence each)
+- frameworkInsights: Array of 2-3 short therapeutic observations (1 sentence each)
+- emotionalTrends: Array of 3-4 short trend descriptions (under 15 words each)
 
 No markdown, just JSON.`,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
-    2000,
+    4000,
   )
 
   try {
@@ -107,6 +107,85 @@ No markdown, just JSON.`,
     console.error('[processor] Failed to parse profile response:', response, e)
     throw new Error(`Failed to generate profile: ${e}`)
   }
+}
+
+const OPUS_MODEL = 'claude-opus-4-6'
+
+export async function generateFullProfile(
+  entries: JournalEntry[],
+  apiKey: string,
+): Promise<string> {
+  const indexed = entries.filter((e) => e.indexed)
+
+  // Build full entry content for Opus (send actual content, not just summaries)
+  const entryContent = indexed
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .map((e) => {
+      const date = e.createdAt.slice(0, 10)
+      const mood = e.mood ? `${e.mood.value}/10 (${e.mood.label})` : 'unscored'
+      const tags = e.tags.length > 0 ? e.tags.join(', ') : 'none'
+      return `--- Entry: ${date} | "${e.title}" | Mood: ${mood} | Tags: ${tags} ---\n${e.content}`
+    })
+    .join('\n\n')
+
+  const response = await sendMessage(
+    apiKey,
+    OPUS_MODEL,
+    `You are a clinical psychologist writing a comprehensive psychological profile based on a person's journal entries. This is a clinical formulation document — not a journal summary.
+
+Write in the voice of a clinical supervisor preparing notes for a supervision session: clinically precise, warm, and deeply attentive to the person behind the data.
+
+Structure the profile with these markdown sections:
+
+# Comprehensive Psychological Profile
+
+## I. Core Personality Structure
+- Cognitive style and processing patterns
+- Emotional architecture (how they experience and process emotions)
+- Self-concept and identity patterns
+
+## II. Relational Patterns
+- Key relationships and attachment dynamics
+- Recurring interpersonal themes
+- Social patterns and challenges
+
+## III. Core Psychological Dynamics
+- Primary behavioural/cognitive loops (e.g. seeking cycles, avoidance patterns)
+- Insight-action gaps
+- Identity development trajectory
+
+## IV. Emotional Wellbeing Trajectory
+- Timeline of emotional states across the journal period
+- Key turning points and crises
+- Overall direction of change
+
+## V. Strengths & Protective Factors
+- Evidence-based strengths observed across entries
+- Coping resources and resilience indicators
+
+## VI. Risk Factors & Vulnerabilities
+- Areas of ongoing vulnerability
+- Patterns that could re-emerge under stress
+
+## VII. Clinical Observations & Recommendations
+- Therapeutic frameworks that apply (CBT, ACT, etc.)
+- Specific patterns warranting attention
+- Growth trajectory and prognosis
+
+Guidelines:
+- Name specific people, events, and dates from the entries
+- Quote or closely paraphrase specific entry content as evidence for observations
+- Use accurate psychological terminology while remaining accessible
+- Balance clinical rigour with genuine care — this is a real person's inner world
+- Identify patterns across time, not just individual events
+- Note where the person has grown and where they are still working through things
+- Write 2000-4000 words — thorough but not exhaustive
+- Output as clean markdown with proper heading hierarchy`,
+    [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],
+    8000,
+  )
+
+  return response
 }
 
 // Local computation — no API call needed

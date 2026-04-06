@@ -124,11 +124,17 @@ export async function saveProfileToDisk(profile: PsychologicalProfile, journalPa
 
   try {
     const { writeTextFile, mkdir, exists } = await import('@tauri-apps/plugin-fs')
-    if (!(await exists(journalPath))) {
-      await mkdir(journalPath, { recursive: true })
+    const profilesDir = `${journalPath}/profiles`
+    if (!(await exists(profilesDir))) {
+      await mkdir(profilesDir, { recursive: true })
     }
-    await writeTextFile(`${journalPath}/profile.json`, JSON.stringify(profile, null, 2))
+    await writeTextFile(`${profilesDir}/profile.json`, JSON.stringify(profile, null, 2))
     console.log('[fs] Profile saved to disk')
+
+    if (profile.fullProfile) {
+      await writeTextFile(`${profilesDir}/psychological-profile.md`, profile.fullProfile)
+      console.log('[fs] Full psychological profile saved to disk')
+    }
   } catch (e) {
     console.error('[fs] saveProfileToDisk FAILED:', e)
   }

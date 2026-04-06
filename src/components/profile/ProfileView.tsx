@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Target, RefreshCw } from 'lucide-react'
+import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { ProgressBar } from '../ui/ProgressBar'
@@ -13,6 +14,7 @@ export function ProfileView() {
   const { loaded: journalLoaded, loadEntries } = useJournalStore()
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [generating, setGenerating] = useState(false)
+  const [showFullProfile, setShowFullProfile] = useState(false)
   const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
   const [phase, setPhase] = useState('')
 
@@ -25,28 +27,37 @@ export function ProfileView() {
     if (generating || !apiKey) return
     setGenerating(true)
     try {
-      // Phase 1: process unindexed entries
-      setPhase('Processing entries...')
-      await useJournalStore.getState().processEntries(apiKey, false, (current, total, title) => {
-        setProgress({ current, total, title })
-      })
-      // Phase 2: generate profile
-      setPhase('Generating profile...')
-      setProgress({ current: 0, total: 0, title: '' })
       const entries = useJournalStore.getState().entries
-      await useProfileStore.getState().generateProfile(entries, apiKey, (current, total, title) => {
-        setProgress({ current, total, title })
-      })
+      await useProfileStore.getState().generateProfile(
+        entries,
+        apiKey,
+        (phase) => setPhase(phase),
+        (current, total, title) => setProgress({ current, total, title }),
+      )
     } catch (e) {
       console.error('Profile generation failed:', e)
+      setPhase('Generation failed — check console for details')
     } finally {
-      setGenerating(false)
-      setPhase('')
+      setTimeout(() => {
+        setGenerating(false)
+        setPhase('')
+      }, 2000)
     }
   }, [generating, apiKey])
 
   return (
     <>
+      <style>{`
+        .profile-markdown h1 { font-family: var(--font-display); font-size: 26px; font-weight: 600; color: var(--ink); margin: 32px 0 16px; line-height: 1.3; }
+        .profile-markdown h2 { font-family: var(--font-heading); font-size: 20px; font-weight: 500; color: var(--ink); margin: 28px 0 12px; line-height: 1.4; }
+        .profile-markdown h3 { font-family: var(--font-heading); font-size: 16px; font-weight: 500; color: var(--bark); margin: 20px 0 8px; line-height: 1.4; }
+        .profile-markdown p { margin: 0 0 14px; }
+        .profile-markdown ul, .profile-markdown ol { margin: 0 0 14px; padding-left: 24px; }
+        .profile-markdown li { margin-bottom: 4px; }
+        .profile-markdown blockquote { border-left: 3px solid var(--amber); padding: 8px 16px; margin: 16px 0; color: var(--bark); font-style: italic; background: var(--warm-cream); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+        .profile-markdown strong { font-weight: 600; color: var(--ink); }
+        .profile-markdown hr { border: none; border-top: 1px solid var(--stone); margin: 24px 0; }
+      `}</style>
       <MainHeader title="Psychological Profile">
         {profile && (
           <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
@@ -54,10 +65,17 @@ export function ProfileView() {
           </span>
         )}
         {apiKey && (
-          <Button variant="primary" onClick={handleGenerateProfile} disabled={generating}>
-            <RefreshCw size={13} strokeWidth={1.8} style={generating ? { animation: 'spin 1s linear infinite' } : undefined} />
-            {generating ? phase || 'Generating...' : 'Generate Profile'}
-          </Button>
+          <>
+            <Button variant="primary" onClick={handleGenerateProfile} disabled={generating}>
+              <RefreshCw size={13} strokeWidth={1.8} style={generating ? { animation: 'spin 1s linear infinite' } : undefined} />
+              {generating ? phase || 'Generating...' : 'Generate Profile'}
+            </Button>
+            {profile?.fullProfile && (
+              <Button variant="secondary" onClick={() => setShowFullProfile(!showFullProfile)}>
+                {showFullProfile ? 'Dashboard' : 'View Full Profile'}
+              </Button>
+            )}
+          </>
         )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
@@ -74,7 +92,20 @@ export function ProfileView() {
             </div>
           )}
 
-          {!profile ? (
+          {showFullProfile && profile?.fullProfile ? (
+            <div
+              className="profile-markdown"
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 15,
+                lineHeight: 1.8,
+                color: 'var(--manuscript)',
+                maxWidth: 760,
+                margin: '0 auto',
+              }}
+              dangerouslySetInnerHTML={{ __html: marked(profile.fullProfile) as string }}
+            />
+          ) : !profile ? (
             <EmptyState
               icon={<Target size={48} strokeWidth={1.2} />}
               title="Your profile will grow here"

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useProfileStore } from '../../stores/profileStore'
+import { useJournalStore } from '../../stores/journalStore'
 import { streamChatResponse, sendMessage } from '../../services/anthropic'
 import { assembleContext } from '../../services/contextAssembler'
 import { PSYCHOLOGIST_SYSTEM_PROMPT } from '../../services/prompts/psychologist'
@@ -74,7 +76,9 @@ export function ChatView() {
     const session = useChatStore.getState().activeSession
     if (!session) return
 
-    const { system, messages } = assembleContext(session, null, PSYCHOLOGIST_SYSTEM_PROMPT)
+    const profile = useProfileStore.getState().profile
+    const entries = useJournalStore.getState().entries
+    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT)
 
     await streamChatResponse(
       apiKey,

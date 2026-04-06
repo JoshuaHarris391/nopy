@@ -1,6 +1,7 @@
 import { estimateTokens } from '../utils/tokenEstimator'
 import type { ChatSession } from '../types/chat'
 import type { PsychologicalProfile } from '../types/profile'
+import type { JournalEntry } from '../types/journal'
 
 interface AssembledContext {
   system: string
@@ -10,16 +11,37 @@ interface AssembledContext {
 export function assembleContext(
   session: ChatSession,
   profile: PsychologicalProfile | null,
+  entries: JournalEntry[],
   systemPrompt: string,
   maxTokens: number = 10000,
 ): AssembledContext {
   // Build system prompt with profile
   let system = systemPrompt
-  if (profile) {
+
+  // Inject full psychological profile
+  if (profile?.fullProfile) {
+    system += `\n\n## Psychological Profile\n${profile.fullProfile}`
+  } else if (profile?.summary) {
     system += `\n\n## Current Psychological Profile\n${profile.summary}`
-    if (profile.themes.length > 0) {
-      system += `\n\nRecurring themes: ${profile.themes.map((t) => t.theme).join(', ')}`
-    }
+  }
+
+  if (profile && profile.themes.length > 0) {
+    system += `\n\nRecurring themes: ${profile.themes.map((t) => t.theme).join(', ')}`
+  }
+
+  // Inject entry index table
+  const indexed = entries.filter((e) => e.indexed && e.summary)
+  if (indexed.length > 0) {
+    const table = indexed
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map((e) => {
+        const date = e.createdAt.slice(0, 10)
+        const mood = e.mood ? `${e.mood.value}/10` : '-'
+        const tags = e.tags.join(', ') || '-'
+        return `| ${date} | ${e.title} | ${mood} | ${tags} | ${e.summary} |`
+      })
+      .join('\n')
+    system += `\n\n## Journal Entry Index\n| Date | Title | Mood | Tags | Summary |\n|------|-------|------|------|---------|${table ? '\n' + table : ''}`
   }
 
   const messages: { role: 'user' | 'assistant'; content: string }[] = []
