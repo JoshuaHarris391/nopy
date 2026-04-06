@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
@@ -22,8 +23,11 @@ export function ChatView() {
     updateSessionTitle,
   } = useChatStore()
 
+  const location = useLocation()
+  const navigate = useNavigate()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const streamingRef = useRef(false)
+  const entryContextHandled = useRef(false)
 
   useEffect(() => {
     if (!loaded) loadSessionList()
@@ -123,6 +127,22 @@ export function ChatView() {
     )
   }, [apiKey, preferredModel, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
 
+  // Handle "Explore with nopy" entry context from router state
+  useEffect(() => {
+    const state = location.state as { entryTitle?: string; entryContent?: string; entryDate?: string } | null
+    if (!state?.entryContent || !apiKey || !loaded || entryContextHandled.current) return
+    entryContextHandled.current = true
+    navigate('/chat', { replace: true, state: null })
+
+    const message = `As a clinical psychologist, start a session focused on this entry:\n\n**${state.entryTitle || 'Untitled'}** (${state.entryDate ? new Date(state.entryDate).toLocaleDateString() : 'undated'})\n\n${state.entryContent}`
+
+    ;(async () => {
+      await createSession()
+      // Let session state settle, then send
+      setTimeout(() => handleSend(message), 100)
+    })()
+  }, [location.state, apiKey, loaded, navigate, createSession, handleSend])
+
   const isStreaming = activeSession?.messages.some((m) => m.streaming) ?? false
 
   return (
@@ -136,7 +156,7 @@ export function ChatView() {
       </MainHeader>
       <div className="flex flex-1 overflow-hidden">
         {/* Session list - desktop only */}
-        <div className="hidden lg:block">
+        <div className="hidden lg:flex h-full">
           <ChatSessionList
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -146,7 +166,7 @@ export function ChatView() {
         </div>
 
         {/* Chat area */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ padding: '0 44px' }}>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ padding: '0 24px' }}>
           {!activeSession ? (
             // Empty state
             <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -188,8 +208,8 @@ export function ChatView() {
             <>
               {/* Messages */}
               <div
-                className="flex-1 flex flex-col gap-5 overflow-y-auto"
-                style={{ maxWidth: 640, margin: '0 auto', width: '100%', padding: '24px 0 16px' }}
+                className="flex-1 flex flex-col gap-4 overflow-y-auto"
+                style={{ maxWidth: 780, margin: '0 auto', width: '100%', padding: '24px 0 16px' }}
               >
                 {activeSession.messages.map((msg) => (
                   <ChatMessage key={msg.id} message={msg} />
@@ -198,7 +218,7 @@ export function ChatView() {
               </div>
 
               {/* Input */}
-              <div style={{ maxWidth: 640, margin: '0 auto', width: '100%', paddingBottom: 16 }}>
+              <div style={{ maxWidth: 780, margin: '0 auto', width: '100%', paddingBottom: 16 }}>
                 <ChatInput onSend={handleSend} disabled={!apiKey || isStreaming} />
               </div>
             </>

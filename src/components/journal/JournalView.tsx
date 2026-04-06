@@ -86,7 +86,7 @@ export function JournalView() {
             }
           />
         ) : (
-          <div className="flex flex-col gap-3.5" style={{ maxWidth: 740 }}>
+          <div className="flex flex-col gap-3.5">
             {entries.map((entry, i) => (
               <EntryCard key={entry.id} entry={entry} index={i} />
             ))}

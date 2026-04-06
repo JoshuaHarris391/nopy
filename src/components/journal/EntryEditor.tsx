@@ -235,7 +235,7 @@ export function EntryEditor() {
             </div>
             <Button
               variant="primary"
-              onClick={() => navigate('/chat')}
+              onClick={() => navigate('/chat', { state: { entryTitle: title, entryContent: content, entryDate } })}
               style={{ fontSize: 12, padding: '7px 14px' }}
             >
               <MessageCircle size={13} strokeWidth={1.8} />
