@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -20,11 +20,12 @@ export function ChatView() {
     sessions, activeSession, activeSessionId, loaded,
     loadSessionList, createSession, loadSession,
     addMessage, updateStreamingMessage, finaliseStreamingMessage,
-    updateSessionTitle,
+    updateSessionTitle, deleteSession,
   } = useChatStore()
 
   const location = useLocation()
   const navigate = useNavigate()
+  const [generatingTitleId, setGeneratingTitleId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const streamingRef = useRef(false)
   const entryContextHandled = useRef(false)
@@ -98,22 +99,22 @@ export function ChatView() {
         const currentSession = useChatStore.getState().activeSession
         if (currentSession && currentSession.title === 'New conversation' && currentSession.messages.length >= 2) {
           try {
-            const titleMessages = currentSession.messages.slice(0, 4).map((m) => ({
-              role: m.role,
-              content: m.content,
-            }))
+            setGeneratingTitleId(currentSession.id)
+            const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
             const title = await sendMessage(
               apiKey,
               'claude-haiku-4-5-20251001',
-              'Generate a short, 3-6 word title for this therapy journaling conversation. Return only the title, nothing else.',
-              titleMessages,
-              30,
+              'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
+              [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
+              50,
             )
             if (title.trim()) {
               await updateSessionTitle(currentSession.id, title.trim())
             }
-          } catch {
-            // Title generation is non-critical
+          } catch (e) {
+            console.error('Title generation failed:', e)
+          } finally {
+            setGeneratingTitleId(null)
           }
         }
       },
@@ -162,6 +163,9 @@ export function ChatView() {
             activeSessionId={activeSessionId}
             onSelect={handleSelectSession}
             onCreate={handleNewSession}
+            onRename={(id, title) => updateSessionTitle(id, title)}
+            onDelete={(id) => deleteSession(id)}
+            generatingTitleId={generatingTitleId}
           />
         </div>
 

@@ -264,7 +264,7 @@ export function EntryEditor() {
           </button>
         )}
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
+      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px 0 44px' }}>
         <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
           {/* Title input */}
           <input
@@ -308,10 +308,20 @@ export function EntryEditor() {
 
           {/* Body textarea */}
           <textarea
+            ref={(el) => {
+              if (el) {
+                el.style.height = 'auto'
+                el.style.height = Math.max(400, el.scrollHeight) + 'px'
+              }
+            }}
             value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
+            onChange={(e) => {
+              handleContentChange(e.target.value)
+              const el = e.target
+              el.style.height = 'auto'
+              el.style.height = Math.max(400, el.scrollHeight) + 'px'
+            }}
             placeholder="Begin writing..."
-            rows={20}
             style={{
               fontFamily: 'var(--font-body)',
               fontSize: 16,
@@ -324,6 +334,7 @@ export function EntryEditor() {
               background: 'transparent',
               resize: 'none',
               caretColor: 'var(--forest)',
+              overflow: 'hidden',
             }}
           />
 
@@ -332,7 +343,7 @@ export function EntryEditor() {
             className="sticky bottom-0 flex justify-between items-center"
             style={{
               background: 'linear-gradient(to top, var(--parchment) 70%, transparent)',
-              padding: '20px 0 8px',
+              padding: '20px 0 16px',
             }}
           >
             <div className="flex gap-4" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>

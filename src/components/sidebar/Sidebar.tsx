@@ -4,9 +4,9 @@ import { useSettingsStore } from '../../stores/settingsStore'
 
 const navItems = [
   { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
-  { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Reflect' },
-  { to: '/profile', icon: Target, label: 'Profile', section: 'Reflect' },
-  { to: '/index', icon: List, label: 'Index', section: 'Reflect' },
+  { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Understand' },
+  { to: '/profile', icon: Target, label: 'Profile', section: 'Understand' },
+  { to: '/index', icon: List, label: 'Index', section: 'Understand' },
   { to: '/settings', icon: Settings, label: 'Settings', section: 'Configure' },
 ]
 
