@@ -1,17 +1,18 @@
 import type { MoodScore } from '../../types/journal'
 
 const moodColors: Record<string, string> = {
-  great: 'var(--sunlight)',
-  good: 'var(--gentle-green)',
+  great: 'var(--gentle-green)',
+  good: 'var(--sage)',
   neutral: 'var(--dusk-blue)',
-  mixed: 'var(--dusk-blue)',
+  mixed: 'var(--amber)',
   low: 'var(--soft-coral)',
 }
 
 function moodColorFromValue(value: number): string {
-  if (value >= 8) return moodColors.great
-  if (value >= 6) return moodColors.good
-  if (value >= 4) return moodColors.neutral
+  if (value >= 9) return moodColors.great
+  if (value >= 7) return moodColors.good
+  if (value >= 5) return moodColors.neutral
+  if (value >= 3) return moodColors.mixed
   return moodColors.low
 }
 
