@@ -57,7 +57,7 @@ export function Sidebar() {
       <div
         className="flex items-center flex-shrink-0 border-b"
         style={{
-          padding: collapsed ? '0 16px' : '0 24px',
+          padding: collapsed ? '0 16px' : '0 16px',
           height: 64,
           borderColor: 'var(--stone)',
           justifyContent: collapsed ? 'center' : 'flex-start',
@@ -95,7 +95,7 @@ export function Sidebar() {
                   style={{
                     height: 1,
                     background: 'var(--stone)',
-                    margin: collapsed ? '16px 16px' : '16px 24px',
+                    margin: '16px 16px',
                   }}
                 />
               )}
@@ -110,7 +110,7 @@ export function Sidebar() {
                     letterSpacing: '1.5px',
                     textTransform: 'uppercase',
                     color: 'var(--sage)',
-                    padding: '0 24px 8px',
+                    padding: '0 16px 8px',
                   }}
                 >
                   {section}

@@ -5,6 +5,7 @@ export interface UserSettings {
   contextBudget: number
   onboardingComplete: boolean
   sidebarCollapsed: boolean
+  sessionPanelCollapsed: boolean
   journalPath: string
   theme: 'light' | 'dark'
 }

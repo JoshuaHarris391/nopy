@@ -8,6 +8,8 @@ interface SettingsState extends UserSettings {
   completeOnboarding: () => void
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  toggleSessionPanel: () => void
+  setSessionPanelCollapsed: (collapsed: boolean) => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
   setJournalPath: (path: string) => void
@@ -23,6 +25,7 @@ export const useSettingsStore = create<SettingsState>()(
       contextBudget: 500000,
       onboardingComplete: false,
       sidebarCollapsed: false,
+      sessionPanelCollapsed: false,
       journalPath: '',
       theme: 'light',
 
@@ -33,6 +36,8 @@ export const useSettingsStore = create<SettingsState>()(
       completeOnboarding: () => set({ onboardingComplete: true }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      toggleSessionPanel: () => set((state) => ({ sessionPanelCollapsed: !state.sessionPanelCollapsed })),
+      setSessionPanelCollapsed: (collapsed) => set({ sessionPanelCollapsed: collapsed }),
       setJournalPath: (path) => set({ journalPath: path }),
       setTheme: (theme) => set({ theme }),
     }),

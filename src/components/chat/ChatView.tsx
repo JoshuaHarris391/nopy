@@ -11,11 +11,11 @@ import { MainHeader } from '../ui/MainHeader'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
 import { ChatSessionList } from './ChatSessionList'
-import { MessageCircle, Leaf } from 'lucide-react'
+import { MessageCircle, Leaf, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
-  const { apiKey, preferredModel, maxOutputTokens, contextBudget } = useSettingsStore()
+  const { apiKey, preferredModel, maxOutputTokens, contextBudget, sessionPanelCollapsed, toggleSessionPanel, setSessionPanelCollapsed } = useSettingsStore()
   const {
     sessions, activeSession, activeSessionId, loaded,
     loadSessionList, createSession, loadSession,
@@ -36,6 +36,17 @@ export function ChatView() {
   useEffect(() => {
     if (!loaded) loadSessionList()
   }, [loaded, loadSessionList])
+
+  // Auto-collapse session panel below 1024px
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)')
+    if (mq.matches) setSessionPanelCollapsed(true)
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setSessionPanelCollapsed(true)
+    }
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [setSessionPanelCollapsed])
 
   // Smooth momentum scroll toward bottom using lerp
   const smoothScrollToBottom = useCallback(() => {
@@ -214,8 +225,15 @@ export function ChatView() {
         )}
       </MainHeader>
       <div className="flex flex-1 overflow-hidden">
-        {/* Session list - desktop only */}
-        <div className="hidden lg:flex h-full">
+        {/* Session list - desktop only, collapsible */}
+        <div
+          className="hidden lg:flex h-full flex-shrink-0 relative"
+          style={{
+            width: sessionPanelCollapsed ? 0 : 300,
+            overflow: 'hidden',
+            transition: 'width 200ms ease',
+          }}
+        >
           <ChatSessionList
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -226,6 +244,34 @@ export function ChatView() {
             generatingTitleId={generatingTitleId}
           />
         </div>
+
+        {/* Session panel toggle - desktop only */}
+        <button
+          className="hidden lg:flex items-center justify-center flex-shrink-0 cursor-pointer"
+          onClick={toggleSessionPanel}
+          style={{
+            width: 20,
+            background: 'var(--warm-cream)',
+            border: 'none',
+            borderRight: '1px solid var(--stone)',
+            color: 'var(--sage)',
+            transition: 'color 150ms ease, background 150ms ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--forest)'
+            e.currentTarget.style.background = 'var(--parchment)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--sage)'
+            e.currentTarget.style.background = 'var(--warm-cream)'
+          }}
+          title={sessionPanelCollapsed ? 'Show sessions' : 'Hide sessions'}
+        >
+          {sessionPanelCollapsed
+            ? <PanelLeftOpen size={12} strokeWidth={1.5} />
+            : <PanelLeftClose size={12} strokeWidth={1.5} />
+          }
+        </button>
 
         {/* Chat area */}
         <div

@@ -39,7 +39,7 @@ export function ChatSessionList({ sessions, activeSessionId, onSelect, onCreate,
   return (
     <div
       className="flex flex-col border-r overflow-hidden h-full"
-      style={{ width: 260, background: 'var(--warm-cream)', borderColor: 'var(--stone)' }}
+      style={{ width: 300, background: 'var(--warm-cream)', borderColor: 'var(--stone)' }}
     >
       <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: 'var(--stone)' }}>
         <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--sage)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
