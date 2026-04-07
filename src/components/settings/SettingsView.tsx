@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Eye, EyeOff, FolderOpen, Zap, BookOpen, Sun, Moon } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { ProgressBar } from '../ui/ProgressBar'
@@ -10,7 +10,10 @@ import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../service
 import { del } from 'idb-keyval'
 
 export function SettingsView() {
-  const { apiKey, setApiKey, preferredModel, setPreferredModel, maxTokens, setMaxTokens, journalPath, setJournalPath, theme, setTheme } = useSettingsStore()
+  const { apiKey, setApiKey, preferredModel, setPreferredModel, maxOutputTokens, setMaxOutputTokens, contextBudget, setContextBudget, journalPath, setJournalPath, theme, setTheme } = useSettingsStore()
+  const [availableModels, setAvailableModels] = useState<{ id: string; displayName: string }[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsError, setModelsError] = useState<string | null>(null)
   const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
@@ -81,6 +84,18 @@ export function SettingsView() {
   const handleKeyBlur = () => {
     setApiKey(keyInput.trim())
   }
+
+  useEffect(() => {
+    if (!apiKey) return
+    setModelsLoading(true)
+    setModelsError(null)
+    import('../../services/anthropic').then(({ fetchModels }) =>
+      fetchModels(apiKey)
+        .then((models) => setAvailableModels(models))
+        .catch(() => setModelsError('Failed to load models'))
+        .finally(() => setModelsLoading(false))
+    )
+  }, [apiKey])
 
   return (
     <>
@@ -192,6 +207,7 @@ export function SettingsView() {
               <select
                 value={preferredModel}
                 onChange={(e) => setPreferredModel(e.target.value)}
+                disabled={modelsLoading || !apiKey}
                 style={{
                   fontFamily: 'var(--font-ui)',
                   fontSize: 13,
@@ -199,27 +215,39 @@ export function SettingsView() {
                   border: '1px solid var(--stone)',
                   borderRadius: 'var(--radius-sm)',
                   background: 'var(--warm-cream)',
-                  color: 'var(--ink)',
+                  color: modelsLoading || !apiKey ? 'var(--sage)' : 'var(--ink)',
                   outline: 'none',
-                  cursor: 'pointer',
+                  cursor: modelsLoading || !apiKey ? 'not-allowed' : 'pointer',
+                  minWidth: 200,
                 }}
               >
-                <option value="claude-opus-4-6">Claude Opus 4.6</option>
-                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                {modelsLoading && <option value="">Loading models…</option>}
+                {modelsError && <option value="">{modelsError}</option>}
+                {!apiKey && <option value="">Enter API key to load models</option>}
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.displayName}</option>
+                ))}
+                {!modelsLoading && !modelsError && apiKey && availableModels.length === 0 && (
+                  <option value="">No models found</option>
+                )}
               </select>
+              {modelsError && (
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--error, #c0392b)', marginTop: 4 }}>
+                  {modelsError}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
               <div>
-                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Max Tokens</div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Max Output Tokens</div>
                 <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
-                  Maximum tokens per response (default: 4096)
+                  Maximum length of each AI response (default: 4,096)
                 </div>
               </div>
               <select
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number(e.target.value))}
+                value={maxOutputTokens}
+                onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
                 style={{
                   fontFamily: 'var(--font-ui)',
                   fontSize: 13,
@@ -237,6 +265,39 @@ export function SettingsView() {
                 <option value={4096}>4,096</option>
                 <option value={8192}>8,192</option>
                 <option value={16384}>16,384</option>
+                <option value={32768}>32,768</option>
+              </select>
+            </div>
+
+            <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Context Budget</div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+                  How much conversation history to send with each message (default: 500,000)
+                </div>
+              </div>
+              <select
+                value={contextBudget}
+                onChange={(e) => setContextBudget(Number(e.target.value))}
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 13,
+                  padding: '6px 12px',
+                  border: '1px solid var(--stone)',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--warm-cream)',
+                  color: 'var(--ink)',
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value={8000}>8,000</option>
+                <option value={30000}>30,000</option>
+                <option value={60000}>60,000</option>
+                <option value={100000}>100,000</option>
+                <option value={200000}>200,000</option>
+                <option value={500000}>500,000</option>
+                <option value={1000000}>1,000,000</option>
               </select>
             </div>
           </div>

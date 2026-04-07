@@ -8,7 +8,8 @@ interface SettingsState extends UserSettings {
   completeOnboarding: () => void
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
-  setMaxTokens: (tokens: number) => void
+  setMaxOutputTokens: (tokens: number) => void
+  setContextBudget: (tokens: number) => void
   setJournalPath: (path: string) => void
   setTheme: (theme: 'light' | 'dark') => void
 }
@@ -17,8 +18,9 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       apiKey: '',
-      preferredModel: 'claude-opus-4-6',
-      maxTokens: 4096,
+      preferredModel: 'claude-sonnet-4-5-20250514',
+      maxOutputTokens: 4096,
+      contextBudget: 500000,
       onboardingComplete: false,
       sidebarCollapsed: false,
       journalPath: '',
@@ -26,7 +28,8 @@ export const useSettingsStore = create<SettingsState>()(
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
-      setMaxTokens: (tokens) => set({ maxTokens: tokens }),
+      setMaxOutputTokens: (tokens) => set({ maxOutputTokens: tokens }),
+      setContextBudget: (tokens) => set({ contextBudget: tokens }),
       completeOnboarding: () => set({ onboardingComplete: true }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),

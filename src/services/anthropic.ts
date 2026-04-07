@@ -48,6 +48,15 @@ export async function streamChatResponse(
   }
 }
 
+export async function fetchModels(apiKey: string): Promise<{ id: string; displayName: string }[]> {
+  const client = getClient(apiKey)
+  const response = await client.models.list({ limit: 100 })
+  return response.data
+    .filter((m) => m.id.startsWith('claude-'))
+    .map((m) => ({ id: m.id, displayName: m.display_name ?? m.id }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+}
+
 export async function sendMessage(
   apiKey: string,
   model: string,

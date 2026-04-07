@@ -19,7 +19,7 @@ export function assembleContext(
   profile: PsychologicalProfile | null,
   entries: JournalEntry[],
   systemPrompt: string,
-  maxTokens: number = 30000,
+  contextBudget: number = 30000,
   entryContext?: EntryContext,
 ): AssembledContext {
   // Build system prompt with profile
@@ -73,7 +73,7 @@ export function assembleContext(
 
   // Take recent messages that fit within budget
   const usedTokens = estimateTokens(system) + estimateTokens(JSON.stringify(messages))
-  const remainingBudget = maxTokens - usedTokens
+  const remainingBudget = contextBudget - usedTokens
 
   const recentMessages: { role: 'user' | 'assistant'; content: string }[] = []
   let tokenCount = 0

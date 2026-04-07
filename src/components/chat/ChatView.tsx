@@ -15,7 +15,7 @@ import { MessageCircle, Leaf } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
-  const { apiKey, preferredModel, maxTokens } = useSettingsStore()
+  const { apiKey, preferredModel, maxOutputTokens, contextBudget } = useSettingsStore()
   const {
     sessions, activeSession, activeSessionId, loaded,
     loadSessionList, createSession, loadSession,
@@ -132,7 +132,7 @@ export function ChatView() {
 
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
-    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, maxTokens, entryContext)
+    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, contextBudget, entryContext)
     const filteredMessages = messages.filter((m) => !!m.content)
 
     if (filteredMessages.length === 0) {
@@ -145,7 +145,7 @@ export function ChatView() {
       preferredModel,
       system,
       filteredMessages,
-      maxTokens,
+      maxOutputTokens,
       (fullText) => updateStreamingMessage(fullText),
       async () => {
         await finaliseStreamingMessage()
@@ -182,7 +182,7 @@ export function ChatView() {
         finaliseStreamingMessage()
       },
     )
-  }, [apiKey, preferredModel, maxTokens, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
+  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
 
   // Handle "Explore with nopy" entry context from router state
   useEffect(() => {
