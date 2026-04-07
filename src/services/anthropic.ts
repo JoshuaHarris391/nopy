@@ -15,6 +15,7 @@ export async function streamChatResponse(
   model: string,
   system: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
+  maxTokens: number,
   onChunk: (fullText: string) => void,
   onComplete: (fullText: string) => void,
   onError: (error: Error) => void,
@@ -23,7 +24,7 @@ export async function streamChatResponse(
     const client = getClient(apiKey)
     const stream = client.messages.stream({
       model,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       system,
       messages,
     })

@@ -13,7 +13,7 @@ export function assembleContext(
   profile: PsychologicalProfile | null,
   entries: JournalEntry[],
   systemPrompt: string,
-  maxTokens: number = 10000,
+  maxTokens: number = 30000,
 ): AssembledContext {
   // Build system prompt with profile
   let system = systemPrompt
@@ -70,7 +70,7 @@ export function assembleContext(
     const msg = session.messages[i]
     if (msg.streaming) continue
     const msgTokens = estimateTokens(msg.content) + 10 // overhead
-    if (tokenCount + msgTokens > remainingBudget) break
+    if (tokenCount + msgTokens > remainingBudget && recentMessages.length > 0) break
     recentMessages.unshift({ role: msg.role, content: msg.content })
     tokenCount += msgTokens
   }

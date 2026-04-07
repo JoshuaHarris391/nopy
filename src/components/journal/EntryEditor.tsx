@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { MessageCircle, Check, Trash2, Loader2 } from 'lucide-react'
+import { MessageCircle, Check, Trash2, Loader2, Minus, Plus } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { Button } from '../ui/Button'
 import { useJournalStore } from '../../stores/journalStore'
@@ -112,8 +112,12 @@ export function EntryEditor() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
+  const TEXT_SIZES = [14, 16, 18, 20, 22]
+  const [textSizeIndex, setTextSizeIndex] = useState(3) // default 20px
   const entryIdRef = useRef<string | null>(id ?? null)
   const isNewRef = useRef(isNew)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const isTypingRef = useRef(false)
 
   // Load entries if not loaded
   useEffect(() => {
@@ -220,10 +224,24 @@ export function EntryEditor() {
   }
 
   const handleContentChange = (value: string) => {
+    isTypingRef.current = true
     setContent(value)
     setDirty(true)
     setJustSaved(false)
   }
+
+  // Resize textarea only for external content changes (e.g. loading an entry)
+  useEffect(() => {
+    if (isTypingRef.current) {
+      isTypingRef.current = false
+      return
+    }
+    const el = textareaRef.current
+    if (el) {
+      el.style.height = 'auto'
+      el.style.height = Math.max(400, el.scrollHeight) + 'px'
+    }
+  }, [content, textSizeIndex])
 
   const wordCount = content.split(/\s+/).filter(Boolean).length
   const readTime = Math.max(1, Math.ceil(wordCount / 200))
@@ -321,23 +339,30 @@ export function EntryEditor() {
 
           {/* Body textarea */}
           <textarea
-            ref={(el) => {
-              if (el) {
-                el.style.height = 'auto'
-                el.style.height = Math.max(400, el.scrollHeight) + 'px'
-              }
-            }}
+            ref={textareaRef}
             value={content}
             onChange={(e) => {
               handleContentChange(e.target.value)
               const el = e.target
               el.style.height = 'auto'
               el.style.height = Math.max(400, el.scrollHeight) + 'px'
+              // Auto-scroll to keep cursor visible as text grows
+              requestAnimationFrame(() => {
+                const scrollParent = el.closest('.overflow-y-auto')
+                if (scrollParent) {
+                  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 28
+                  const cursorY = el.offsetTop + el.scrollHeight - lineHeight
+                  const visibleBottom = scrollParent.scrollTop + scrollParent.clientHeight
+                  if (cursorY > visibleBottom - lineHeight * 2) {
+                    scrollParent.scrollTop = cursorY - scrollParent.clientHeight + lineHeight * 3
+                  }
+                }
+              })
             }}
             placeholder="Begin writing..."
             style={{
               fontFamily: 'var(--font-body)',
-              fontSize: 16,
+              fontSize: TEXT_SIZES[textSizeIndex],
               lineHeight: 1.8,
               color: 'var(--manuscript)',
               minHeight: 400,
@@ -359,10 +384,54 @@ export function EntryEditor() {
               padding: '20px 0 16px',
             }}
           >
-            <div className="flex gap-4" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>
+            <div className="flex items-center gap-4" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>
               <span>{wordCount} words</span>
               <span>·</span>
               <span>~{readTime} min read</span>
+              <span>·</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setTextSizeIndex((i) => Math.max(0, i - 1))}
+                  disabled={textSizeIndex === 0}
+                  className="flex items-center justify-center cursor-pointer"
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'transparent',
+                    border: '1px solid var(--stone)',
+                    color: textSizeIndex === 0 ? 'var(--stone)' : 'var(--sage)',
+                    transition: 'all var(--transition-gentle)',
+                    cursor: textSizeIndex === 0 ? 'default' : 'pointer',
+                    padding: 0,
+                  }}
+                  title="Decrease text size"
+                >
+                  <Minus size={11} strokeWidth={2} />
+                </button>
+                <span style={{ minWidth: 18, textAlign: 'center', fontSize: 11 }}>
+                  {TEXT_SIZES[textSizeIndex]}
+                </span>
+                <button
+                  onClick={() => setTextSizeIndex((i) => Math.min(TEXT_SIZES.length - 1, i + 1))}
+                  disabled={textSizeIndex === TEXT_SIZES.length - 1}
+                  className="flex items-center justify-center cursor-pointer"
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'transparent',
+                    border: '1px solid var(--stone)',
+                    color: textSizeIndex === TEXT_SIZES.length - 1 ? 'var(--stone)' : 'var(--sage)',
+                    transition: 'all var(--transition-gentle)',
+                    cursor: textSizeIndex === TEXT_SIZES.length - 1 ? 'default' : 'pointer',
+                    padding: 0,
+                  }}
+                  title="Increase text size"
+                >
+                  <Plus size={11} strokeWidth={2} />
+                </button>
+              </div>
             </div>
             <Button
               variant="primary"

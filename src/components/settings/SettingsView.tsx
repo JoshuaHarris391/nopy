@@ -10,7 +10,7 @@ import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../service
 import { del } from 'idb-keyval'
 
 export function SettingsView() {
-  const { apiKey, setApiKey, preferredModel, setPreferredModel, journalPath, setJournalPath, theme, setTheme } = useSettingsStore()
+  const { apiKey, setApiKey, preferredModel, setPreferredModel, maxTokens, setMaxTokens, journalPath, setJournalPath, theme, setTheme } = useSettingsStore()
   const canPickDirectory = hasFileSystem()
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
@@ -207,6 +207,36 @@ export function SettingsView() {
                 <option value="claude-opus-4-6">Claude Opus 4.6</option>
                 <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
                 <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              </select>
+            </div>
+
+            <div className="flex justify-between items-center" style={{ padding: '10px 0' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Max Tokens</div>
+                <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+                  Maximum tokens per response (default: 4096)
+                </div>
+              </div>
+              <select
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(Number(e.target.value))}
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 13,
+                  padding: '6px 12px',
+                  border: '1px solid var(--stone)',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--warm-cream)',
+                  color: 'var(--ink)',
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value={1024}>1,024</option>
+                <option value={2048}>2,048</option>
+                <option value={4096}>4,096</option>
+                <option value={8192}>8,192</option>
+                <option value={16384}>16,384</option>
               </select>
             </div>
           </div>

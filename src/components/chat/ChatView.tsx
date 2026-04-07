@@ -15,7 +15,7 @@ import { MessageCircle, Leaf } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
-  const { apiKey, preferredModel } = useSettingsStore()
+  const { apiKey, preferredModel, maxTokens } = useSettingsStore()
   const {
     sessions, activeSession, activeSessionId, loaded,
     loadSessionList, createSession, loadSession,
@@ -84,12 +84,19 @@ export function ChatView() {
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
     const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT)
+    const filteredMessages = messages.filter((m) => !!m.content)
+
+    if (filteredMessages.length === 0) {
+      streamingRef.current = false
+      return
+    }
 
     await streamChatResponse(
       apiKey,
       preferredModel,
       system,
-      messages.filter((m) => !!m.content), // remove empty streaming placeholder from context
+      filteredMessages,
+      maxTokens,
       (fullText) => updateStreamingMessage(fullText),
       async () => {
         await finaliseStreamingMessage()
@@ -126,7 +133,7 @@ export function ChatView() {
         finaliseStreamingMessage()
       },
     )
-  }, [apiKey, preferredModel, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
+  }, [apiKey, preferredModel, maxTokens, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
 
   // Handle "Explore with nopy" entry context from router state
   useEffect(() => {
