@@ -27,6 +27,8 @@ export function ChatView() {
   const navigate = useNavigate()
   const [generatingTitleId, setGeneratingTitleId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
   const streamingRef = useRef(false)
   const entryContextHandled = useRef(false)
 
@@ -34,10 +36,18 @@ export function ChatView() {
     if (!loaded) loadSessionList()
   }, [loaded, loadSessionList])
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages, but only if user is near the bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [activeSession?.messages])
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }, [])
 
   const handleNewSession = useCallback(async () => {
     await createSession()
@@ -219,8 +229,10 @@ export function ChatView() {
             <>
               {/* Messages */}
               <div
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
                 className="flex-1 flex flex-col gap-4 overflow-y-auto"
-                style={{ maxWidth: 780, margin: '0 auto', width: '100%', padding: '24px 0 16px' }}
+                style={{ maxWidth: 663, margin: '0 auto', width: '100%', padding: '24px 0 16px' }}
               >
                 {activeSession.messages.map((msg) => (
                   <ChatMessage key={msg.id} message={msg} />
@@ -229,7 +241,7 @@ export function ChatView() {
               </div>
 
               {/* Input */}
-              <div style={{ maxWidth: 780, margin: '0 auto', width: '100%', paddingBottom: 16 }}>
+              <div style={{ maxWidth: 663, margin: '0 auto', width: '100%', paddingBottom: 16 }}>
                 <ChatInput onSend={handleSend} disabled={!apiKey || isStreaming} />
               </div>
             </>

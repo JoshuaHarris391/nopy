@@ -26,7 +26,8 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --font-agent: 'p22-mackinac-pro', 'Lora', Georgia, serif;
 
-  --sidebar-width: 208px;
+  --sidebar-width: 280px;
+  --font-title: 'freight-text-pro', 'Lora', Georgia, serif;
   --content-max: 720px;
   --radius-sm: 6px;
   --radius-md: 10px;

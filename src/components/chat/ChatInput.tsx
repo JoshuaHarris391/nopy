@@ -38,7 +38,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   return (
     <div style={{ padding: '14px 0 0', borderTop: '1px solid var(--stone)' }}>
       <div
-        className="flex items-end gap-2.5"
+        className="flex items-center gap-2.5"
         style={{
           background: 'var(--warm-cream)',
           border: '1px solid var(--stone)',
@@ -74,6 +74,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             color: 'var(--ink)',
             outline: 'none',
             resize: 'none',
+            paddingLeft: 6,
             minHeight: 22,
             maxHeight: 100,
             lineHeight: 1.5,
