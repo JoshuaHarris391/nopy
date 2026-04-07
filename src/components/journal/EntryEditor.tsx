@@ -305,7 +305,7 @@ export function EntryEditor() {
             placeholder="What's on your mind today?"
             style={{
               fontFamily: 'var(--font-display)',
-              fontSize: 28,
+              fontSize: 32,
               fontWeight: 700,
               color: 'var(--ink)',
               border: 'none',
@@ -439,7 +439,7 @@ export function EntryEditor() {
               style={{ fontSize: 12, padding: '7px 14px' }}
             >
               <MessageCircle size={13} strokeWidth={1.8} />
-              Explore with nopy
+              Start Session
             </Button>
           </div>
         </div>

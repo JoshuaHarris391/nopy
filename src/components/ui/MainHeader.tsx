@@ -18,7 +18,7 @@ export function MainHeader({ title, children }: MainHeaderProps) {
         style={{
           fontFamily: 'var(--font-display)',
           fontSize: 20,
-          fontWeight: 500,
+          fontWeight: 700,
           color: 'var(--ink)',
           letterSpacing: '-0.01em',
         }}

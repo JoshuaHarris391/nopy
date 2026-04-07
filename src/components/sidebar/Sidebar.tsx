@@ -7,7 +7,7 @@ const navItems = [
   { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Understand' },
   { to: '/profile', icon: Target, label: 'Profile', section: 'Understand' },
   { to: '/index', icon: List, label: 'Index', section: 'Understand' },
-  { to: '/settings', icon: Settings, label: 'Settings', section: 'Configure' },
+  { to: '/settings', icon: Settings, label: 'Settings', section: 'Adjust' },
 ]
 
 export function Sidebar() {

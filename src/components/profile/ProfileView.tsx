@@ -120,13 +120,13 @@ export function ProfileView() {
           ) : (
             <>
               {/* Summary */}
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
                 Summary
               </div>
               <div
                 style={{
                   fontFamily: 'var(--font-agent)',
-                  fontSize: 15.5,
+                  fontSize: 16,
                   lineHeight: 1.8,
                   color: 'var(--manuscript)',
                   padding: '22px 26px',
@@ -153,17 +153,17 @@ export function ProfileView() {
                 {/* Emotional Distribution */}
                 {profile.emotionalDistribution && profile.emotionalDistribution.length > 0 && (
                   <div style={{ marginTop: 20 }}>
-                    <div style={{ fontFamily: 'var(--font-ui)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', fontWeight: 600, marginBottom: 12 }}>
+                    <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', fontWeight: 600, marginBottom: 12 }}>
                       Emotional Distribution
                     </div>
                     <div className="flex flex-col gap-2">
                       {profile.emotionalDistribution.map((item: { label: string; percentage: number; color: string }) => (
-                        <div key={item.label} className="flex items-center gap-3" style={{ fontFamily: 'var(--font-ui)', fontSize: 12.5 }}>
+                        <div key={item.label} className="flex items-center gap-3" style={{ fontFamily: 'var(--font-ui)', fontSize: 13.5 }}>
                           <span style={{ width: 90, color: 'var(--manuscript)', flexShrink: 0 }}>{item.label}</span>
                           <div style={{ flex: 1, height: 8, background: 'var(--warm-cream)', borderRadius: 4, overflow: 'hidden' }}>
                             <div style={{ width: `${item.percentage}%`, height: '100%', background: item.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
                           </div>
-                          <span style={{ width: 36, textAlign: 'right', color: 'var(--sage)', fontSize: 11 }}>{item.percentage}%</span>
+                          <span style={{ width: 36, textAlign: 'right', color: 'var(--sage)', fontSize: 13.5 }}>{item.percentage}%</span>
                         </div>
                       ))}
                     </div>
@@ -180,7 +180,7 @@ export function ProfileView() {
                         key={theme.theme}
                         style={{
                           fontFamily: 'var(--font-ui)',
-                          fontSize: 12,
+                          fontSize: 13.5,
                           padding: '5px 13px',
                           background: i < 2 ? 'var(--bark)' : 'var(--warm-cream)',
                           border: i < 2 ? '1px solid var(--bark)' : '1px solid var(--stone)',
@@ -203,7 +203,7 @@ export function ProfileView() {
                 <ProfileSection title="Strengths">
                   <ul className="flex flex-col gap-2" style={{ listStyle: 'none', padding: 0 }}>
                     {profile.strengths.map((s) => (
-                      <li key={s} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
+                      <li key={s} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--manuscript)', lineHeight: 1.6 }}>
                         <span style={{ color: 'var(--gentle-green)', marginTop: 2 }}>●</span>
                         {s}
                       </li>
@@ -221,7 +221,7 @@ export function ProfileView() {
                         key={p.pattern}
                         style={{
                           fontFamily: 'var(--font-agent)',
-                          fontSize: 13.5,
+                          fontSize: 14,
                           color: 'var(--bark)',
                           padding: '14px 18px',
                           background: 'rgba(139, 115, 85, 0.06)',
@@ -257,7 +257,7 @@ export function ProfileView() {
                 <ProfileSection title="Growth Areas">
                   <ul className="flex flex-col gap-2" style={{ listStyle: 'none', padding: 0 }}>
                     {profile.growthAreas.map((g) => (
-                      <li key={g} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
+                      <li key={g} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--manuscript)', lineHeight: 1.6 }}>
                         <span style={{ color: 'var(--amber)', marginTop: 2 }}>●</span>
                         {g}
                       </li>
@@ -277,7 +277,7 @@ export function ProfileView() {
 function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 32, paddingBottom: 32, borderBottom: '1px solid var(--stone)' }}>
-      <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
+      <div style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
         {title}
       </div>
       {children}
