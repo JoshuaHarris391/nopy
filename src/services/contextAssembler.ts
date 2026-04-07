@@ -8,12 +8,19 @@ interface AssembledContext {
   messages: { role: 'user' | 'assistant'; content: string }[]
 }
 
+interface EntryContext {
+  title: string
+  content: string
+  date?: string
+}
+
 export function assembleContext(
   session: ChatSession,
   profile: PsychologicalProfile | null,
   entries: JournalEntry[],
   systemPrompt: string,
   maxTokens: number = 30000,
+  entryContext?: EntryContext,
 ): AssembledContext {
   // Build system prompt with profile
   let system = systemPrompt
@@ -27,6 +34,12 @@ export function assembleContext(
 
   if (profile && profile.themes.length > 0) {
     system += `\n\nRecurring themes: ${profile.themes.map((t) => t.theme).join(', ')}`
+  }
+
+  // Inject focused entry context (from "Start Session" in entry editor)
+  if (entryContext) {
+    const dateStr = entryContext.date ? new Date(entryContext.date).toLocaleDateString() : 'undated'
+    system += `\n\n## Current Session Focus\nThe user wants to discuss this specific journal entry:\n\n**${entryContext.title}** (${dateStr})\n\n${entryContext.content}\n\nBegin the session by responding warmly to their prompt to talk about this entry. You already have the full content above — do not ask them to share it again.`
   }
 
   // Inject entry index table

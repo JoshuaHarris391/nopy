@@ -1,5 +1,8 @@
 import { format } from 'date-fns'
+import { marked } from 'marked'
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
+
+marked.setOptions({ breaks: true })
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -11,6 +14,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div style={{ animation: 'msgIn 350ms ease-out' }}>
       <div
+        className={isAgent ? 'chat-message-content' : undefined}
         style={
           isAgent
             ? {
@@ -19,7 +23,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 lineHeight: 1.8,
                 color: 'var(--manuscript)',
                 fontWeight: 400,
-                whiteSpace: 'pre-wrap',
               }
             : {
                 background: 'var(--warm-cream)',
@@ -29,12 +32,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 fontSize: 18,
                 lineHeight: 1.7,
                 color: 'var(--ink)',
-                whiteSpace: 'pre-wrap',
               }
         }
       >
-        {message.content}
-        {message.streaming && message.content === '' && <TypingDots />}
+        {message.streaming && message.content === ''
+          ? <TypingDots />
+          : <span dangerouslySetInnerHTML={{ __html: marked.parse(message.content) as string }} />}
       </div>
       <div
         style={{

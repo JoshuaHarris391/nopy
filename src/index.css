@@ -163,6 +163,14 @@ body::before {
   transform: scale(0.95);
 }
 
+/* ── Chat Message Prose ── */
+.chat-message-content p {
+  margin-bottom: 0.85em;
+}
+.chat-message-content p:last-child {
+  margin-bottom: 0;
+}
+
 /* ── Reduced Motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -96,7 +96,7 @@ export function ChatView() {
     await loadSession(id)
   }, [loadSession])
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSend = useCallback(async (content: string, entryContext?: { title: string; content: string; date?: string }) => {
     if (!apiKey || streamingRef.current) return
 
     // Create session if none active
@@ -132,7 +132,7 @@ export function ChatView() {
 
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
-    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT)
+    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, maxTokens, entryContext)
     const filteredMessages = messages.filter((m) => !!m.content)
 
     if (filteredMessages.length === 0) {
@@ -191,12 +191,14 @@ export function ChatView() {
     entryContextHandled.current = true
     navigate('/chat', { replace: true, state: null })
 
-    const message = `As a clinical psychologist, start a session focused on this entry:\n\n**${state.entryTitle || 'Untitled'}** (${state.entryDate ? new Date(state.entryDate).toLocaleDateString() : 'undated'})\n\n${state.entryContent}`
+    const entryTitle = state.entryTitle || 'Untitled'
+    const visibleMessage = `Let's talk about "${entryTitle}"`
+    const entryContext = { title: entryTitle, content: state.entryContent, date: state.entryDate }
 
     ;(async () => {
       await createSession()
       // Let session state settle, then send
-      setTimeout(() => handleSend(message), 100)
+      setTimeout(() => handleSend(visibleMessage, entryContext), 100)
     })()
   }, [location.state, apiKey, loaded, navigate, createSession, handleSend])
 
