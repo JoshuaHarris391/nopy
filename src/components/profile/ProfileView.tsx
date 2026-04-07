@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
@@ -8,14 +8,49 @@ import { Button } from '../ui/Button'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 
 export function ProfileView() {
   const { profile, loaded, loadProfile, generating, phase, progress } = useProfileStore()
-  const { loaded: journalLoaded, loadEntries } = useJournalStore()
+  const { loaded: journalLoaded, loadEntries, entries } = useJournalStore()
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)
+  const [moodRange, setMoodRange] = useState<Range>('month')
+  const [moodOffset, setMoodOffset] = useState(0)
+
+  const moodLabelColors: Record<string, string> = {
+    great: 'var(--gentle-green)',
+    good: 'var(--sage)',
+    neutral: 'var(--dusk-blue)',
+    mixed: 'var(--amber)',
+    low: 'var(--soft-coral)',
+  }
+
+  const windowedDistribution = useMemo(() => {
+    const { start, end } = getWindow(moodRange, moodOffset)
+    const s = start.getTime()
+    const e = end.getTime()
+    const windowed = entries.filter(
+      (entry) => entry.mood && entry.mood.label && new Date(entry.createdAt).getTime() >= s && new Date(entry.createdAt).getTime() <= e,
+    )
+    if (windowed.length === 0) return []
+    const counts: Record<string, number> = {}
+    for (const entry of windowed) {
+      const label = entry.mood!.label
+      counts[label] = (counts[label] || 0) + 1
+    }
+    const total = windowed.length
+    const order = ['great', 'good', 'neutral', 'mixed', 'low']
+    return order
+      .filter((l) => counts[l])
+      .map((l) => ({
+        label: l.charAt(0).toUpperCase() + l.slice(1),
+        percentage: Math.round((counts[l] / total) * 100),
+        color: moodLabelColors[l] || 'var(--sage)',
+      }))
+  }, [entries, moodRange, moodOffset])
 
   useEffect(() => {
     if (!loaded) loadProfile()
@@ -66,11 +101,11 @@ export function ProfileView() {
             >
               {generating ? (
                 <>
-                  <span style={{ visibility: profileHovered ? 'hidden' : 'visible' }}><RefreshCw size={13} strokeWidth={1.8} style={{ animation: 'spin 1s linear infinite' }} />{phase || 'Generating...'}</span>
+                  <span style={{ visibility: profileHovered ? 'hidden' : 'visible' }}><RefreshCw size={13} strokeWidth={1.8} style={{ animation: 'spin 1s linear infinite' }} />Creating</span>
                   <span style={{ visibility: profileHovered ? 'visible' : 'hidden' }}><RefreshCw size={13} strokeWidth={1.8} />Stop</span>
                 </>
               ) : (
-                <><RefreshCw size={13} strokeWidth={1.8} />Generate Profile</>
+                <><RefreshCw size={13} strokeWidth={1.8} />Generate</>
               )}
             </Button>
             {profile?.fullProfile && (
@@ -150,14 +185,22 @@ export function ProfileView() {
                   <MetricCard label="Reflection Depth" value={profile.reflectionDepth ?? '--'} />
                 </div>
 
-                {/* Emotional Distribution */}
-                {profile.emotionalDistribution && profile.emotionalDistribution.length > 0 && (
+                <MoodTimeline
+                  entries={entries}
+                  range={moodRange}
+                  offset={moodOffset}
+                  onRangeChange={setMoodRange}
+                  onOffsetChange={setMoodOffset}
+                />
+
+                {/* Emotional Distribution — computed from current mood window */}
+                {windowedDistribution.length > 0 && (
                   <div style={{ marginTop: 20 }}>
                     <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', fontWeight: 600, marginBottom: 12 }}>
                       Emotional Distribution
                     </div>
                     <div className="flex flex-col gap-2">
-                      {profile.emotionalDistribution.map((item: { label: string; percentage: number; color: string }) => (
+                      {windowedDistribution.map((item) => (
                         <div key={item.label} className="flex items-center gap-3" style={{ fontFamily: 'var(--font-ui)', fontSize: 13.5 }}>
                           <span style={{ width: 90, color: 'var(--manuscript)', flexShrink: 0 }}>{item.label}</span>
                           <div style={{ flex: 1, height: 8, background: 'var(--warm-cream)', borderRadius: 4, overflow: 'hidden' }}>
