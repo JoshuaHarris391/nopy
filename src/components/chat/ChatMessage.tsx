@@ -1,5 +1,4 @@
 import { format } from 'date-fns'
-import { AgentAvatar } from './AgentAvatar'
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 interface ChatMessageProps {
@@ -10,52 +9,42 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const isAgent = message.role === 'assistant'
 
   return (
-    <div
-      className={`flex gap-3 ${isAgent ? 'self-start' : 'self-end flex-row-reverse'}`}
-      style={{ maxWidth: '88%', animation: 'msgIn 350ms ease-out' }}
-    >
-      {isAgent && <AgentAvatar />}
-      <div>
-        <div
-          style={
-            isAgent
-              ? {
-                  padding: '14px 18px',
-                  borderLeft: '2px solid var(--bark)',
-                  fontFamily: 'var(--font-agent)',
-                  fontSize: 18,
-                  lineHeight: 1.7,
-                  color: 'var(--manuscript)',
-                  fontWeight: 400,
-                  whiteSpace: 'pre-wrap',
-                }
-              : {
-                  background: 'var(--warm-cream)',
-                  border: '1px solid var(--stone)',
-                  padding: '13px 17px',
-                  borderRadius: 'var(--radius-md)',
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: 18,
-                  lineHeight: 1.6,
-                  color: 'var(--ink)',
-                  whiteSpace: 'pre-wrap',
-                }
-          }
-        >
-          {message.content}
-          {message.streaming && message.content === '' && <TypingDots />}
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: 10.5,
-            color: 'var(--stone)',
-            marginTop: 5,
-            textAlign: isAgent ? 'left' : 'right',
-          }}
-        >
-          {format(new Date(message.timestamp), 'h:mm a')}
-        </div>
+    <div style={{ animation: 'msgIn 350ms ease-out' }}>
+      <div
+        style={
+          isAgent
+            ? {
+                fontFamily: 'var(--font-body)',
+                fontSize: 20,
+                lineHeight: 1.8,
+                color: 'var(--manuscript)',
+                fontWeight: 400,
+                whiteSpace: 'pre-wrap',
+              }
+            : {
+                background: 'var(--warm-cream)',
+                borderRadius: 8,
+                padding: '20px 24px',
+                fontFamily: 'var(--font-body)',
+                fontSize: 18,
+                lineHeight: 1.7,
+                color: 'var(--ink)',
+                whiteSpace: 'pre-wrap',
+              }
+        }
+      >
+        {message.content}
+        {message.streaming && message.content === '' && <TypingDots />}
+      </div>
+      <div
+        style={{
+          fontFamily: 'var(--font-ui)',
+          fontSize: 10.5,
+          color: 'var(--stone)',
+          marginTop: 6,
+        }}
+      >
+        {format(new Date(message.timestamp), 'h:mm a')}
       </div>
     </div>
   )
@@ -71,7 +60,7 @@ function TypingDots() {
           style={{
             width: 6,
             height: 6,
-            background: 'var(--bark)',
+            background: 'var(--forest)',
             animation: `typing 1.5s ease-in-out ${i * 0.2}s infinite`,
           }}
         />

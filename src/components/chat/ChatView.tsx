@@ -29,6 +29,7 @@ export function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
+  const rafRef = useRef<number | null>(null)
   const streamingRef = useRef(false)
   const entryContextHandled = useRef(false)
 
@@ -36,17 +37,55 @@ export function ChatView() {
     if (!loaded) loadSessionList()
   }, [loaded, loadSessionList])
 
-  // Auto-scroll on new messages, but only if user is near the bottom
+  // Smooth momentum scroll toward bottom using lerp
+  const smoothScrollToBottom = useCallback(() => {
+    if (rafRef.current !== null) return // already running
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    const tick = () => {
+      const target = el.scrollHeight - el.clientHeight
+      const current = el.scrollTop
+      const delta = target - current
+
+      if (Math.abs(delta) < 1) {
+        el.scrollTop = target
+        rafRef.current = null
+        return
+      }
+
+      // Lerp with dampening — 12% per frame feels smooth but responsive
+      el.scrollTop += delta * 0.12
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  // Trigger smooth scroll on message updates if near bottom
   useEffect(() => {
     if (isNearBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      smoothScrollToBottom()
     }
-  }, [activeSession?.messages])
+  }, [activeSession?.messages, smoothScrollToBottom])
+
+  // Cancel any in-flight scroll animation on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
     if (!el) return
-    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    isNearBottomRef.current = distFromBottom < 80
+    // If user scrolled up manually, cancel the momentum animation
+    if (distFromBottom > 80 && rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
   }, [])
 
   const handleNewSession = useCallback(async () => {
@@ -187,65 +226,65 @@ export function ChatView() {
         </div>
 
         {/* Chat area */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ padding: '0 24px' }}>
-          {!activeSession ? (
-            // Empty state
-            <div className="flex-1 flex flex-col items-center justify-center text-center">
-              <div
-                className="flex items-center justify-center"
-                style={{
-                  width: 48, height: 48, borderRadius: 12,
-                  background: 'linear-gradient(135deg, var(--bark), var(--amber))',
-                  marginBottom: 16,
-                }}
-              >
-                <Leaf size={24} color="white" strokeWidth={1.8} />
-              </div>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
-                Start a conversation
-              </h3>
-              <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--sage)', maxWidth: 320, marginBottom: 20 }}>
-                {apiKey
-                  ? "Share what's on your mind. I'm here to listen and help you explore your thoughts."
-                  : 'Add your Anthropic API key in Settings to begin chatting.'}
-              </p>
-              {apiKey && (
-                <button
-                  onClick={handleNewSession}
-                  className="cursor-pointer flex items-center gap-2"
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto"
+          style={{ padding: '36px 44px 0 44px' }}
+        >
+          <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
+            {!activeSession ? (
+              // Empty state
+              <div className="flex flex-col items-center justify-center text-center" style={{ paddingTop: 120 }}>
+                <div
+                  className="flex items-center justify-center"
                   style={{
-                    fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500,
-                    padding: '7px 16px', borderRadius: 'var(--radius-sm)',
-                    background: 'var(--forest)', color: 'white', border: 'none',
-                    boxShadow: '0 2px 6px rgba(91, 127, 94, 0.22)',
+                    width: 48, height: 48, borderRadius: 12,
+                    background: 'linear-gradient(135deg, var(--bark), var(--amber))',
+                    marginBottom: 16,
                   }}
                 >
-                  <MessageCircle size={14} strokeWidth={2} />
-                  New conversation
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Messages */}
-              <div
-                ref={scrollContainerRef}
-                onScroll={handleScroll}
-                className="flex-1 flex flex-col gap-4 overflow-y-auto"
-                style={{ maxWidth: 663, margin: '0 auto', width: '100%', padding: '24px 0 16px' }}
-              >
-                {activeSession.messages.map((msg) => (
-                  <ChatMessage key={msg.id} message={msg} />
-                ))}
-                <div ref={messagesEndRef} />
+                  <Leaf size={24} color="white" strokeWidth={1.8} />
+                </div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
+                  Start a conversation
+                </h3>
+                <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--sage)', maxWidth: 320, marginBottom: 20 }}>
+                  {apiKey
+                    ? "Share what's on your mind. I'm here to listen and help you explore your thoughts."
+                    : 'Add your Anthropic API key in Settings to begin chatting.'}
+                </p>
+                {apiKey && (
+                  <button
+                    onClick={handleNewSession}
+                    className="cursor-pointer flex items-center gap-2"
+                    style={{
+                      fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500,
+                      padding: '7px 16px', borderRadius: 'var(--radius-sm)',
+                      background: 'var(--forest)', color: 'white', border: 'none',
+                      boxShadow: '0 2px 6px rgba(91, 127, 94, 0.22)',
+                    }}
+                  >
+                    <MessageCircle size={14} strokeWidth={2} />
+                    New conversation
+                  </button>
+                )}
               </div>
+            ) : (
+              <>
+                {/* Messages */}
+                <div className="flex flex-col" style={{ gap: 32 }}>
+                  {activeSession.messages.map((msg) => (
+                    <ChatMessage key={msg.id} message={msg} />
+                  ))}
+                </div>
 
-              {/* Input */}
-              <div style={{ maxWidth: 663, margin: '0 auto', width: '100%', paddingBottom: 16 }}>
+                {/* Inline input */}
                 <ChatInput onSend={handleSend} disabled={!apiKey || isStreaming} />
-              </div>
-            </>
-          )}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </>
