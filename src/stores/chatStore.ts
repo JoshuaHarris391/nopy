@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
-import type { ChatSession, ChatSessionMeta, ChatMessage } from '../types/chat'
+import type { ChatSession, ChatSessionMeta, ChatMessage, ChatEntryContext } from '../types/chat'
 
 interface ChatState {
   sessions: ChatSessionMeta[]
@@ -9,7 +9,7 @@ interface ChatState {
   loaded: boolean
 
   loadSessionList: () => Promise<void>
-  createSession: () => Promise<string>
+  createSession: (entryContext?: ChatEntryContext) => Promise<string>
   loadSession: (id: string) => Promise<void>
   addMessage: (message: ChatMessage) => Promise<void>
   updateStreamingMessage: (content: string) => void
@@ -45,7 +45,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
     setState({ sessions: meta ?? [], loaded: true })
   },
 
-  createSession: async () => {
+  createSession: async (entryContext?: ChatEntryContext) => {
     const now = new Date().toISOString()
     const session: ChatSession = {
       id: crypto.randomUUID(),
@@ -55,6 +55,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
       createdAt: now,
       updatedAt: now,
       status: 'active',
+      entryContext: entryContext ?? null,
     }
     await set(`chat:session:${session.id}`, session)
     const meta = toMeta(session)

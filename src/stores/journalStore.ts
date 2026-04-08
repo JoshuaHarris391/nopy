@@ -13,18 +13,28 @@ interface JournalState {
   entries: JournalEntry[]
   loaded: boolean
   syncing: boolean
+  forceProcessing: boolean
+  forceProgress: { current: number; total: number; title: string }
+  forceResult: string | null
+  forceAbortController: AbortController | null
   loadEntries: () => Promise<void>
   addEntry: (entry: JournalEntry) => Promise<void>
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
   processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
+  startForceUpdate: (apiKey: string) => Promise<void>
+  stopForceUpdate: () => void
 }
 
 export const useJournalStore = create<JournalState>()((setState, getState) => ({
   entries: [],
   loaded: false,
   syncing: false,
+  forceProcessing: false,
+  forceProgress: { current: 0, total: 0, title: '' },
+  forceResult: null,
+  forceAbortController: null,
 
   loadEntries: async () => {
     const entries = await get<JournalEntry[]>('nopy-entries')
@@ -153,5 +163,36 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     }
 
     return results.size
+  },
+
+  startForceUpdate: async (apiKey) => {
+    if (getState().forceProcessing) {
+      getState().stopForceUpdate()
+      return
+    }
+    const controller = new AbortController()
+    setState({ forceProcessing: true, forceResult: null, forceProgress: { current: 0, total: 0, title: '' }, forceAbortController: controller })
+    try {
+      const count = await getState().processEntries(apiKey, true, (current, total, title) => {
+        setState({ forceProgress: { current, total, title } })
+      }, controller.signal)
+      if (!controller.signal.aborted) {
+        setState({ forceResult: `Done — ${count} entries reprocessed` })
+        setTimeout(() => setState({ forceResult: null }), 3000)
+      }
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setState({ forceResult: 'Reprocessing stopped' })
+      } else {
+        setState({ forceResult: 'Reprocessing failed' })
+      }
+      setTimeout(() => setState({ forceResult: null }), 3000)
+    } finally {
+      setState({ forceProcessing: false, forceAbortController: null })
+    }
+  },
+
+  stopForceUpdate: () => {
+    getState().forceAbortController?.abort()
   },
 }))

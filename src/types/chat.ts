@@ -6,6 +6,12 @@ export interface ChatMessage {
   streaming?: boolean
 }
 
+export interface ChatEntryContext {
+  title: string
+  content: string
+  date?: string
+}
+
 export interface ChatSession {
   id: string
   title: string
@@ -14,6 +20,7 @@ export interface ChatSession {
   createdAt: string
   updatedAt: string
   status: 'active' | 'archived'
+  entryContext?: ChatEntryContext | null
 }
 
 export interface ChatSessionMeta {

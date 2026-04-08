@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Eye, EyeOff, FolderOpen, Zap, BookOpen, Sun, Moon } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { ProgressBar } from '../ui/ProgressBar'
@@ -19,40 +19,15 @@ export function SettingsView() {
   const [keyInput, setKeyInput] = useState(apiKey)
   const [showNewJournalConfirm, setShowNewJournalConfirm] = useState(false)
   const [newJournalStatus, setNewJournalStatus] = useState<string | null>(null)
-  const [forceProcessing, setForceProcessing] = useState(false)
-  const [forceProgress, setForceProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
-  const [forceResult, setForceResult] = useState<string | null>(null)
-  const forceAbortRef = useRef<AbortController | null>(null)
+  const forceProcessing = useJournalStore((s) => s.forceProcessing)
+  const forceProgress = useJournalStore((s) => s.forceProgress)
+  const forceResult = useJournalStore((s) => s.forceResult)
   const [forceHovered, setForceHovered] = useState(false)
 
-  const handleForceUpdate = useCallback(async () => {
+  const handleForceUpdate = useCallback(() => {
     if (!apiKey) return
-    if (forceProcessing) {
-      forceAbortRef.current?.abort()
-      return
-    }
-    const controller = new AbortController()
-    forceAbortRef.current = controller
-    setForceProcessing(true)
-    setForceResult(null)
-    try {
-      const count = await useJournalStore.getState().processEntries(apiKey, true, (current, total, title) => {
-        setForceProgress({ current, total, title })
-      }, controller.signal)
-      setForceResult(`${count} ${count === 1 ? 'entry' : 'entries'} reprocessed`)
-      setTimeout(() => setForceResult(null), 3000)
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        setForceResult('Cancelled')
-      } else {
-        setForceResult('Reprocessing failed')
-      }
-      setTimeout(() => setForceResult(null), 3000)
-    } finally {
-      forceAbortRef.current = null
-      setForceProcessing(false)
-    }
-  }, [forceProcessing, apiKey])
+    useJournalStore.getState().startForceUpdate(apiKey)
+  }, [apiKey])
 
   const handleNewJournal = useCallback(async () => {
     const path = await pickJournalDirectory()

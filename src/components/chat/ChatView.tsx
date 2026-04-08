@@ -107,7 +107,7 @@ export function ChatView() {
     await loadSession(id)
   }, [loadSession])
 
-  const handleSend = useCallback(async (content: string, entryContext?: { title: string; content: string; date?: string }) => {
+  const handleSend = useCallback(async (content: string) => {
     if (!apiKey || streamingRef.current) return
 
     // Create session if none active
@@ -143,7 +143,7 @@ export function ChatView() {
 
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
-    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, contextBudget, entryContext)
+    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, contextBudget, session.entryContext ?? undefined)
     const filteredMessages = messages.filter((m) => !!m.content)
 
     if (filteredMessages.length === 0) {
@@ -195,6 +195,7 @@ export function ChatView() {
     )
   }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
 
+
   // Handle "Explore with nopy" entry context from router state
   useEffect(() => {
     const state = location.state as { entryTitle?: string; entryContent?: string; entryDate?: string } | null
@@ -207,9 +208,9 @@ export function ChatView() {
     const entryContext = { title: entryTitle, content: state.entryContent, date: state.entryDate }
 
     ;(async () => {
-      await createSession()
+      await createSession(entryContext)
       // Let session state settle, then send
-      setTimeout(() => handleSend(visibleMessage, entryContext), 100)
+      setTimeout(() => handleSend(visibleMessage), 100)
     })()
   }, [location.state, apiKey, loaded, navigate, createSession, handleSend])
 
