@@ -1,8 +1,7 @@
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
-import { ThumbsUp, BookOpen, Clock } from 'lucide-react'
+import { BookOpen, Clock } from 'lucide-react'
 import { MoodDot } from '../ui/MoodDot'
-import { Tag } from '../ui/Tag'
 import type { JournalEntry } from '../../types/journal'
 
 interface EntryCardProps {
@@ -61,17 +60,12 @@ export function EntryCard({ entry, index }: EntryCardProps) {
           }}
         />
 
-        {/* Meta row */}
+        {/* Mood dot + date */}
         <div className="flex items-center gap-2.5" style={{ marginBottom: 7 }}>
           <MoodDot mood={entry.mood} />
           <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', fontWeight: 500 }}>
             {format(date, 'd MMMM yyyy')}
           </span>
-          <div className="flex gap-1.5 ml-auto">
-            {entry.tags.map((tag) => (
-              <Tag key={tag}>{tag}</Tag>
-            ))}
-          </div>
         </div>
 
         {/* Title */}
@@ -89,38 +83,55 @@ export function EntryCard({ entry, index }: EntryCardProps) {
           {entry.title || 'Untitled'}
         </div>
 
-        {/* Preview */}
+        {/* Preview — raw markdown, 3 line clamp */}
         <div
           style={{
             fontFamily: 'var(--font-body)',
-            fontSize: 13.5,
+            fontSize: 14,
             color: 'var(--manuscript)',
             lineHeight: 1.65,
             display: '-webkit-box',
-            WebkitLineClamp: 2,
+            WebkitLineClamp: 3,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
             opacity: 0.75,
+            marginBottom: 10,
           }}
         >
           {entry.content || 'No content yet...'}
         </div>
 
-        {/* Footer */}
+        {/* Tags */}
+        {entry.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1" style={{ marginBottom: 10 }}>
+            {entry.tags.map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 12,
+                  padding: '2px 8px',
+                  background: 'var(--warm-cream)',
+                  border: '1px solid var(--stone)',
+                  borderRadius: 10,
+                  color: 'var(--bark)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Footer — word count + time only */}
         <div
           className="flex items-center gap-4"
           style={{
-            marginTop: 12,
             paddingTop: 10,
             borderTop: '1px solid rgba(212, 201, 184, 0.4)',
           }}
         >
-          {entry.mood && (
-            <span className="flex items-center gap-1" style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--sage)' }}>
-              <ThumbsUp size={12} strokeWidth={1.8} />
-              {entry.mood.value}/10
-            </span>
-          )}
           <span className="flex items-center gap-1" style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--sage)' }}>
             <BookOpen size={12} strokeWidth={1.8} />
             {wordCount} words

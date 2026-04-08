@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
+import nopyLogo from '../../assets/nopy_logo.png'
 
 const navItems = [
   { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
@@ -18,6 +19,7 @@ export function Sidebar() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const theme = useSettingsStore((s) => s.theme)
   const [reducedMotion, setReducedMotion] = useState(false)
 
   // Respect prefers-reduced-motion
@@ -64,21 +66,42 @@ export function Sidebar() {
         }}
       >
         {collapsed ? (
-          <BookOpen size={20} strokeWidth={1.5} style={{ color: 'var(--sage)' }} />
-        ) : (
-          <h1
+          <img
+            src={nopyLogo}
+            alt="nopy"
             style={{
-              fontFamily: 'var(--font-title)',
-              fontSize: 32,
-              fontWeight: 700,
-              color: 'var(--ink)',
-              letterSpacing: '-0.02em',
-              lineHeight: 1,
-              margin: 0,
+              width: 28,
+              height: 28,
+              objectFit: 'contain',
+              filter: theme === 'dark' ? 'invert(1)' : 'none',
             }}
-          >
-            nopy
-          </h1>
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img
+              src={nopyLogo}
+              alt="nopy"
+              style={{
+                width: 28,
+                height: 28,
+                objectFit: 'contain',
+                filter: theme === 'dark' ? 'invert(1)' : 'none',
+              }}
+            />
+            <h1
+              style={{
+                fontFamily: 'var(--font-title)',
+                fontSize: 32,
+                fontWeight: 700,
+                color: 'var(--ink)',
+                letterSpacing: '-0.02em',
+                lineHeight: 1,
+                margin: 0,
+              }}
+            >
+              nopy
+            </h1>
+          </div>
         )}
       </div>
 
