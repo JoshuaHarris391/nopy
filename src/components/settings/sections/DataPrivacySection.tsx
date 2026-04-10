@@ -7,7 +7,6 @@ import { useSettingsStore } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../../services/fs'
-import { del } from 'idb-keyval'
 
 export function DataPrivacySection() {
   const journalPath = useSettingsStore((s) => s.journalPath)
@@ -20,10 +19,8 @@ export function DataPrivacySection() {
     const path = await pickJournalDirectory()
     if (!path) return
 
-    await del('nopy-entries')
-    await del('nopy-profile')
-    useJournalStore.setState({ entries: [], loaded: false })
-    useProfileStore.setState({ profile: null, loaded: false })
+    await useJournalStore.getState().clear()
+    await useProfileStore.getState().clear()
 
     setJournalPath(path)
     await grantFsScope(path)

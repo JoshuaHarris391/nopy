@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { get, set } from 'idb-keyval'
+import { get, set, del } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
+import type { MoodScore } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
 import { processAllEntries } from '../services/entryProcessor'
 import { useSettingsStore } from './settingsStore'
@@ -24,9 +25,11 @@ interface JournalState {
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
+  applyProcessedMetadata: (results: Map<string, { mood: MoodScore | null; tags: string[]; summary: string }>) => Promise<void>
   processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
   startForceUpdate: (apiKey: string) => Promise<void>
   stopForceUpdate: () => void
+  clear: () => Promise<void>
 }
 
 export const useJournalStore = create<JournalState>()((setState, getState) => ({
@@ -164,31 +167,29 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     }
   },
 
-  processEntries: async (apiKey, force, onProgress, signal) => {
-    console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
-    const { entries } = getState()
-    const results = await processAllEntries(entries, apiKey, force, onProgress, signal)
-
-    if (results.size === 0) return 0
-
-    // Batch update all entries in state
+  applyProcessedMetadata: async (results) => {
+    if (results.size === 0) return
     const now = new Date().toISOString()
-    const updated = entries.map((e) => {
+    const entries = getState().entries.map((e) => {
       const meta = results.get(e.id)
       if (!meta) return e
       return { ...e, mood: e.mood ?? meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
     })
-
-    setState({ entries: updated })
-    await set('nopy-entries', updated)
-
-    // Save each processed entry to disk
+    setState({ entries })
+    await set('nopy-entries', entries)
     const journalPath = getJournalPath()
     for (const [id] of results) {
-      const entry = updated.find((e) => e.id === id)
+      const entry = entries.find((e) => e.id === id)
       if (entry) await saveEntryToDisk(entry, journalPath)
     }
+  },
 
+  processEntries: async (apiKey, force, onProgress, signal) => {
+    console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
+    const { entries } = getState()
+    const results = await processAllEntries(entries, apiKey, force, onProgress, signal)
+    if (results.size === 0) return 0
+    await getState().applyProcessedMetadata(results)
     return results.size
   },
 
@@ -221,5 +222,10 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
 
   stopForceUpdate: () => {
     getState().forceAbortController?.abort()
+  },
+
+  clear: async () => {
+    setState({ entries: [], loaded: false })
+    await del('nopy-entries')
   },
 }))

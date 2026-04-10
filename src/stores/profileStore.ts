@@ -1,12 +1,11 @@
 import { create } from 'zustand'
-import { get, set } from 'idb-keyval'
+import { get, set, del } from 'idb-keyval'
 import type { PsychologicalProfile } from '../types/profile'
 import type { JournalEntry } from '../types/journal'
 import { saveProfileToDisk } from '../services/fs'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { useJournalStore } from './journalStore'
-import { saveEntryToDisk } from '../services/fs'
 
 interface ProfileState {
   profile: PsychologicalProfile | null
@@ -23,6 +22,7 @@ interface ProfileState {
     apiKey: string,
     signal?: AbortSignal,
   ) => Promise<void>
+  clear: () => Promise<void>
 }
 
 export const useProfileStore = create<ProfileState>()((setState, getState) => ({
@@ -66,23 +66,9 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       setPhase(`Step 1/5 — Indexing ${unindexed.length} unprocessed entries...`)
       const results = await processAllEntries(entries, apiKey, false, setProgress, signal)
       if (results.size > 0) {
-        const journalStore = useJournalStore.getState()
-        const now = new Date().toISOString()
-        const updated = journalStore.entries.map((e) => {
-          const meta = results.get(e.id)
-          if (!meta) return e
-          return { ...e, mood: meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
-        })
-        useJournalStore.setState({ entries: updated })
-        await set('nopy-entries', updated)
-        // Write processed entries to disk
-        const journalPath = useSettingsStore.getState().journalPath
-        for (const [id] of results) {
-          const entry = updated.find((e) => e.id === id)
-          if (entry) await saveEntryToDisk(entry, journalPath)
-        }
+        await useJournalStore.getState().applyProcessedMetadata(results)
+        entries = useJournalStore.getState().entries
         console.log('[profileStore] Step 1/5: processed', results.size, 'entries')
-        entries = updated
       }
     } else {
       console.log('[profileStore] Step 1/5: all entries already indexed')
@@ -150,5 +136,10 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     } finally {
       setTimeout(() => setState({ generating: false, phase: '' }), 2000)
     }
+  },
+
+  clear: async () => {
+    setState({ profile: null, loaded: false })
+    await del('nopy-profile')
   },
 }))
