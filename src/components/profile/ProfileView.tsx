@@ -20,15 +20,14 @@ export function ProfileView() {
   const [moodRange, setMoodRange] = useState<Range>('month')
   const [moodOffset, setMoodOffset] = useState(0)
 
-  const moodLabelColors: Record<string, string> = {
-    great: 'var(--gentle-green)',
-    good: 'var(--sage)',
-    neutral: 'var(--dusk-blue)',
-    mixed: 'var(--amber)',
-    low: 'var(--soft-coral)',
-  }
-
   const windowedDistribution = useMemo(() => {
+    const moodLabelColors: Record<string, string> = {
+      great: 'var(--gentle-green)',
+      good: 'var(--sage)',
+      neutral: 'var(--dusk-blue)',
+      mixed: 'var(--amber)',
+      low: 'var(--soft-coral)',
+    }
     const { start, end } = getWindow(moodRange, moodOffset)
     const s = start.getTime()
     const e = end.getTime()
@@ -139,7 +138,7 @@ export function ProfileView() {
           </>
         ) : (
         <div style={{ maxWidth: 760, margin: '0 auto', width: '100%' }}>
-          {showFullProfile && profile?.fullProfile ? (
+          {showFullProfile && profile!.fullProfile ? (
             <div
               className="profile-markdown"
               style={{
@@ -150,7 +149,7 @@ export function ProfileView() {
                 maxWidth: 760,
                 margin: '0 auto',
               }}
-              dangerouslySetInnerHTML={{ __html: marked(profile.fullProfile) as string }}
+              dangerouslySetInnerHTML={{ __html: marked(profile!.fullProfile) as string }}
             />
           ) : (
             <>
@@ -173,16 +172,16 @@ export function ProfileView() {
                   fontWeight: 400,
                 }}
               >
-                {profile.summary}
+                {profile!.summary}
               </div>
 
               {/* Wellbeing Metrics */}
               <ProfileSection title="Wellbeing Overview">
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))' }}>
-                  <MetricCard label="Average Mood" value={profile.averageMood != null ? String(profile.averageMood.toFixed(1)) : '--'} />
-                  <MetricCard label="Journaling Streak" value={profile.journalingStreak != null ? `${profile.journalingStreak}d` : '--'} />
-                  <MetricCard label="Avg Entry Length" value={profile.avgEntryLength != null ? `${profile.avgEntryLength}w` : '--'} />
-                  <MetricCard label="Reflection Depth" value={profile.reflectionDepth ?? '--'} />
+                  <MetricCard label="Average Mood" value={profile!.averageMood != null ? String(profile!.averageMood.toFixed(1)) : '--'} />
+                  <MetricCard label="Journaling Streak" value={profile!.journalingStreak != null ? `${profile!.journalingStreak}d` : '--'} />
+                  <MetricCard label="Avg Entry Length" value={profile!.avgEntryLength != null ? `${profile!.avgEntryLength}w` : '--'} />
+                  <MetricCard label="Reflection Depth" value={profile!.reflectionDepth ?? '--'} />
                 </div>
 
                 <MoodTimeline
@@ -215,10 +214,10 @@ export function ProfileView() {
               </ProfileSection>
 
               {/* Themes */}
-              {profile.themes.length > 0 && (
+              {profile!.themes.length > 0 && (
                 <ProfileSection title="Recurring Themes">
                   <div className="flex flex-wrap gap-2">
-                    {profile.themes.map((theme, i) => (
+                    {profile!.themes.map((theme, i) => (
                       <span
                         key={theme.theme}
                         style={{
@@ -242,10 +241,10 @@ export function ProfileView() {
               )}
 
               {/* Strengths */}
-              {profile.strengths.length > 0 && (
+              {profile!.strengths.length > 0 && (
                 <ProfileSection title="Strengths">
                   <ul className="flex flex-col gap-2" style={{ listStyle: 'none', padding: 0 }}>
-                    {profile.strengths.map((s) => (
+                    {profile!.strengths.map((s) => (
                       <li key={s} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--manuscript)', lineHeight: 1.6 }}>
                         <span style={{ color: 'var(--gentle-green)', marginTop: 2 }}>●</span>
                         {s}
@@ -256,10 +255,10 @@ export function ProfileView() {
               )}
 
               {/* Framework Insights */}
-              {profile.frameworkInsights.length > 0 && (
+              {profile!.frameworkInsights.length > 0 && (
                 <ProfileSection title="Therapeutic Observations">
                   <div className="flex flex-col gap-2.5">
-                    {profile.cognitivePatterns.map((p) => (
+                    {profile!.cognitivePatterns.map((p) => (
                       <div
                         key={p.pattern}
                         style={{
@@ -296,10 +295,10 @@ export function ProfileView() {
               )}
 
               {/* Growth Areas */}
-              {profile.growthAreas.length > 0 && (
+              {profile!.growthAreas.length > 0 && (
                 <ProfileSection title="Growth Areas">
                   <ul className="flex flex-col gap-2" style={{ listStyle: 'none', padding: 0 }}>
-                    {profile.growthAreas.map((g) => (
+                    {profile!.growthAreas.map((g) => (
                       <li key={g} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--manuscript)', lineHeight: 1.6 }}>
                         <span style={{ color: 'var(--amber)', marginTop: 2 }}>●</span>
                         {g}

@@ -116,7 +116,7 @@ No markdown, just JSON.`,
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
     const parsed = ProfileResponseSchema.parse(JSON.parse(cleaned))
     console.log('[entryProcessor] generateProfileFromEntries: parsed ok — themes:', parsed.themes.length, '| cognitivePatterns:', parsed.cognitivePatterns.length, '| strengths:', parsed.strengths.length)
-    return parsed
+    return { ...parsed, fullProfile: null }
   } catch (e) {
     console.error('[entryProcessor] generateProfileFromEntries: parse failed — response length:', response.length, 'chars |', e)
     throw new Error(`Failed to generate profile: ${e}`)

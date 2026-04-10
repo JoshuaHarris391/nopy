@@ -143,17 +143,6 @@ export function EntryEditor() {
   // Autosave with debounce
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    if (!dirty) return
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      handleSave()
-    }, 1500)
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    }
-  }, [dirty, title, content, moodValue])
-
   // Keyboard shortcut: Cmd+S / Ctrl+S
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -209,6 +198,17 @@ export function EntryEditor() {
       setSaving(false)
     }
   }, [saving, ensureEntry, updateEntry, title, content, moodValue])
+
+  useEffect(() => {
+    if (!dirty) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      handleSave()
+    }, 1500)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [dirty, title, content, moodValue, handleSave])
 
   const handleDelete = useCallback(async () => {
     const entryId = entryIdRef.current
