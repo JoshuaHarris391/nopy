@@ -42,7 +42,7 @@ export function assembleContext(
   if (profile && profile.themes.length > 0) {
     const themesStr = profile.themes.map((t) => t.theme).join(', ')
     system += `\n\nRecurring themes: ${themesStr}`
-    console.log('[contextAssembler] ✓ Injected themes:', themesStr)
+    console.log('[contextAssembler] ✓ Injected themes:', profile.themes.length, 'themes')
   }
 
   // Inject entry index table (background reference — capped to most recent entries)
@@ -70,10 +70,7 @@ export function assembleContext(
   if (entryContext) {
     const dateStr = entryContext.date ? new Date(entryContext.date).toLocaleDateString() : 'undated'
     system += `\n\n## Current Session Focus\nThis journal entry is the focus of the entire session. Reference its specific content throughout the conversation when relevant. Do not ask the user to share it — you have the full text below.\n\n**${entryContext.title}** (${dateStr})\n\n${entryContext.content}`
-    console.log('[contextAssembler] ✓ Injected entry context:')
-    console.log('[contextAssembler]   Title:', entryContext.title)
-    console.log('[contextAssembler]   Date:', dateStr)
-    console.log('[contextAssembler]   Content length:', entryContext.content.length, 'chars')
+    console.log('[contextAssembler] ✓ Injected entry context: date:', dateStr, '| content:', entryContext.content.length, 'chars')
   }
 
   const systemTokens = estimateTokens(system)
@@ -91,8 +88,7 @@ export function assembleContext(
       role: 'assistant',
       content: "I remember our conversation. Let's continue from where we left off.",
     })
-    console.log('[contextAssembler] ✓ Injected session summary (session has', session.messages.length, 'messages)')
-    console.log('[contextAssembler]   Summary:', session.summary.slice(0, 100) + (session.summary.length > 100 ? '...' : ''))
+    console.log('[contextAssembler] ✓ Injected session summary (session has', session.messages.length, 'messages, summary:', session.summary.length, 'chars)')
   }
 
   // Take recent messages that fit within budget
@@ -130,18 +126,6 @@ export function assembleContext(
     console.log('[contextAssembler]   Skipped streaming messages:', skippedStreaming)
   }
   console.log('[contextAssembler]   Message tokens used:', tokenCount)
-
-  // Log message preview
-  if (recentMessages.length > 0) {
-    console.log('[contextAssembler] Message preview (first 3):')
-    recentMessages.slice(0, 3).forEach((msg, i) => {
-      const preview = msg.content.slice(0, 80).replace(/\n/g, ' ')
-      console.log(`[contextAssembler]   [${i}] ${msg.role}: "${preview}${msg.content.length > 80 ? '...' : ''}"`)
-    })
-    if (recentMessages.length > 3) {
-      console.log(`[contextAssembler]   ... and ${recentMessages.length - 3} more messages`)
-    }
-  }
 
   const totalTokens = systemTokens + tokenCount
   console.log('[contextAssembler] ========== CONTEXT ASSEMBLED ==========')
