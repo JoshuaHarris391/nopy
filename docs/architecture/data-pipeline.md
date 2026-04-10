@@ -61,7 +61,7 @@ summary: "Short AI-generated summary"
 The actual thing the user wrote goes here.
 ```
 
-Each file has a frontmatter block between `---` fences followed by the body. The frontmatter is **not real YAML** — every value is JSON-encoded so the parser can use plain `JSON.parse` instead of pulling in a YAML library. See [Markdown format](#markdown-format) for the exact rules.
+Each file has a frontmatter block between `---` fences followed by the body. The frontmatter is **real YAML**, serialized and parsed by the `yaml` library. See [Markdown format](#markdown-format) for the exact rules and `docs/architecture/filesystem-layer.md` for the full disk I/O reference.
 
 ### The lifecycle of an entry
 
@@ -102,8 +102,10 @@ Every entry file has frontmatter wrapped in `---` fences, followed by a blank li
 
 Two rules define the format:
 
-- **Values are JSON-encoded.** Both the serialiser and the parser use `JSON.stringify` / `JSON.parse` on each frontmatter value. Strings are double-quoted, arrays and objects are JSON literals. This is deliberately stricter than real YAML so the parser stays simple.
-- **The parser is custom, not a YAML library.** See `parseMarkdown()` in `src/services/fs.ts:40`. The regex `/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/` splits the file, then each frontmatter line is split on the first `: `. Anything that isn't valid JSON falls back to a raw string.
+- **Values are standard YAML.** The serialiser uses `yaml.stringify()` and the parser uses `yaml.parse()` from the `yaml` library. Strings, arrays, objects, and multi-line values are all handled by the library.
+- **The parser splits on `---` fences, then parses YAML.** See `parseMarkdown()` in `src/services/fs.ts`. The regex `/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/` splits the file into frontmatter and body, then `yaml.parse()` handles the frontmatter block. Malformed YAML falls back to treating the entry as plain markdown (body preserved, metadata discarded).
+
+For the full disk I/O reference, see `docs/architecture/filesystem-layer.md`.
 
 ### What gets written
 
@@ -307,3 +309,10 @@ Nopy does not watch the journal directory for external changes. If the user edit
 | Settings persistence | `src/stores/settingsStore.ts` |
 | Chat session storage | `src/stores/chatStore.ts` |
 | Core types | `src/types/journal.ts`, `src/types/profile.ts` |
+
+## Related docs
+
+- [State Management](state-management.md) — store boundary rules, persistence strategy, `lastError` pattern
+- [Filesystem Layer](filesystem-layer.md) — Tauri gating, YAML frontmatter format, error contract
+- [LLM Pipeline](llm-pipeline.md) — AI processing, context assembly, `parseLLMJson`, prompt templates
+- [Components and Hooks](components.md) — UI primitives, custom hooks, component guidelines
