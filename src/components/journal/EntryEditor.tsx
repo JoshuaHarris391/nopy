@@ -17,7 +17,14 @@ import type { JournalEntry, MoodScore } from '../../types/journal'
 export function EntryEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries, addEntry, updateEntry, deleteEntry, lastError, clearLastError } = useJournalStore()
+  const entries = useJournalStore((s) => s.entries)
+  const loaded = useJournalStore((s) => s.loaded)
+  const loadEntries = useJournalStore((s) => s.loadEntries)
+  const addEntry = useJournalStore((s) => s.addEntry)
+  const updateEntry = useJournalStore((s) => s.updateEntry)
+  const deleteEntry = useJournalStore((s) => s.deleteEntry)
+  const lastError = useJournalStore((s) => s.lastError)
+  const clearLastError = useJournalStore((s) => s.clearLastError)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const isNew = !id || id === 'new'

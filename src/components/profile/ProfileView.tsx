@@ -12,8 +12,15 @@ import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 import { moodLabelColors } from '../../utils/mood'
 
 export function ProfileView() {
-  const { profile, loaded, loadProfile, generating, phase, progress } = useProfileStore()
-  const { loaded: journalLoaded, loadEntries, entries } = useJournalStore()
+  const profile = useProfileStore((s) => s.profile)
+  const loaded = useProfileStore((s) => s.loaded)
+  const loadProfile = useProfileStore((s) => s.loadProfile)
+  const generating = useProfileStore((s) => s.generating)
+  const phase = useProfileStore((s) => s.phase)
+  const progress = useProfileStore((s) => s.progress)
+  const journalLoaded = useJournalStore((s) => s.loaded)
+  const loadEntries = useJournalStore((s) => s.loadEntries)
+  const entries = useJournalStore((s) => s.entries)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)

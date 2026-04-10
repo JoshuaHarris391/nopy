@@ -19,7 +19,11 @@ function getGreeting(): string {
 
 export function JournalView() {
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries, syncFromDisk, syncing } = useJournalStore()
+  const entries = useJournalStore((s) => s.entries)
+  const loaded = useJournalStore((s) => s.loaded)
+  const loadEntries = useJournalStore((s) => s.loadEntries)
+  const syncFromDisk = useJournalStore((s) => s.syncFromDisk)
+  const syncing = useJournalStore((s) => s.syncing)
   const journalPath = useSettingsStore((s) => s.journalPath)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const canSync = hasFileSystem() && !!journalPath

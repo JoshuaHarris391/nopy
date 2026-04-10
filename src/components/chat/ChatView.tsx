@@ -15,13 +15,25 @@ import { MessageCircle, Leaf, PanelLeftClose, PanelLeftOpen } from 'lucide-react
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
-  const { apiKey, preferredModel, maxOutputTokens, contextBudget, sessionPanelCollapsed, toggleSessionPanel, setSessionPanelCollapsed } = useSettingsStore()
-  const {
-    sessions, activeSession, activeSessionId, loaded,
-    loadSessionList, createSession, loadSession,
-    addMessage, updateStreamingMessage, finaliseStreamingMessage,
-    updateSessionTitle, deleteSession,
-  } = useChatStore()
+  const apiKey = useSettingsStore((s) => s.apiKey)
+  const preferredModel = useSettingsStore((s) => s.preferredModel)
+  const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
+  const contextBudget = useSettingsStore((s) => s.contextBudget)
+  const sessionPanelCollapsed = useSettingsStore((s) => s.sessionPanelCollapsed)
+  const toggleSessionPanel = useSettingsStore((s) => s.toggleSessionPanel)
+  const setSessionPanelCollapsed = useSettingsStore((s) => s.setSessionPanelCollapsed)
+  const sessions = useChatStore((s) => s.sessions)
+  const activeSession = useChatStore((s) => s.activeSession)
+  const activeSessionId = useChatStore((s) => s.activeSessionId)
+  const loaded = useChatStore((s) => s.loaded)
+  const loadSessionList = useChatStore((s) => s.loadSessionList)
+  const createSession = useChatStore((s) => s.createSession)
+  const loadSession = useChatStore((s) => s.loadSession)
+  const addMessage = useChatStore((s) => s.addMessage)
+  const updateStreamingMessage = useChatStore((s) => s.updateStreamingMessage)
+  const finaliseStreamingMessage = useChatStore((s) => s.finaliseStreamingMessage)
+  const updateSessionTitle = useChatStore((s) => s.updateSessionTitle)
+  const deleteSession = useChatStore((s) => s.deleteSession)
 
   const location = useLocation()
   const navigate = useNavigate()

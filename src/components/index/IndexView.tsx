@@ -12,7 +12,9 @@ import { useSettingsStore } from '../../stores/settingsStore'
 
 export function IndexView() {
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries } = useJournalStore()
+  const entries = useJournalStore((s) => s.entries)
+  const loaded = useJournalStore((s) => s.loaded)
+  const loadEntries = useJournalStore((s) => s.loadEntries)
   const [search, setSearch] = useState('')
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
