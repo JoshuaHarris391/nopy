@@ -1,11 +1,12 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary'
+  variant?: 'primary' | 'secondary' | 'danger'
   children: ReactNode
+  ref?: Ref<HTMLButtonElement>
 }
 
-export function Button({ variant = 'primary', children, style, ...props }: ButtonProps) {
+export function Button({ variant = 'primary', children, style, ref, ...props }: ButtonProps) {
   const baseStyle: React.CSSProperties = {
     fontFamily: 'var(--font-ui)',
     fontSize: 13,
@@ -22,21 +23,26 @@ export function Button({ variant = 'primary', children, style, ...props }: Butto
     ...style,
   }
 
-  const variantStyle: React.CSSProperties =
-    variant === 'primary'
-      ? {
-          background: 'var(--forest)',
-          color: 'white',
-          boxShadow: '0 2px 6px rgba(91, 127, 94, 0.22)',
-        }
-      : {
-          background: 'transparent',
-          color: 'var(--ink)',
-          border: '1px solid var(--stone)',
-        }
+  const variantStyles: Record<string, React.CSSProperties> = {
+    primary: {
+      background: 'var(--forest)',
+      color: 'white',
+      boxShadow: '0 2px 6px rgba(91, 127, 94, 0.22)',
+    },
+    secondary: {
+      background: 'transparent',
+      color: 'var(--ink)',
+      border: '1px solid var(--stone)',
+    },
+    danger: {
+      background: 'var(--soft-coral)',
+      color: 'white',
+    },
+  }
+  const variantStyle = variantStyles[variant]
 
   return (
-    <button style={{ ...baseStyle, ...variantStyle }} {...props}>
+    <button ref={ref} style={{ ...baseStyle, ...variantStyle }} {...props}>
       {children}
     </button>
   )

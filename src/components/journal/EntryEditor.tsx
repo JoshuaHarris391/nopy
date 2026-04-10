@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { Check, Trash2, Loader2 } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Button } from '../ui/Button'
 import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { useJournalStore } from '../../stores/journalStore'
@@ -246,46 +247,13 @@ export function EntryEditor() {
         </div>
       </div>
 
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50"
-          style={{ background: 'rgba(44, 62, 44, 0.3)' }}
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div
-            className="flex flex-col gap-4"
-            style={{
-              background: 'var(--parchment)', border: '1px solid var(--stone)',
-              borderRadius: 'var(--radius-lg)', padding: '28px 32px',
-              maxWidth: 400, boxShadow: '0 12px 40px var(--shadow-warm-deep)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
-              Delete this entry?
-            </h3>
-            <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
-              This will permanently delete the entry from the app and remove the Markdown file from your journal folder. This cannot be undone.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
-              <button
-                onClick={handleDelete}
-                className="flex items-center gap-1.5 cursor-pointer"
-                style={{
-                  fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500,
-                  padding: '7px 16px', borderRadius: 'var(--radius-sm)',
-                  background: 'var(--soft-coral)', color: 'white',
-                  border: 'none', transition: 'all var(--transition-gentle)',
-                }}
-              >
-                <Trash2 size={14} strokeWidth={2} />
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete this entry?"
+        body="This will permanently delete the entry from the app and remove the Markdown file from your journal folder. This cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   )
 }

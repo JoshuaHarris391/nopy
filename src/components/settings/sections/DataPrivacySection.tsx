@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { FolderOpen, BookOpen } from 'lucide-react'
 import { SettingsSection } from '../../ui/SettingsSection'
 import { SettingsRow } from '../../ui/SettingsRow'
-import { Button } from '../../ui/Button'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
 import { useProfileStore } from '../../../stores/profileStore'
@@ -86,37 +86,15 @@ export function DataPrivacySection() {
         </div>
       )}
 
-      {showNewJournalConfirm && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50"
-          style={{ background: 'rgba(44, 62, 44, 0.3)' }}
-          onClick={() => setShowNewJournalConfirm(false)}
-        >
-          <div
-            className="flex flex-col gap-4"
-            style={{
-              background: 'var(--parchment)', border: '1px solid var(--stone)',
-              borderRadius: 'var(--radius-lg)', padding: '28px 32px',
-              maxWidth: 420, boxShadow: '0 12px 40px var(--shadow-warm-deep)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
-              Switch to a new journal?
-            </h3>
-            <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.6 }}>
-              This will clear the current entries and profile from the app and load entries from the new folder you select. Your existing files on disk are not affected.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setShowNewJournalConfirm(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleNewJournal}>
-                <FolderOpen size={14} strokeWidth={2} />
-                Choose folder
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showNewJournalConfirm}
+        title="Switch to a new journal?"
+        body="This will clear the current entries and profile from the app and load entries from the new folder you select. Your existing files on disk are not affected."
+        confirmLabel="Choose folder"
+        danger={false}
+        onConfirm={handleNewJournal}
+        onCancel={() => setShowNewJournalConfirm(false)}
+      />
     </SettingsSection>
   )
 }
