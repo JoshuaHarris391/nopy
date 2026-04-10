@@ -259,7 +259,7 @@ export function computeLocalStats(entries: JournalEntry[]): {
 }
 
 function getPreviousDay(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() - 1)
+  const d = new Date(dateStr + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString().slice(0, 10)
 }

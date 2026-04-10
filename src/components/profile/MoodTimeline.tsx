@@ -38,6 +38,7 @@ const H = 260
 const CW = W - PAD.left - PAD.right
 const CH = H - PAD.top - PAD.bottom
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getWindow(range: Range, offset: number): { start: Date; end: Date } {
   const now = new Date()
   if (range === 'week') {

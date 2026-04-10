@@ -80,6 +80,36 @@ Opens a native window with full file system access. Set your journal location in
 | `npm run tauri dev` | Run the desktop app with hot reload |
 | `npm run tauri build` | Build the desktop app for distribution |
 
+## Testing
+
+The test suite uses [Vitest](https://vitest.dev/) and covers the core pure-logic layer — schemas, utility functions, and service helpers. Tests are focused on behaviour (inputs → expected outputs) rather than coverage metrics.
+
+### Running tests
+
+```bash
+# Run all tests once
+npm test
+
+# Run in watch mode (re-runs on file change)
+npm run test:watch
+```
+
+### Test structure
+
+Tests live in `src/__tests__/`, mirroring the source tree:
+
+| File | What it covers |
+|------|---------------|
+| `schemas/journal.test.ts` | Zod validation + AI output coercion for mood, tags, summary |
+| `schemas/profile.test.ts` | Profile schema validation and framework catch defaults |
+| `schemas/frontmatter.test.ts` | Frontmatter parsing with optional field defaults |
+| `utils/tokenEstimator.test.ts` | Token estimation formula |
+| `services/entryProcessor.test.ts` | `computeLocalStats` — mood averaging, streak, reflection depth |
+| `services/contextAssembler.test.ts` | Context assembly — token budgeting, message truncation, profile injection |
+| `services/fs.test.ts` | `slugify`, `entryToMarkdown`, `parseMarkdown`, `extractDateFromFilename` |
+
+API-dependent functions (`processEntry`, `generateProfileFromEntries`, etc.) and React components are intentionally excluded from the test suite during the rapid-development phase — they are better validated through manual testing and integration review.
+
 ## Configuration
 
 On first launch, go to **Settings** and configure:

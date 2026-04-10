@@ -6,7 +6,7 @@ export function hasFileSystem(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
-function slugify(title: string, id: string): string {
+export function slugify(title: string, id: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -14,7 +14,7 @@ function slugify(title: string, id: string): string {
   return slug || id
 }
 
-function entryToMarkdown(entry: JournalEntry): string {
+export function entryToMarkdown(entry: JournalEntry): string {
   const frontmatter: Record<string, unknown> = {
     id: entry.id,
     title: entry.title,
@@ -37,7 +37,7 @@ function entryToMarkdown(entry: JournalEntry): string {
   return `---\n${yaml}\n---\n\n${entry.content}`
 }
 
-function parseMarkdown(text: string): { frontmatter: Record<string, unknown>; content: string } {
+export function parseMarkdown(text: string): { frontmatter: Record<string, unknown>; content: string } {
   const match = text.match(/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/)
   if (!match) {
     console.log('[fs] parseMarkdown: no frontmatter found')
@@ -147,7 +147,7 @@ export async function saveProfileToDisk(profile: PsychologicalProfile, journalPa
   }
 }
 
-function extractDateFromFilename(filename: string): string | null {
+export function extractDateFromFilename(filename: string): string | null {
   const match = filename.match(/(\d{4}-\d{2}-\d{2})/)
   if (!match) return null
   try {
