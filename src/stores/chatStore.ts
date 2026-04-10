@@ -42,10 +42,12 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
 
   loadSessionList: async () => {
     const meta = await get<ChatSessionMeta[]>('chat:meta')
+    console.log('[chatStore] loadSessionList: loaded', (meta ?? []).length, 'sessions')
     setState({ sessions: meta ?? [], loaded: true })
   },
 
   createSession: async (entryContext?: ChatEntryContext) => {
+    console.log('[chatStore] createSession: entryContext present', entryContext != null)
     const now = new Date().toISOString()
     const session: ChatSession = {
       id: crypto.randomUUID(),
@@ -58,6 +60,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
       entryContext: entryContext ?? null,
     }
     await set(`chat:session:${session.id}`, session)
+    console.log('[chatStore] createSession: created session', session.id)
     const meta = toMeta(session)
     const sessions = [meta, ...getState().sessions]
     setState({ sessions, activeSession: session, activeSessionId: session.id })
@@ -67,6 +70,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
 
   loadSession: async (id) => {
     const session = await get<ChatSession>(`chat:session:${id}`)
+    console.log('[chatStore] loadSession: id', id, '| found', session != null, '| messages', session?.messages.length ?? 0)
     if (session) {
       setState({ activeSession: session, activeSessionId: id })
     }
@@ -75,6 +79,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
   addMessage: async (message) => {
     const state = getState()
     if (!state.activeSession) return
+    console.log('[chatStore] addMessage: role', message.role, '| content', message.content.length, 'chars | session', state.activeSession.id)
     const updatedSession: ChatSession = {
       ...state.activeSession,
       messages: [...state.activeSession.messages, message],
@@ -104,6 +109,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
   finaliseStreamingMessage: async () => {
     const session = getState().activeSession
     if (!session) return
+    console.log('[chatStore] finaliseStreamingMessage: session', session.id, '| total messages', session.messages.length)
     const messages = session.messages.map((m) =>
       m.streaming ? { ...m, streaming: false } : m,
     )
@@ -122,6 +128,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
   },
 
   archiveSession: async (id) => {
+    console.log('[chatStore] archiveSession: id', id)
     const session = await get<ChatSession>(`chat:session:${id}`)
     if (session) {
       session.status = 'archived'
@@ -138,6 +145,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
   },
 
   deleteSession: async (id) => {
+    console.log('[chatStore] deleteSession: id', id)
     await del(`chat:session:${id}`)
     const sessions = getState().sessions.filter((s) => s.id !== id)
     setState({ sessions })

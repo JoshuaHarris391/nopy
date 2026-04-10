@@ -39,9 +39,13 @@ function entryToMarkdown(entry: JournalEntry): string {
 
 function parseMarkdown(text: string): { frontmatter: Record<string, unknown>; content: string } {
   const match = text.match(/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/)
-  if (!match) return { frontmatter: {}, content: text }
+  if (!match) {
+    console.log('[fs] parseMarkdown: no frontmatter found')
+    return { frontmatter: {}, content: text }
+  }
 
   const frontmatter: Record<string, unknown> = {}
+  let parseFailures = 0
   for (const line of match[1].split('\n')) {
     const idx = line.indexOf(': ')
     if (idx === -1) continue
@@ -50,9 +54,11 @@ function parseMarkdown(text: string): { frontmatter: Record<string, unknown>; co
     try {
       frontmatter[key] = JSON.parse(value)
     } catch {
+      parseFailures++
       frontmatter[key] = value
     }
   }
+  console.log('[fs] parseMarkdown: frontmatter keys', Object.keys(frontmatter).length, '| JSON parse failures', parseFailures)
   return { frontmatter, content: match[2] }
 }
 
@@ -196,6 +202,7 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
         // If no date at all (e.g. "my-note.md"), use cleaned filename
         const titleFromFilename = titleAfterDate || nameWithoutExt
 
+        console.log('[fs] loadEntriesFromDisk: file', file.name, '| type', hasFrontmatter ? 'nopy' : 'plain import', '| frontmatter valid', frontmatterResult.success)
         entries.push({
           id: fm?.id || crypto.randomUUID(),
           title: hasFrontmatter

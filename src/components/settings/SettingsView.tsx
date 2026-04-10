@@ -33,7 +33,7 @@ export function SettingsView() {
     const path = await pickJournalDirectory()
     if (!path) return
 
-    console.log('[new-journal] Selected path:', path)
+    console.log('[new-journal] Directory selected')
 
     // Clear IndexedDB entries and profile
     await del('nopy-entries')
@@ -45,7 +45,7 @@ export function SettingsView() {
     setJournalPath(path)
     await grantFsScope(path)
 
-    console.log('[new-journal] Path set, scope granted. Current settings path:', useSettingsStore.getState().journalPath)
+    console.log('[new-journal] Path set, scope granted')
 
     // Sync from the new location
     await useJournalStore.getState().loadEntries()

@@ -13,6 +13,8 @@ interface EntryMetadata {
 }
 
 export async function processEntry(entry: JournalEntry, apiKey: string, signal?: AbortSignal): Promise<EntryMetadata> {
+  const inputChars = (entry.title.length + entry.content.length)
+  console.log('[entryProcessor] processEntry: input', inputChars, 'chars')
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
@@ -31,13 +33,15 @@ No markdown, no explanation, just the JSON object.`,
     signal,
   )
 
+  console.log('[entryProcessor] processEntry: response', response.length, 'chars')
   try {
     // Strip any markdown code fences if present
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
     const parsed = EntryMetadataCoercedSchema.parse(JSON.parse(cleaned))
+    console.log('[entryProcessor] processEntry: parsed ok — mood:', parsed.mood.value, '/', parsed.mood.label, '| tags:', parsed.tags.length, '| summary:', parsed.summary.length, 'chars')
     return parsed
   } catch (e) {
-    console.error('[processor] Failed to parse Haiku response:', response, e)
+    console.error('[entryProcessor] processEntry: parse failed — response length:', response.length, 'chars |', e)
     throw new Error(`Failed to parse entry metadata: ${e}`)
   }
 }
@@ -50,6 +54,7 @@ export async function processAllEntries(
   signal?: AbortSignal,
 ): Promise<Map<string, EntryMetadata>> {
   const toProcess = force ? entries : entries.filter((e) => !e.indexed)
+  console.log('[entryProcessor] processAllEntries: total', entries.length, '| to process', toProcess.length, '| skipped (already indexed)', entries.length - toProcess.length, '| force:', force)
   const results = new Map<string, EntryMetadata>()
 
   for (let i = 0; i < toProcess.length; i++) {
@@ -60,11 +65,11 @@ export async function processAllEntries(
       const metadata = await processEntry(entry, apiKey, signal)
       results.set(entry.id, metadata)
     } catch (e) {
-      console.error(`[processor] Failed to process entry "${entry.title}":`, e)
-      // Continue with other entries
+      console.error('[entryProcessor] processAllEntries: entry', i + 1, 'of', toProcess.length, 'failed —', e)
     }
   }
 
+  console.log('[entryProcessor] processAllEntries: complete —', results.size, 'of', toProcess.length, 'succeeded')
   return results
 }
 
@@ -75,10 +80,15 @@ export async function generateProfileFromEntries(
 ): Promise<Omit<PsychologicalProfile, 'averageMood' | 'journalingStreak' | 'avgEntryLength' | 'reflectionDepth' | 'emotionalDistribution' | 'updatedAt' | 'entriesAnalysed'>> {
   // Build context from all indexed entries
   const indexed = entries.filter((e) => e.indexed && e.summary)
+  console.log('[entryProcessor] generateProfileFromEntries: indexed entries', indexed.length)
   const entrySummaries = indexed
     .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
     .join('\n')
 
+  const entrySummariesChars = indexed
+    .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
+    .join('\n').length
+  console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummariesChars, 'chars to Haiku')
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
@@ -101,11 +111,14 @@ No markdown, just JSON.`,
     signal,
   )
 
+  console.log('[entryProcessor] generateProfileFromEntries: response', response.length, 'chars')
   try {
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    return ProfileResponseSchema.parse(JSON.parse(cleaned))
+    const parsed = ProfileResponseSchema.parse(JSON.parse(cleaned))
+    console.log('[entryProcessor] generateProfileFromEntries: parsed ok — themes:', parsed.themes.length, '| cognitivePatterns:', parsed.cognitivePatterns.length, '| strengths:', parsed.strengths.length)
+    return parsed
   } catch (e) {
-    console.error('[processor] Failed to parse profile response:', response, e)
+    console.error('[entryProcessor] generateProfileFromEntries: parse failed — response length:', response.length, 'chars |', e)
     throw new Error(`Failed to generate profile: ${e}`)
   }
 }
@@ -118,6 +131,7 @@ export async function generateFullProfile(
   signal?: AbortSignal,
 ): Promise<string> {
   const indexed = entries.filter((e) => e.indexed)
+  console.log('[entryProcessor] generateFullProfile: indexed entries', indexed.length)
 
   // Build full entry content for Opus (send actual content, not just summaries)
   const entryContent = indexed
@@ -130,6 +144,7 @@ export async function generateFullProfile(
     })
     .join('\n\n')
 
+  console.log('[entryProcessor] generateFullProfile: sending', entryContent.length, 'chars to Opus')
   const response = await sendMessage(
     apiKey,
     OPUS_MODEL,
@@ -188,6 +203,7 @@ Guidelines:
     signal,
   )
 
+  console.log('[entryProcessor] generateFullProfile: response', response.length, 'chars')
   return response
 }
 
@@ -198,8 +214,10 @@ export function computeLocalStats(entries: JournalEntry[]): {
   avgEntryLength: number
   reflectionDepth: 'Low' | 'Medium' | 'High'
 } {
+  console.log('[entryProcessor] computeLocalStats: entries', entries.length)
   const indexed = entries.filter((e) => e.indexed)
   if (indexed.length === 0) {
+    console.log('[entryProcessor] computeLocalStats: no indexed entries — returning zeros')
     return {
       averageMood: 0,
       journalingStreak: 0,
@@ -236,6 +254,7 @@ export function computeLocalStats(entries: JournalEntry[]): {
   const reflectionDepth: 'Low' | 'Medium' | 'High' =
     avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
 
+  console.log('[entryProcessor] computeLocalStats: averageMood', averageMood, '| streak', journalingStreak, '| avgEntryLength', avgEntryLength, '| reflectionDepth', reflectionDepth)
   return { averageMood, journalingStreak, avgEntryLength, reflectionDepth }
 }
 

@@ -42,6 +42,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   addEntry: async (entry) => {
+    console.log('[journalStore] addEntry: id', entry.id, '| content', entry.content.length, 'chars')
     const entries = [entry, ...getState().entries]
     setState({ entries })
     await set('nopy-entries', entries)
@@ -49,6 +50,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   updateEntry: async (id, updates) => {
+    console.log('[journalStore] updateEntry: id', id, '| updating keys', Object.keys(updates).join(', '))
     const entries = getState().entries.map((e) =>
       e.id === id ? { ...e, ...updates, updatedAt: new Date().toISOString() } : e
     )
@@ -59,6 +61,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   deleteEntry: async (id) => {
+    console.log('[journalStore] deleteEntry: id', id)
     const entry = getState().entries.find((e) => e.id === id)
     const entries = getState().entries.filter((e) => e.id !== id)
     setState({ entries })
