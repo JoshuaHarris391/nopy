@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { ArrowUp } from 'lucide-react'
 
 interface ChatInputProps {
@@ -31,9 +31,20 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value)
     const el = e.target
-    el.style.height = 'auto'
-    el.style.height = el.scrollHeight + 'px'
+    // Measure desired height without visible reflow:
+    // overflow hidden prevents the container from shifting during measurement
+    el.style.overflow = 'hidden'
+    el.style.height = '0'
+    const next = Math.max(el.scrollHeight, 60)
+    el.style.height = next + 'px'
+    el.style.overflow = ''
   }
+
+  useEffect(() => {
+    if (!disabled) {
+      textareaRef.current?.focus()
+    }
+  }, [disabled])
 
   const hasText = value.trim().length > 0
 
