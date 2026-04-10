@@ -22,3 +22,17 @@ export const ProfileResponseSchema = z.object({
   frameworkInsights: z.array(z.string()),
   emotionalTrends: z.array(z.string()),
 })
+
+export const LocalStatsSchema = z.object({
+  averageMood: z.number(),
+  avgEntryLength: z.number(),
+  reflectionDepth: z.enum(['Low', 'Medium', 'High']),
+  journalingStreak: z.number(),
+})
+
+export const PsychologicalProfileSchema = ProfileResponseSchema.extend({
+  ...LocalStatsSchema.shape,
+  entriesAnalysed: z.number(),
+  updatedAt: z.string(),
+  fullProfile: z.string().nullable(),
+})

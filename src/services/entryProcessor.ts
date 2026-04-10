@@ -1,6 +1,7 @@
 import { sendMessage } from './anthropic'
 import type { JournalEntry, MoodLabel } from '../types/journal'
-import type { PsychologicalProfile } from '../types/profile'
+import type { z } from 'zod'
+import type { LocalStatsSchema } from '../schemas/profile'
 import { EntryMetadataCoercedSchema } from '../schemas/journal'
 import { ProfileResponseSchema } from '../schemas/profile'
 
@@ -77,7 +78,7 @@ export async function generateProfileFromEntries(
   entries: JournalEntry[],
   apiKey: string,
   signal?: AbortSignal,
-): Promise<Omit<PsychologicalProfile, 'averageMood' | 'journalingStreak' | 'avgEntryLength' | 'reflectionDepth' | 'emotionalDistribution' | 'updatedAt' | 'entriesAnalysed'>> {
+): Promise<z.infer<typeof ProfileResponseSchema>> {
   // Build context from all indexed entries
   const indexed = entries.filter((e) => e.indexed && e.summary)
   console.log('[entryProcessor] generateProfileFromEntries: indexed entries', indexed.length)
@@ -116,7 +117,7 @@ No markdown, just JSON.`,
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
     const parsed = ProfileResponseSchema.parse(JSON.parse(cleaned))
     console.log('[entryProcessor] generateProfileFromEntries: parsed ok — themes:', parsed.themes.length, '| cognitivePatterns:', parsed.cognitivePatterns.length, '| strengths:', parsed.strengths.length)
-    return { ...parsed, fullProfile: null }
+    return parsed
   } catch (e) {
     console.error('[entryProcessor] generateProfileFromEntries: parse failed — response length:', response.length, 'chars |', e)
     throw new Error(`Failed to generate profile: ${e}`)
@@ -208,12 +209,7 @@ Guidelines:
 }
 
 // Local computation — no API call needed
-export function computeLocalStats(entries: JournalEntry[]): {
-  averageMood: number
-  journalingStreak: number
-  avgEntryLength: number
-  reflectionDepth: 'Low' | 'Medium' | 'High'
-} {
+export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof LocalStatsSchema> {
   console.log('[entryProcessor] computeLocalStats: entries', entries.length)
   const indexed = entries.filter((e) => e.indexed)
   if (indexed.length === 0) {

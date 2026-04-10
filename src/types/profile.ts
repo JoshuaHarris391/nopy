@@ -1,29 +1,6 @@
-export interface ThemeInsight {
-  theme: string
-  frequency: number
-  description: string
-}
+import type { z } from 'zod'
+import type { ThemeInsightSchema, CognitivePatternSchema, PsychologicalProfileSchema } from '../schemas/profile'
 
-export interface CognitivePattern {
-  pattern: string
-  framework: 'CBT' | 'ACT' | 'DBT' | 'MI'
-  description: string
-  frequency: number
-}
-
-export interface PsychologicalProfile {
-  summary: string
-  themes: ThemeInsight[]
-  cognitivePatterns: CognitivePattern[]
-  emotionalTrends: string[]
-  growthAreas: string[]
-  strengths: string[]
-  frameworkInsights: string[]
-  averageMood: number
-  journalingStreak: number
-  avgEntryLength: number
-  reflectionDepth: 'Low' | 'Medium' | 'High'
-  updatedAt: string
-  entriesAnalysed: number
-  fullProfile: string | null  // Full markdown psychological profile document
-}
+export type ThemeInsight = z.infer<typeof ThemeInsightSchema>
+export type CognitivePattern = z.infer<typeof CognitivePatternSchema>
+export type PsychologicalProfile = z.infer<typeof PsychologicalProfileSchema>

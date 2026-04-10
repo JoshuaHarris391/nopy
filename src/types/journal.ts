@@ -1,9 +1,8 @@
-export type MoodLabel = 'low' | 'mixed' | 'neutral' | 'good' | 'great'
+import type { z } from 'zod'
+import type { MoodLabelSchema, MoodScoreSchema } from '../schemas/journal'
 
-export interface MoodScore {
-  value: number // 1-10
-  label: MoodLabel
-}
+export type MoodLabel = z.infer<typeof MoodLabelSchema>
+export type MoodScore = z.infer<typeof MoodScoreSchema>
 
 export interface JournalEntry {
   id: string
