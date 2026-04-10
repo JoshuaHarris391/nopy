@@ -25,35 +25,30 @@ export async function streamChatResponse(
   onError: (error: Error) => void,
 ): Promise<void> {
   console.log('[anthropic] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
-  try {
-    const client = getClient(apiKey)
-    const stream = client.messages.stream({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages,
-    })
+  const client = getClient(apiKey)
+  const stream = client.messages.stream({
+    model,
+    max_tokens: maxTokens,
+    system,
+    messages,
+  })
 
-    let fullText = ''
+  let fullText = ''
 
-    stream.on('text', (text) => {
-      fullText += text
-      onChunk(fullText)
-    })
+  stream.on('text', (text) => {
+    fullText += text
+    onChunk(fullText)
+  })
 
-    stream.on('finalMessage', () => {
-      console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
-      onComplete(fullText)
-    })
+  stream.on('finalMessage', () => {
+    console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
+    onComplete(fullText)
+  })
 
-    stream.on('error', (error) => {
-      console.error('[anthropic] streamChatResponse: stream error —', error instanceof Error ? error.message : String(error))
-      onError(error instanceof Error ? error : new Error(String(error)))
-    })
-  } catch (error) {
-    console.error('[anthropic] streamChatResponse: caught error —', error instanceof Error ? error.message : String(error))
+  stream.on('error', (error) => {
+    console.error('[anthropic] streamChatResponse: stream error —', error instanceof Error ? error.message : String(error))
     onError(error instanceof Error ? error : new Error(String(error)))
-  }
+  })
 }
 
 export async function fetchModels(apiKey: string): Promise<{ id: string; displayName: string }[]> {

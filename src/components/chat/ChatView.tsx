@@ -151,48 +151,55 @@ export function ChatView() {
       return
     }
 
-    await streamChatResponse(
-      apiKey,
-      preferredModel,
-      system,
-      filteredMessages,
-      maxOutputTokens,
-      (fullText) => updateStreamingMessage(fullText),
-      async () => {
-        await finaliseStreamingMessage()
-        streamingRef.current = false
+    try {
+      await streamChatResponse(
+        apiKey,
+        preferredModel,
+        system,
+        filteredMessages,
+        maxOutputTokens,
+        (fullText) => updateStreamingMessage(fullText),
+        async () => {
+          await finaliseStreamingMessage()
+          streamingRef.current = false
 
-        // Generate title after first exchange
-        const currentSession = useChatStore.getState().activeSession
-        if (currentSession && currentSession.title === 'New conversation' && currentSession.messages.length >= 2) {
-          try {
-            setGeneratingTitleId(currentSession.id)
-            const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
-            const title = await sendMessage(
-              apiKey,
-              'claude-haiku-4-5-20251001',
-              'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
-              [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
-              50,
-            )
-            if (title.trim()) {
-              await updateSessionTitle(currentSession.id, title.trim())
+          // Generate title after first exchange
+          const currentSession = useChatStore.getState().activeSession
+          if (currentSession && currentSession.title === 'New conversation' && currentSession.messages.length >= 2) {
+            try {
+              setGeneratingTitleId(currentSession.id)
+              const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
+              const title = await sendMessage(
+                apiKey,
+                'claude-haiku-4-5-20251001',
+                'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
+                [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
+                50,
+              )
+              if (title.trim()) {
+                await updateSessionTitle(currentSession.id, title.trim())
+              }
+            } catch (e) {
+              console.error('Title generation failed:', e)
+            } finally {
+              setGeneratingTitleId(null)
             }
-          } catch (e) {
-            console.error('Title generation failed:', e)
-          } finally {
-            setGeneratingTitleId(null)
           }
-        }
-      },
-      (error) => {
-        console.error('Chat error:', error)
-        streamingRef.current = false
-        // Update the streaming message with error
-        updateStreamingMessage(`I'm sorry, I encountered an error: ${error.message}`)
-        finaliseStreamingMessage()
-      },
-    )
+        },
+        (error) => {
+          console.error('Chat stream error:', error)
+          streamingRef.current = false
+          updateStreamingMessage(`I'm sorry, I encountered an error: ${error.message}`)
+          finaliseStreamingMessage()
+        },
+      )
+    } catch (error) {
+      console.error('Chat setup error:', error)
+      streamingRef.current = false
+      const msg = error instanceof Error ? error.message : String(error)
+      updateStreamingMessage(`I'm sorry, I couldn't connect: ${msg}`)
+      await finaliseStreamingMessage()
+    }
   }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
 
 

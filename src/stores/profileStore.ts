@@ -12,8 +12,10 @@ interface ProfileState {
   profile: PsychologicalProfile | null
   loaded: boolean
   generating: boolean
+  lastError: string | null
   phase: string
   progress: { current: number; total: number; title: string }
+  clearLastError: () => void
   loadProfile: () => Promise<void>
   setProfile: (profile: PsychologicalProfile) => Promise<void>
   generateProfile: (
@@ -27,8 +29,11 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   profile: null,
   loaded: false,
   generating: false,
+  lastError: null,
   phase: '',
   progress: { current: 0, total: 0, title: '' },
+
+  clearLastError: () => setState({ lastError: null }),
 
   loadProfile: async () => {
     const profile = await get<PsychologicalProfile>('nopy-profile')
@@ -37,9 +42,15 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   },
 
   setProfile: async (profile) => {
-    setState({ profile })
+    setState({ profile, lastError: null })
     await set('nopy-profile', profile)
-    await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
+    try {
+      await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setState({ lastError: `Failed to save profile to disk: ${msg}` })
+      throw e
+    }
   },
 
   generateProfile: async (entries, apiKey, signal) => {

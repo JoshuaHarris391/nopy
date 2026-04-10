@@ -13,10 +13,12 @@ interface JournalState {
   entries: JournalEntry[]
   loaded: boolean
   syncing: boolean
+  lastError: string | null
   forceProcessing: boolean
   forceProgress: { current: number; total: number; title: string }
   forceResult: string | null
   forceAbortController: AbortController | null
+  clearLastError: () => void
   loadEntries: () => Promise<void>
   addEntry: (entry: JournalEntry) => Promise<void>
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
@@ -31,10 +33,13 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   entries: [],
   loaded: false,
   syncing: false,
+  lastError: null,
   forceProcessing: false,
   forceProgress: { current: 0, total: 0, title: '' },
   forceResult: null,
   forceAbortController: null,
+
+  clearLastError: () => setState({ lastError: null }),
 
   loadEntries: async () => {
     const entries = await get<JournalEntry[]>('nopy-entries')
@@ -44,9 +49,15 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   addEntry: async (entry) => {
     console.log('[journalStore] addEntry: id', entry.id, '| content', entry.content.length, 'chars')
     const entries = [entry, ...getState().entries]
-    setState({ entries })
+    setState({ entries, lastError: null })
     await set('nopy-entries', entries)
-    await saveEntryToDisk(entry, getJournalPath())
+    try {
+      await saveEntryToDisk(entry, getJournalPath())
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setState({ lastError: `Failed to save "${entry.title}" to disk: ${msg}` })
+      throw e
+    }
   },
 
   updateEntry: async (id, updates) => {
@@ -54,19 +65,32 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const entries = getState().entries.map((e) =>
       e.id === id ? { ...e, ...updates, updatedAt: new Date().toISOString() } : e
     )
-    setState({ entries })
+    setState({ entries, lastError: null })
     await set('nopy-entries', entries)
     const updated = entries.find((e) => e.id === id)
-    if (updated) await saveEntryToDisk(updated, getJournalPath())
+    if (!updated) return
+    try {
+      await saveEntryToDisk(updated, getJournalPath())
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setState({ lastError: `Failed to save "${updated.title}" to disk: ${msg}` })
+      throw e
+    }
   },
 
   deleteEntry: async (id) => {
     console.log('[journalStore] deleteEntry: id', id)
     const entry = getState().entries.find((e) => e.id === id)
     const entries = getState().entries.filter((e) => e.id !== id)
-    setState({ entries })
+    setState({ entries, lastError: null })
     await set('nopy-entries', entries)
-    await deleteEntryFromDisk(id, getJournalPath(), entry?.sourceFilename)
+    try {
+      await deleteEntryFromDisk(id, getJournalPath(), entry?.sourceFilename)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setState({ lastError: `Failed to delete entry from disk: ${msg}` })
+      throw e
+    }
   },
 
   syncFromDisk: async () => {

@@ -102,7 +102,7 @@ function MoodBar({ value, onChange }: { value: number | null; onChange: (v: numb
 export function EntryEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { entries, loaded, loadEntries, addEntry, updateEntry, deleteEntry } = useJournalStore()
+  const { entries, loaded, loadEntries, addEntry, updateEntry, deleteEntry, lastError, clearLastError } = useJournalStore()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const isNew = !id || id === 'new'
@@ -295,6 +295,37 @@ export function EntryEditor() {
           </button>
         )}
       </MainHeader>
+      {lastError && (
+        <div
+          className="flex items-center justify-between"
+          style={{
+            padding: '10px 44px',
+            background: 'color-mix(in srgb, var(--soft-coral) 12%, var(--parchment))',
+            borderBottom: '1px solid color-mix(in srgb, var(--soft-coral) 30%, var(--stone))',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 13,
+            color: 'var(--soft-coral)',
+          }}
+        >
+          <span>{lastError}</span>
+          <button
+            onClick={clearLastError}
+            className="cursor-pointer"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--soft-coral)',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 12,
+              fontWeight: 500,
+              textDecoration: 'underline',
+              padding: '2px 8px',
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px 0 44px' }}>
         <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
           {/* Title input */}
