@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut'
 import { format } from 'date-fns'
 import { MessageCircle, Check, Trash2, Loader2, Minus, Plus } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
@@ -143,17 +144,9 @@ export function EntryEditor() {
   // Autosave with debounce
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Keyboard shortcut: Cmd+S / Ctrl+S
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-        handleSave()
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+  useKeyboardShortcut('mod+s', () => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    handleSave()
   })
 
   const ensureEntry = useCallback(async (): Promise<string> => {
