@@ -9,6 +9,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
+import { moodLabelColors } from '../../utils/mood'
 
 export function ProfileView() {
   const { profile, loaded, loadProfile, generating, phase, progress } = useProfileStore()
@@ -21,13 +22,6 @@ export function ProfileView() {
   const [moodOffset, setMoodOffset] = useState(0)
 
   const windowedDistribution = useMemo(() => {
-    const moodLabelColors: Record<string, string> = {
-      great: 'var(--gentle-green)',
-      good: 'var(--sage)',
-      neutral: 'var(--dusk-blue)',
-      mixed: 'var(--amber)',
-      low: 'var(--soft-coral)',
-    }
     const { start, end } = getWindow(moodRange, moodOffset)
     const s = start.getTime()
     const e = end.getTime()
@@ -47,7 +41,7 @@ export function ProfileView() {
       .map((l) => ({
         label: l.charAt(0).toUpperCase() + l.slice(1),
         percentage: Math.round((counts[l] / total) * 100),
-        color: moodLabelColors[l] || 'var(--sage)',
+        color: moodLabelColors[l as keyof typeof moodLabelColors] || 'var(--sage)',
       }))
   }, [entries, moodRange, moodOffset])
 

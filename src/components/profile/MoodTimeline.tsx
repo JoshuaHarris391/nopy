@@ -5,22 +5,12 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { JournalEntry } from '../../types/journal'
-
-const moodColors: Record<string, string> = {
-  great: 'var(--gentle-green)',
-  good: 'var(--sage)',
-  neutral: 'var(--dusk-blue)',
-  mixed: 'var(--amber)',
-  low: 'var(--soft-coral)',
-}
+import { getMoodColor, moodLabelColors } from '../../utils/mood'
+import type { MoodLabel } from '../../types/journal'
 
 function colorForMood(value: number, label?: string): string {
-  if (label && moodColors[label]) return moodColors[label]
-  if (value >= 9) return moodColors.great
-  if (value >= 7) return moodColors.good
-  if (value >= 5) return moodColors.neutral
-  if (value >= 3) return moodColors.mixed
-  return moodColors.low
+  if (label && moodLabelColors[label as MoodLabel]) return moodLabelColors[label as MoodLabel]
+  return getMoodColor(value)
 }
 
 interface MoodPoint {
