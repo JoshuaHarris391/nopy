@@ -1,5 +1,6 @@
 import type { JournalEntry } from '../types/journal'
 import type { PsychologicalProfile } from '../types/profile'
+import { FrontmatterEntrySchema } from '../schemas/frontmatter'
 
 export function hasFileSystem(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -172,7 +173,15 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
       try {
         const text = await readTextFile(`${journalDir}/${file.name}`)
         const { frontmatter, content } = parseMarkdown(text)
-        const hasFrontmatter = Object.keys(frontmatter).length > 0
+        const rawHasFrontmatter = Object.keys(frontmatter).length > 0
+
+        // Validate frontmatter through schema — discard bad metadata but preserve content
+        const frontmatterResult = FrontmatterEntrySchema.safeParse(frontmatter)
+        if (!frontmatterResult.success) {
+          console.warn('[fs] Invalid frontmatter in', file.name, frontmatterResult.error.issues)
+        }
+        const fm = frontmatterResult.success ? frontmatterResult.data : null
+        const hasFrontmatter = rawHasFrontmatter && fm !== null
 
         // For files with frontmatter (created by nopy), use it directly
         // For plain markdown imports, infer metadata from filename
@@ -188,17 +197,17 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
         const titleFromFilename = titleAfterDate || nameWithoutExt
 
         entries.push({
-          id: (frontmatter.id as string) || crypto.randomUUID(),
+          id: fm?.id || crypto.randomUUID(),
           title: hasFrontmatter
-            ? (frontmatter.title as string) || file.name.replace('.md', '')
+            ? fm?.title || file.name.replace('.md', '')
             : titleFromFilename || file.name.replace('.md', ''),
           content: hasFrontmatter ? content : text, // plain imports use full text as content
-          createdAt: (frontmatter.createdAt as string) || filenameDate || new Date().toISOString(),
-          updatedAt: (frontmatter.updatedAt as string) || filenameDate || new Date().toISOString(),
-          mood: (frontmatter.mood as JournalEntry['mood']) || null,
-          tags: (frontmatter.tags as string[]) || [],
-          summary: (frontmatter.summary as string) || null,
-          indexed: (frontmatter.indexed as boolean) || false,
+          createdAt: fm?.createdAt || filenameDate || new Date().toISOString(),
+          updatedAt: fm?.updatedAt || filenameDate || new Date().toISOString(),
+          mood: fm?.mood ?? null,
+          tags: fm?.tags ?? [],
+          summary: fm?.summary ?? null,
+          indexed: hasFrontmatter ? (fm?.indexed ?? false) : false,
           sourceFilename: file.name,
         })
       } catch (e) {

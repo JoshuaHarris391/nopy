@@ -1,6 +1,8 @@
 import { sendMessage } from './anthropic'
 import type { JournalEntry, MoodLabel } from '../types/journal'
 import type { PsychologicalProfile } from '../types/profile'
+import { EntryMetadataCoercedSchema } from '../schemas/journal'
+import { ProfileResponseSchema } from '../schemas/profile'
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -34,11 +36,7 @@ No markdown, no explanation, just the JSON object.`,
   try {
     // Strip any markdown code fences if present
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned) as EntryMetadata
-    // Validate
-    if (!parsed.mood?.value || !parsed.mood?.label || !parsed.tags || !parsed.summary) {
-      throw new Error('Invalid response structure')
-    }
+    const parsed = EntryMetadataCoercedSchema.parse(JSON.parse(cleaned))
     return parsed
   } catch (e) {
     console.error('[processor] Failed to parse Haiku response:', response, e)
@@ -107,7 +105,7 @@ No markdown, just JSON.`,
 
   try {
     const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    return JSON.parse(cleaned)
+    return ProfileResponseSchema.parse(JSON.parse(cleaned))
   } catch (e) {
     console.error('[processor] Failed to parse profile response:', response, e)
     throw new Error(`Failed to generate profile: ${e}`)
