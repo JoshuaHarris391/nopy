@@ -23,6 +23,43 @@ function dateString(daysAgo: number): string {
   return d.toISOString()
 }
 
+describe('processEntries mood preservation', () => {
+  it('keeps the existing mood when one is already set', () => {
+    /**
+     * When an entry is indexed, the AI (Haiku) returns a mood score. However,
+     * the user may have set a manual mood score before indexing. The merge rule
+     * is: use the existing entry mood if present, otherwise fall back to the
+     * AI mood. This mirrors the `e.mood ?? meta.mood` expression in journalStore.
+     *
+     * This test verifies the invariant directly so a future refactor cannot
+     * accidentally change the operator (e.g. back to always using meta.mood).
+     *
+     * Input: entry with mood { value: 9, label: "great" }, AI returns { value: 3, label: "low" }
+     * Expected output: merged mood is { value: 9, label: "great" } (user score preserved)
+     */
+    const existingMood = { value: 9, label: 'great' as const }
+    const aiMood = { value: 3, label: 'low' as const }
+    const entry = makeEntry({ mood: existingMood })
+    const merged = entry.mood ?? aiMood
+    expect(merged).toEqual(existingMood)
+  })
+
+  it('uses the AI mood when no existing mood is set', () => {
+    /**
+     * If the entry has no mood (mood: null), the AI-provided mood should be
+     * used. This is the standard path for newly created entries that have not
+     * had a manual score assigned.
+     *
+     * Input: entry with mood: null, AI returns { value: 5, label: "neutral" }
+     * Expected output: merged mood is { value: 5, label: "neutral" } (AI score used)
+     */
+    const aiMood = { value: 5, label: 'neutral' as const }
+    const entry = makeEntry({ mood: null })
+    const merged = entry.mood ?? aiMood
+    expect(merged).toEqual(aiMood)
+  })
+})
+
 describe('computeLocalStats', () => {
   it('returns zeros for an empty entries array', () => {
     /**

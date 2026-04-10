@@ -152,7 +152,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const updated = entries.map((e) => {
       const meta = results.get(e.id)
       if (!meta) return e
-      return { ...e, mood: meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
+      return { ...e, mood: e.mood ?? meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
     })
 
     setState({ entries: updated })
