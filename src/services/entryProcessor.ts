@@ -10,7 +10,6 @@ interface EntryMetadata {
   mood: { value: number; label: MoodLabel }
   tags: string[]
   summary: string
-  emotionalValence: string
 }
 
 export async function processEntry(entry: JournalEntry, apiKey: string, signal?: AbortSignal): Promise<EntryMetadata> {
@@ -25,7 +24,6 @@ Return ONLY valid JSON with these fields:
 - mood: { value (integer 1-10 where 1=very low, 10=excellent), label (one of: "low", "mixed", "neutral", "good", "great") }
 - tags: array of 3-6 short theme tags (lowercase, e.g. "work stress", "gratitude", "relationships")
 - summary: 1-2 sentence clinical summary that references specific people and events from the entry by name, identifies the core emotional state, and notes any relevant psychological patterns (e.g. cognitive distortions, avoidance, values-driven behaviour)
-- emotionalValence: one of "Positive", "Mostly Positive", "Mixed", "Mostly Negative", "Negative"
 
 No markdown, no explanation, just the JSON object.`,
     [{ role: 'user', content: `Title: ${entry.title}\n\n${entry.content}` }],
@@ -199,7 +197,6 @@ export function computeLocalStats(entries: JournalEntry[]): {
   journalingStreak: number
   avgEntryLength: number
   reflectionDepth: 'Low' | 'Medium' | 'High'
-  emotionalDistribution: { label: string; percentage: number; color: string }[]
 } {
   const indexed = entries.filter((e) => e.indexed)
   if (indexed.length === 0) {
@@ -208,7 +205,6 @@ export function computeLocalStats(entries: JournalEntry[]): {
       journalingStreak: 0,
       avgEntryLength: 0,
       reflectionDepth: 'Low',
-      emotionalDistribution: [],
     }
   }
 
@@ -240,28 +236,7 @@ export function computeLocalStats(entries: JournalEntry[]): {
   const reflectionDepth: 'Low' | 'Medium' | 'High' =
     avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
 
-  // Emotional distribution from emotionalValence
-  const valenceCounts: Record<string, number> = {}
-  const valenceColors: Record<string, string> = {
-    'Positive': 'var(--gentle-green)',
-    'Mostly Positive': 'var(--sage)',
-    'Mixed': 'var(--dusk-blue)',
-    'Mostly Negative': 'var(--amber)',
-    'Negative': 'var(--soft-coral)',
-  }
-  for (const entry of indexed) {
-    const v = entry.emotionalValence || 'Mixed'
-    valenceCounts[v] = (valenceCounts[v] || 0) + 1
-  }
-  const emotionalDistribution = Object.entries(valenceCounts)
-    .map(([label, count]) => ({
-      label,
-      percentage: Math.round((count / indexed.length) * 100),
-      color: valenceColors[label] || 'var(--stone)',
-    }))
-    .sort((a, b) => b.percentage - a.percentage)
-
-  return { averageMood, journalingStreak, avgEntryLength, reflectionDepth, emotionalDistribution }
+  return { averageMood, journalingStreak, avgEntryLength, reflectionDepth }
 }
 
 function getPreviousDay(dateStr: string): string {

@@ -16,5 +16,4 @@ export interface JournalEntry {
   summary: string | null
   indexed: boolean
   sourceFilename?: string // original filename on disk, used for overwriting/deleting
-  emotionalValence?: string // "Positive" | "Mostly Positive" | "Mixed" | "Mostly Negative" | "Negative"
 }

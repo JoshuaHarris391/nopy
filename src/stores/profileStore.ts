@@ -57,7 +57,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
         const updated = journalStore.entries.map((e) => {
           const meta = results.get(e.id)
           if (!meta) return e
-          return { ...e, mood: meta.mood, tags: meta.tags, summary: meta.summary, emotionalValence: meta.emotionalValence, indexed: true, updatedAt: now }
+          return { ...e, mood: meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
         })
         useJournalStore.setState({ entries: updated })
         await set('nopy-entries', updated)

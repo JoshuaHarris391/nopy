@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MoodScoreSchema, EmotionalValenceSchema } from './journal'
+import { MoodScoreSchema } from './journal'
 
 export const FrontmatterEntrySchema = z.object({
   id: z.string().optional(),
@@ -10,5 +10,4 @@ export const FrontmatterEntrySchema = z.object({
   tags: z.array(z.string()).optional().default([]),
   summary: z.string().nullable().optional(),
   indexed: z.boolean().optional().default(false),
-  emotionalValence: EmotionalValenceSchema.optional(),
 })

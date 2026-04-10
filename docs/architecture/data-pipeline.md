@@ -89,7 +89,6 @@ Three Zod schemas sit at trust boundaries. The point of all three is the same: n
 
 - **No file watchers.** If the user edits a file in another editor, nopy will not notice until the next manual sync. See [Operational notes](#no-file-watchers).
 - **No atomic writes.** Memory, IndexedDB, and disk writes happen in sequence. If the disk write fails after the IndexedDB write succeeds, the two drift until the next sync. See [Write ordering](#write-ordering-and-atomicity).
-- **`emotionalValence` has a gap.** It lives in memory and IndexedDB but is not serialised to frontmatter. See [Known gap](#known-gap-emotionalvalence).
 - **Journal switching wipes the cache.** Picking a new journal folder clears IndexedDB entirely and hydrates fresh from the new directory. See [Journal switching](#journal-switching).
 - **AI processing is sequential.** The indexing loop processes entries one at a time, not in parallel, for rate-limit safety.
 
@@ -109,10 +108,6 @@ Two rules define the format:
 ### What gets written
 
 `entryToMarkdown()` (`fs.ts:17`) always writes `id`, `title`, `createdAt`, `updatedAt`, `tags`, and `indexed`. `mood` and `summary` are written only when present.
-
-#### Known gap: `emotionalValence`
-
-`emotionalValence` is **not** currently serialised to frontmatter, even though it exists on `JournalEntry` and is validated by [`FrontmatterEntrySchema`](#frontmatter-validation). It lives in memory and IndexedDB but is recomputed from the AI response each time the entry is re-indexed. If an entry is edited on disk and then synced back, its `emotionalValence` will be lost until the next index run.
 
 ## Disk I/O
 
@@ -145,11 +140,9 @@ Disk I/O is owned entirely by `src/services/fs.ts`. The module exposes three wri
 | `tags` | `string[]` (optional) | `[]` |
 | `summary` | `string \| null` (optional) | — |
 | `indexed` | `boolean` (optional) | `false` |
-| `emotionalValence` | `EmotionalValenceSchema` (optional) | — |
-
 Every field is optional so that an empty frontmatter block (plain markdown imports) still parses successfully. UUID and ISO datetime formats are intentionally not enforced — legacy entries may have non-standard values, and `loadEntriesFromDisk` handles missing fields with its own fallbacks.
 
-The schema is **strict about shape**, though: if `mood` is present it must be a valid `MoodScore`, if `tags` is present it must be an array of strings, and `emotionalValence` must be one of the five allowed enum values. A corrupted file with `mood: "bad"` won't silently become an entry with garbage mood data — it will fail validation and load with its metadata discarded and its body intact.
+The schema is **strict about shape**, though: if `mood` is present it must be a valid `MoodScore`, and if `tags` is present it must be an array of strings. A corrupted file with `mood: "bad"` won't silently become an entry with garbage mood data — it will fail validation and load with its metadata discarded and its body intact.
 
 ### Writing entries
 
@@ -210,8 +203,8 @@ Holds the `PsychologicalProfile` and runs profile generation.
 
 `generateProfile()` (`profileStore.ts:44`) is a five-phase pipeline:
 
-1. **Index unprocessed entries** — delegates to `processAllEntries` (Haiku) to fill in mood, tags, summary, and emotionalValence for any entry where `indexed === false`. See [AI entry processing](#ai-entry-processing).
-2. **Local stats** — `computeLocalStats()` calculates average mood, journaling streak, average entry length, reflection depth, and emotional valence histogram. No API call.
+1. **Index unprocessed entries** — delegates to `processAllEntries` (Haiku) to fill in mood, tags, and summary for any entry where `indexed === false`. See [AI entry processing](#ai-entry-processing).
+2. **Local stats** — `computeLocalStats()` calculates average mood, journaling streak, average entry length, and reflection depth. No API call.
 3. **Narrative profile** — `generateProfileFromEntries()` sends entry summaries to Haiku and returns structured themes, cognitive patterns, strengths, growth areas, and emotional trends. Validated with `ProfileResponseSchema`.
 4. **Full profile** — `generateFullProfile()` sends full entry bodies to Opus 4.6 and returns a 2000–4000 word clinical markdown document. Not validated — the output is a free-form markdown string.
 5. **Persist** — merges everything into `PsychologicalProfile`, writes to `nopy-profile` in IndexedDB, and saves `profiles/profile.json` and `profiles/psychological-profile.md` next to the journal directory.
@@ -272,7 +265,6 @@ Entries are processed **sequentially, not in parallel**, to keep token usage pre
 | `mood.value` | Out of range (e.g. `99`) or non-numeric string | Coerce to number, clamp to 1–10, fall back to `5` |
 | `mood.label` | Unknown label (e.g. `"excellent"`) | Fall back to `"neutral"` |
 | `tags` | Bare string instead of array | Wrap in `[string]`, then enforce 1–10 items |
-| `emotionalValence` | Unknown value (e.g. `"Amazing"`) | Fall back to `"Mixed"` |
 | `summary` | Missing or empty | Throws — no safe fallback |
 
 Structurally broken responses (missing required fields, unparseable JSON) throw a `ZodError` that propagates through the existing `console.error` + throw pattern in `entryProcessor.ts:44`.
@@ -300,7 +292,6 @@ Nopy does not watch the journal directory for external changes. If the user edit
 
 ### Known gaps
 
-- **`emotionalValence` is not serialised to frontmatter** — see [Known gap: `emotionalValence`](#known-gap-emotionalvalence).
 - **Writes are not atomic across the three layers** — see [Write ordering and atomicity](#write-ordering-and-atomicity).
 
 ## File reference
