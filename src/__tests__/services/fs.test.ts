@@ -203,18 +203,59 @@ describe('parseMarkdown', () => {
     expect(content).toBe('This is the body of the entry.')
   })
 
-  it('falls back gracefully on a malformed JSON value in frontmatter', () => {
+  it('parses unquoted YAML scalars correctly', () => {
     /**
-     * Not all .md files written by nopy will have perfectly valid JSON values in
-     * their frontmatter (e.g. corruption, manual edits). parseMarkdown catches
-     * JSON.parse errors and stores the raw string value instead of crashing.
-     * Input: frontmatter with a key whose value is unquoted and not valid JSON
-     * Expected output: successful parse, with the raw string stored for that key
+     * With real YAML parsing, unquoted string values are valid scalars.
+     * Input: frontmatter with unquoted title and boolean indexed
+     * Expected output: title parsed as string, indexed as boolean
      */
     const md = `---\ntitle: unquoted value\nindexed: false\n---\n\nContent.`
     const { frontmatter, content } = parseMarkdown(md)
     expect(frontmatter.title).toBe('unquoted value')
+    expect(frontmatter.indexed).toBe(false)
     expect(content).toBe('Content.')
+  })
+})
+
+describe('parseMarkdown with real YAML features', () => {
+  it('round-trips a summary that contains newline characters', () => {
+    /**
+     * Before this refactor the hand-rolled parser split frontmatter on raw
+     * newlines and dropped any line that did not contain ": ". With real YAML
+     * the block-scalar syntax preserves multi-line strings correctly.
+     * Input: entry with summary "First line.\nSecond line."
+     * Expected output: parseMarkdown(entryToMarkdown(entry)).frontmatter.summary === original
+     */
+    const entry = makeEntry({ summary: 'First line.\nSecond line.' })
+    const md = entryToMarkdown(entry)
+    const { frontmatter } = parseMarkdown(md)
+    expect(frontmatter.summary).toBe('First line.\nSecond line.')
+  })
+
+  it('parses a hand-edited tags array written in unquoted YAML form', () => {
+    /**
+     * External editors produce valid YAML like `tags: [focus, planning]`
+     * without JSON string quotes. The new parser handles this correctly.
+     * Input: frontmatter block with `tags: [focus, planning]`
+     * Expected output: frontmatter.tags === ['focus', 'planning']
+     */
+    const md = `---\ntags: [focus, planning]\n---\n\nContent.`
+    const { frontmatter } = parseMarkdown(md)
+    expect(frontmatter.tags).toEqual(['focus', 'planning'])
+  })
+
+  it('returns empty frontmatter on truly malformed YAML', () => {
+    /**
+     * A corrupted file (e.g. unclosed bracket) must not crash the sync loop.
+     * The parser should return empty frontmatter so loadEntriesFromDisk treats
+     * the entry as a plain markdown import.
+     * Input: frontmatter block "tags: [unclosed"
+     * Expected output: frontmatter === {}, content preserved
+     */
+    const md = `---\ntags: [unclosed\n---\n\nContent.`
+    const { frontmatter, content } = parseMarkdown(md)
+    expect(Object.keys(frontmatter)).toHaveLength(0)
+    expect(content).toBe(md)
   })
 })
 

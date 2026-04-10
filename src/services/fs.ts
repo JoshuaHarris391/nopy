@@ -1,3 +1,4 @@
+import { stringify as yamlStringify, parse as yamlParse } from 'yaml'
 import type { JournalEntry } from '../types/journal'
 import type { PsychologicalProfile } from '../types/profile'
 import { FrontmatterEntrySchema } from '../schemas/frontmatter'
@@ -30,10 +31,7 @@ export function entryToMarkdown(entry: JournalEntry): string {
     frontmatter.summary = entry.summary
   }
 
-  const yaml = Object.entries(frontmatter)
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-    .join('\n')
-
+  const yaml = yamlStringify(frontmatter).trimEnd()
   return `---\n${yaml}\n---\n\n${entry.content}`
 }
 
@@ -44,22 +42,14 @@ export function parseMarkdown(text: string): { frontmatter: Record<string, unkno
     return { frontmatter: {}, content: text }
   }
 
-  const frontmatter: Record<string, unknown> = {}
-  let parseFailures = 0
-  for (const line of match[1].split('\n')) {
-    const idx = line.indexOf(': ')
-    if (idx === -1) continue
-    const key = line.slice(0, idx)
-    const value = line.slice(idx + 2)
-    try {
-      frontmatter[key] = JSON.parse(value)
-    } catch {
-      parseFailures++
-      frontmatter[key] = value
-    }
+  try {
+    const frontmatter = (yamlParse(match[1]) ?? {}) as Record<string, unknown>
+    console.log('[fs] parseMarkdown: frontmatter keys', Object.keys(frontmatter).length)
+    return { frontmatter, content: match[2] }
+  } catch (e) {
+    console.warn('[fs] parseMarkdown: YAML parse failed, treating entry as plain markdown:', e)
+    return { frontmatter: {}, content: text }
   }
-  console.log('[fs] parseMarkdown: frontmatter keys', Object.keys(frontmatter).length, '| JSON parse failures', parseFailures)
-  return { frontmatter, content: match[2] }
 }
 
 export async function saveEntryToDisk(entry: JournalEntry, journalPath: string): Promise<void> {
