@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut'
+import { useAutosave } from '../../hooks/useAutosave'
+import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea'
 import { format } from 'date-fns'
-import { MessageCircle, Check, Trash2, Loader2, Minus, Plus } from 'lucide-react'
+import { Check, Trash2, Loader2 } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
 import { Button } from '../ui/Button'
+import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { useJournalStore } from '../../stores/journalStore'
 import { moodValueToLabel } from '../../utils/mood'
 import type { JournalEntry, MoodScore } from '../../types/journal'
@@ -21,21 +24,16 @@ export function EntryEditor() {
   const [content, setContent] = useState('')
   const [moodValue, setMoodValue] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
-  const [dirty, setDirty] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
-  const TEXT_SIZES = [14, 16, 18, 20, 22]
-  const [textSizeIndex, setTextSizeIndex] = useState(3) // default 20px
+  const [textSizeIndex, setTextSizeIndex] = useState(3)
   const entryIdRef = useRef<string | null>(id ?? null)
   const isNewRef = useRef(isNew)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const isTypingRef = useRef(false)
 
-  // Load entries if not loaded
   useEffect(() => {
     if (!loaded) loadEntries()
   }, [loaded, loadEntries])
 
-  // Load existing entry
   useEffect(() => {
     if (!loaded) return
     if (id && id !== 'new') {
@@ -46,18 +44,11 @@ export function EntryEditor() {
         setMoodValue(entry.mood?.value ?? null)
         entryIdRef.current = entry.id
         isNewRef.current = false
-        setDirty(false)
+        autosave.markClean()
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, entries, loaded])
-
-  // Autosave with debounce
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useKeyboardShortcut('mod+s', () => {
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    handleSave()
-  })
 
   const ensureEntry = useCallback(async (): Promise<string> => {
     if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
@@ -92,7 +83,7 @@ export function EntryEditor() {
         ? { value: moodValue, label: moodValueToLabel(moodValue) }
         : null
       await updateEntry(entryId, { title, content, mood })
-      setDirty(false)
+      autosave.markClean()
       setJustSaved(true)
       setTimeout(() => setJustSaved(false), 2000)
     } catch (e) {
@@ -100,18 +91,17 @@ export function EntryEditor() {
     } finally {
       setSaving(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving, ensureEntry, updateEntry, title, content, moodValue])
 
-  useEffect(() => {
-    if (!dirty) return
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      handleSave()
-    }, 1500)
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    }
-  }, [dirty, title, content, moodValue, handleSave])
+  const autosave = useAutosave(handleSave, [title, content, moodValue])
+
+  useKeyboardShortcut('mod+s', () => {
+    autosave.cancelPending()
+    handleSave()
+  })
+
+  useAutoResizeTextarea(textareaRef, content, [textSizeIndex])
 
   const handleDelete = useCallback(async () => {
     const entryId = entryIdRef.current
@@ -120,31 +110,10 @@ export function EntryEditor() {
     navigate('/')
   }, [deleteEntry, navigate])
 
-  const handleTitleChange = (value: string) => {
-    setTitle(value)
-    setDirty(true)
+  const markFieldDirty = () => {
+    autosave.markDirty()
     setJustSaved(false)
   }
-
-  const handleContentChange = (value: string) => {
-    isTypingRef.current = true
-    setContent(value)
-    setDirty(true)
-    setJustSaved(false)
-  }
-
-  // Resize textarea only for external content changes (e.g. loading an entry)
-  useEffect(() => {
-    if (isTypingRef.current) {
-      isTypingRef.current = false
-      return
-    }
-    const el = textareaRef.current
-    if (el) {
-      el.style.height = 'auto'
-      el.style.height = Math.max(400, el.scrollHeight) + 'px'
-    }
-  }, [content, textSizeIndex])
 
   const wordCount = content.split(/\s+/).filter(Boolean).length
   const readTime = Math.max(1, Math.ceil(wordCount / 200))
@@ -155,41 +124,27 @@ export function EntryEditor() {
   return (
     <>
       <MainHeader title={isNew ? 'New Entry' : 'Edit Entry'}>
-        {/* Autosave indicator */}
         {saving && (
-          <div
-            className="flex items-center gap-1.5"
-            style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}
-          >
+          <div className="flex items-center gap-1.5" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>
             <Loader2 size={14} strokeWidth={2} className="animate-spin" />
             Saving
           </div>
         )}
         {justSaved && !saving && (
-          <div
-            className="flex items-center gap-1.5"
-            style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)' }}
-          >
+          <div className="flex items-center gap-1.5" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)' }}>
             <Check size={14} strokeWidth={2} />
             Saved
           </div>
         )}
-        <Button variant="secondary" onClick={() => navigate('/')}>
-          Close
-        </Button>
+        <Button variant="secondary" onClick={() => navigate('/')}>Close</Button>
         {!isNew && entryIdRef.current && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="flex items-center justify-center cursor-pointer"
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 'var(--radius-sm)',
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--soft-coral)',
-              transition: 'all var(--transition-gentle)',
-              opacity: 0.6,
+              width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+              background: 'transparent', border: 'none', color: 'var(--soft-coral)',
+              transition: 'all var(--transition-gentle)', opacity: 0.6,
             }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
@@ -198,6 +153,7 @@ export function EntryEditor() {
           </button>
         )}
       </MainHeader>
+
       {lastError && (
         <div
           className="flex items-center justify-between"
@@ -205,9 +161,7 @@ export function EntryEditor() {
             padding: '10px 44px',
             background: 'color-mix(in srgb, var(--soft-coral) 12%, var(--parchment))',
             borderBottom: '1px solid color-mix(in srgb, var(--soft-coral) 30%, var(--stone))',
-            fontFamily: 'var(--font-ui)',
-            fontSize: 13,
-            color: 'var(--soft-coral)',
+            fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--soft-coral)',
           }}
         >
           <span>{lastError}</span>
@@ -215,72 +169,51 @@ export function EntryEditor() {
             onClick={clearLastError}
             className="cursor-pointer"
             style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--soft-coral)',
-              fontFamily: 'var(--font-ui)',
-              fontSize: 12,
-              fontWeight: 500,
-              textDecoration: 'underline',
-              padding: '2px 8px',
+              background: 'none', border: 'none', color: 'var(--soft-coral)',
+              fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 500,
+              textDecoration: 'underline', padding: '2px 8px',
             }}
           >
             Dismiss
           </button>
         </div>
       )}
+
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px 0 44px' }}>
         <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
-          {/* Title input */}
           <input
             type="text"
             value={title}
-            onChange={(e) => handleTitleChange(e.target.value)}
+            onChange={(e) => { setTitle(e.target.value); markFieldDirty() }}
             placeholder="What's on your mind today?"
             style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 32,
-              fontWeight: 700,
-              color: 'var(--ink)',
-              border: 'none',
-              background: 'transparent',
-              width: '100%',
-              outline: 'none',
-              letterSpacing: '-0.015em',
-              padding: '0 0 8px',
-              borderBottom: '2px solid transparent',
-              transition: 'border-color var(--transition-gentle)',
-              caretColor: 'var(--forest)',
+              fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 700,
+              color: 'var(--ink)', border: 'none', background: 'transparent',
+              width: '100%', outline: 'none', letterSpacing: '-0.015em',
+              padding: '0 0 8px', borderBottom: '2px solid transparent',
+              transition: 'border-color var(--transition-gentle)', caretColor: 'var(--forest)',
             }}
             onFocus={(e) => (e.target.style.borderBottomColor = 'var(--amber)')}
             onBlur={(e) => (e.target.style.borderBottomColor = 'transparent')}
           />
 
-          {/* Mood bar */}
           <MoodBar
             value={moodValue}
-            onChange={(v) => {
-              setMoodValue(v)
-              setDirty(true)
-              setJustSaved(false)
-            }}
+            onChange={(v) => { setMoodValue(v); markFieldDirty() }}
           />
 
-          {/* Date */}
           <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)', margin: '8px 0 28px' }}>
             {entryDate && format(new Date(entryDate), "d MMMM yyyy · EEEE · h:mm a")}
           </div>
 
-          {/* Body textarea */}
           <textarea
             ref={textareaRef}
             value={content}
             onChange={(e) => {
-              handleContentChange(e.target.value)
-              const el = e.target
-              el.style.height = 'auto'
-              el.style.height = Math.max(400, el.scrollHeight) + 'px'
+              setContent(e.target.value)
+              markFieldDirty()
               // Auto-scroll to keep cursor visible as text grows
+              const el = e.target
               requestAnimationFrame(() => {
                 const scrollParent = el.closest('.overflow-y-auto')
                 if (scrollParent) {
@@ -295,91 +228,24 @@ export function EntryEditor() {
             }}
             placeholder="Begin writing..."
             style={{
-              fontFamily: 'var(--font-body)',
-              fontSize: TEXT_SIZES[textSizeIndex],
-              lineHeight: 1.8,
-              color: 'var(--manuscript)',
-              minHeight: 400,
-              outline: 'none',
-              border: 'none',
-              width: '100%',
-              background: 'transparent',
-              resize: 'none',
-              caretColor: 'var(--forest)',
-              overflow: 'hidden',
+              fontFamily: 'var(--font-body)', fontSize: TEXT_SIZES[textSizeIndex],
+              lineHeight: 1.8, color: 'var(--manuscript)', minHeight: 400,
+              outline: 'none', border: 'none', width: '100%',
+              background: 'transparent', resize: 'none',
+              caretColor: 'var(--forest)', overflow: 'hidden',
             }}
           />
 
-          {/* Toolbar */}
-          <div
-            className="sticky bottom-0 flex justify-between items-center"
-            style={{
-              background: 'linear-gradient(to top, var(--parchment) 70%, transparent)',
-              padding: '20px 0 16px',
-            }}
-          >
-            <div className="flex items-center gap-4" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>
-              <span>{wordCount} words</span>
-              <span>·</span>
-              <span>~{readTime} min read</span>
-              <span>·</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setTextSizeIndex((i) => Math.max(0, i - 1))}
-                  disabled={textSizeIndex === 0}
-                  className="flex items-center justify-center cursor-pointer"
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'transparent',
-                    border: '1px solid var(--stone)',
-                    color: textSizeIndex === 0 ? 'var(--stone)' : 'var(--sage)',
-                    transition: 'all var(--transition-gentle)',
-                    cursor: textSizeIndex === 0 ? 'default' : 'pointer',
-                    padding: 0,
-                  }}
-                  title="Decrease text size"
-                >
-                  <Minus size={11} strokeWidth={2} />
-                </button>
-                <span style={{ minWidth: 18, textAlign: 'center', fontSize: 11 }}>
-                  {TEXT_SIZES[textSizeIndex]}
-                </span>
-                <button
-                  onClick={() => setTextSizeIndex((i) => Math.min(TEXT_SIZES.length - 1, i + 1))}
-                  disabled={textSizeIndex === TEXT_SIZES.length - 1}
-                  className="flex items-center justify-center cursor-pointer"
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'transparent',
-                    border: '1px solid var(--stone)',
-                    color: textSizeIndex === TEXT_SIZES.length - 1 ? 'var(--stone)' : 'var(--sage)',
-                    transition: 'all var(--transition-gentle)',
-                    cursor: textSizeIndex === TEXT_SIZES.length - 1 ? 'default' : 'pointer',
-                    padding: 0,
-                  }}
-                  title="Increase text size"
-                >
-                  <Plus size={11} strokeWidth={2} />
-                </button>
-              </div>
-            </div>
-            <Button
-              variant="primary"
-              onClick={() => navigate('/chat', { state: { entryTitle: title, entryContent: content, entryDate } })}
-              style={{ fontSize: 12, padding: '7px 14px' }}
-            >
-              <MessageCircle size={13} strokeWidth={1.8} />
-              Start Session
-            </Button>
-          </div>
+          <EditorToolbar
+            wordCount={wordCount}
+            readTime={readTime}
+            textSizeIndex={textSizeIndex}
+            onTextSizeChange={setTextSizeIndex}
+            onStartSession={() => navigate('/chat', { state: { entryTitle: title, entryContent: content, entryDate } })}
+          />
         </div>
       </div>
 
-      {/* Delete confirmation */}
       {showDeleteConfirm && (
         <div
           className="fixed inset-0 flex items-center justify-center z-50"
@@ -389,12 +255,9 @@ export function EntryEditor() {
           <div
             className="flex flex-col gap-4"
             style={{
-              background: 'var(--parchment)',
-              border: '1px solid var(--stone)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '28px 32px',
-              maxWidth: 400,
-              boxShadow: '0 12px 40px var(--shadow-warm-deep)',
+              background: 'var(--parchment)', border: '1px solid var(--stone)',
+              borderRadius: 'var(--radius-lg)', padding: '28px 32px',
+              maxWidth: 400, boxShadow: '0 12px 40px var(--shadow-warm-deep)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -405,22 +268,15 @@ export function EntryEditor() {
               This will permanently delete the entry from the app and remove the Markdown file from your journal folder. This cannot be undone.
             </p>
             <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>
-                Cancel
-              </Button>
+              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
               <button
                 onClick={handleDelete}
                 className="flex items-center gap-1.5 cursor-pointer"
                 style={{
-                  fontFamily: 'var(--font-ui)',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  padding: '7px 16px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--soft-coral)',
-                  color: 'white',
-                  border: 'none',
-                  transition: 'all var(--transition-gentle)',
+                  fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500,
+                  padding: '7px 16px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--soft-coral)', color: 'white',
+                  border: 'none', transition: 'all var(--transition-gentle)',
                 }}
               >
                 <Trash2 size={14} strokeWidth={2} />
