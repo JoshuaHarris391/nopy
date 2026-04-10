@@ -51,8 +51,8 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   return (
     <div
       style={{
-        marginTop: 32,
-        paddingBottom: 48,
+        marginTop: 0,
+        paddingBottom: 16,
         position: 'relative',
         borderTop: focused ? '2px solid var(--forest)' : '2px solid var(--stone)',
         transition: 'border-color 200ms ease-out',
@@ -89,7 +89,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         className="flex items-center justify-center cursor-pointer"
         style={{
           position: 'absolute',
-          bottom: 52,
+          bottom: 20,
           right: 0,
           width: 30,
           height: 30,
