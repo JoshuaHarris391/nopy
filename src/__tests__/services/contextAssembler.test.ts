@@ -47,7 +47,7 @@ function makeProfile(overrides: Partial<PsychologicalProfile> = {}): Psychologic
     avgEntryLength: 200,
     reflectionDepth: 'Medium',
     updatedAt: new Date().toISOString(),
-    entriesAnalysed: 5,
+    entriesAnalyzed: 5,
     fullProfile: null,
     ...overrides,
   }

@@ -13,7 +13,7 @@ interface ChatState {
   loadSession: (id: string) => Promise<void>
   addMessage: (message: ChatMessage) => Promise<void>
   updateStreamingMessage: (content: string) => void
-  finaliseStreamingMessage: () => Promise<void>
+  finalizeStreamingMessage: () => Promise<void>
   archiveSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   updateSessionTitle: (id: string, title: string) => Promise<void>
@@ -106,10 +106,10 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
     }
   },
 
-  finaliseStreamingMessage: async () => {
+  finalizeStreamingMessage: async () => {
     const session = getState().activeSession
     if (!session) return
-    console.log('[chatStore] finaliseStreamingMessage: session', session.id, '| total messages', session.messages.length)
+    console.log('[chatStore] finalizeStreamingMessage: session', session.id, '| total messages', session.messages.length)
     const messages = session.messages.map((m) =>
       m.streaming ? { ...m, streaming: false } : m,
     )

@@ -32,7 +32,7 @@ export const LocalStatsSchema = z.object({
 
 export const PsychologicalProfileSchema = ProfileResponseSchema.extend({
   ...LocalStatsSchema.shape,
-  entriesAnalysed: z.number(),
+  entriesAnalyzed: z.number(),
   updatedAt: z.string(),
   fullProfile: z.string().nullable(),
 })

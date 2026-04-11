@@ -42,6 +42,7 @@ export function EditorToolbar({ wordCount, readTime, textSizeIndex, onTextSizeCh
               padding: 0,
             }}
             title="Decrease text size"
+            aria-label="Decrease text size"
           >
             <Minus size={11} strokeWidth={2} />
           </button>
@@ -64,6 +65,7 @@ export function EditorToolbar({ wordCount, readTime, textSizeIndex, onTextSizeCh
               padding: 0,
             }}
             title="Increase text size"
+            aria-label="Increase text size"
           >
             <Plus size={11} strokeWidth={2} />
           </button>

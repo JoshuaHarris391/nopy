@@ -32,7 +32,7 @@ export function ChatView() {
   const loadSession = useChatStore((s) => s.loadSession)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateStreamingMessage = useChatStore((s) => s.updateStreamingMessage)
-  const finaliseStreamingMessage = useChatStore((s) => s.finaliseStreamingMessage)
+  const finalizeStreamingMessage = useChatStore((s) => s.finalizeStreamingMessage)
   const updateSessionTitle = useChatStore((s) => s.updateSessionTitle)
   const deleteSession = useChatStore((s) => s.deleteSession)
 
@@ -173,7 +173,7 @@ export function ChatView() {
         maxOutputTokens,
         (fullText) => updateStreamingMessage(fullText),
         async () => {
-          await finaliseStreamingMessage()
+          await finalizeStreamingMessage()
           streamingRef.current = false
 
           // Generate title after first exchange
@@ -203,7 +203,7 @@ export function ChatView() {
           console.error('Chat stream error:', error)
           streamingRef.current = false
           updateStreamingMessage(`I'm sorry, I encountered an error: ${error.message}`)
-          finaliseStreamingMessage()
+          finalizeStreamingMessage()
         },
       )
     } catch (error) {
@@ -211,9 +211,9 @@ export function ChatView() {
       streamingRef.current = false
       const msg = error instanceof Error ? error.message : String(error)
       updateStreamingMessage(`I'm sorry, I couldn't connect: ${msg}`)
-      await finaliseStreamingMessage()
+      await finalizeStreamingMessage()
     }
-  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finaliseStreamingMessage, updateSessionTitle])
+  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
 
 
   // Handle "Explore with nopy" entry context from router state

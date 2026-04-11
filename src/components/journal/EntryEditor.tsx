@@ -148,6 +148,7 @@ export function EntryEditor() {
         {!isNew && entryIdRef.current && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
+            aria-label="Delete entry"
             className="flex items-center justify-center cursor-pointer"
             style={{
               width: 32, height: 32, borderRadius: 'var(--radius-sm)',

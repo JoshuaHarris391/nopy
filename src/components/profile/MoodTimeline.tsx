@@ -149,7 +149,7 @@ export function MoodTimeline({ entries, range, offset, onRangeChange, onOffsetCh
       .sort((a, b) => a.date.getTime() - b.date.getTime())
   }, [entries])
 
-  const { start: winStart, end: winEnd } = getWindow(range, offset)
+  const { start: winStart, end: winEnd } = useMemo(() => getWindow(range, offset), [range, offset])
 
   const points = useMemo(() => {
     const s = winStart.getTime()

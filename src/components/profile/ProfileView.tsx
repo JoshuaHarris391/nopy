@@ -87,7 +87,7 @@ export function ProfileView() {
       <MainHeader title="Psychological Profile">
         {profile && (
           <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
-            Last updated: {new Date(profile.updatedAt).toLocaleDateString()} · {profile.entriesAnalysed} entries analysed
+            Last updated: {new Date(profile.updatedAt).toLocaleDateString()} · {profile.entriesAnalyzed} entries analysed
           </span>
         )}
         {apiKey && (

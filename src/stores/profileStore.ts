@@ -37,7 +37,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
   loadProfile: async () => {
     const profile = await get<PsychologicalProfile>('nopy-profile')
-    console.log('[profileStore] loadProfile: profile found', profile != null, profile ? '| entriesAnalysed ' + profile.entriesAnalysed : '')
+    console.log('[profileStore] loadProfile: profile found', profile != null, profile ? '| entriesAnalyzed ' + profile.entriesAnalyzed : '')
     setState({ profile: profile ?? null, loaded: true })
   },
 
@@ -116,14 +116,14 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const profile: PsychologicalProfile = {
       ...narrative,
       ...localStats,
-      entriesAnalysed: entries.filter((e) => e.indexed).length,
+      entriesAnalyzed: entries.filter((e) => e.indexed).length,
       updatedAt: new Date().toISOString(),
       fullProfile,
     }
 
     const { setProfile } = getState()
     await setProfile(profile)
-    console.log('[profileStore] generateProfile: complete | entriesAnalysed', profile.entriesAnalysed, '| themes', profile.themes.length, '| cognitivePatterns', profile.cognitivePatterns.length)
+    console.log('[profileStore] generateProfile: complete | entriesAnalyzed', profile.entriesAnalyzed, '| themes', profile.themes.length, '| cognitivePatterns', profile.cognitivePatterns.length)
     setPhase('Profile generated successfully')
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Search, BookOpen, Sparkles, ChevronDown } from 'lucide-react'
@@ -33,16 +33,16 @@ export function IndexView() {
     if (!loaded) loadEntries()
   }, [loaded, loadEntries])
 
-  const filtered = entries.filter((e) => {
-    if (!search) return true
+  const filtered = useMemo(() => {
+    if (!search) return entries
     const q = search.toLowerCase()
-    return (
+    return entries.filter((e) =>
       e.title.toLowerCase().includes(q) ||
       e.content.toLowerCase().includes(q) ||
       e.tags.some((t) => t.toLowerCase().includes(q)) ||
       (e.summary?.toLowerCase().includes(q) ?? false)
     )
-  })
+  }, [entries, search])
 
   return (
     <>
