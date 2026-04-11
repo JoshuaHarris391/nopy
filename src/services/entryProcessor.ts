@@ -68,6 +68,9 @@ export async function generateProfileFromEntries(
 ): Promise<z.infer<typeof ProfileResponseSchema>> {
   const indexed = entries.filter((e) => e.indexed && e.summary)
   console.log('[entryProcessor] generateProfileFromEntries: indexed entries', indexed.length)
+  if (indexed.length === 0) {
+    throw new Error('No indexed entries with summaries available — index entries before generating a profile')
+  }
   const entrySummaries = indexed
     .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
     .join('\n')

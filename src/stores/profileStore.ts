@@ -131,7 +131,8 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
         setState({ phase: 'Cancelled' })
       } else {
         console.error('[profileStore] generateProfile: failed —', e)
-        setState({ phase: 'Generation failed — check console for details' })
+        const msg = e instanceof Error ? e.message : 'check console for details'
+        setState({ phase: `Generation failed — ${msg}` })
       }
     } finally {
       setTimeout(() => setState({ generating: false, phase: '' }), 2000)
