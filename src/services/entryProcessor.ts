@@ -1,11 +1,14 @@
 import { sendMessage } from './anthropic'
+import { parseLLMJson } from './parseLLMJson'
+import { HAIKU_MODEL, OPUS_MODEL, TOKEN_LIMITS } from './models'
+import { ENTRY_METADATA_SYSTEM } from './prompts/entryMetadata'
+import { PROFILE_NARRATIVE_SYSTEM } from './prompts/profileNarrative'
+import { FULL_PROFILE_SYSTEM } from './prompts/fullProfile'
 import type { JournalEntry, MoodLabel } from '../types/journal'
 import type { z } from 'zod'
 import type { LocalStatsSchema } from '../schemas/profile'
 import { EntryMetadataCoercedSchema } from '../schemas/journal'
 import { ProfileResponseSchema } from '../schemas/profile'
-
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
 
 interface EntryMetadata {
   mood: { value: number; label: MoodLabel }
@@ -19,32 +22,16 @@ export async function processEntry(entry: JournalEntry, apiKey: string, signal?:
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
-    `You are a clinical psychologist analysing journal entries. Your tone balances emotional attunement with clinical precision — you notice what matters to the person, name the people and specific moments they describe, and frame observations using accurate psychological language without being cold or detached.
-
-Analyse this journal entry and return structured metadata as JSON.
-
-Return ONLY valid JSON with these fields:
-- mood: { value (integer 1-10 where 1=very low, 10=excellent), label (one of: "low", "mixed", "neutral", "good", "great") }
-- tags: array of 3-6 short theme tags (lowercase, e.g. "work stress", "gratitude", "relationships")
-- summary: 1-2 sentence clinical summary that references specific people and events from the entry by name, identifies the core emotional state, and notes any relevant psychological patterns (e.g. cognitive distortions, avoidance, values-driven behaviour)
-
-No markdown, no explanation, just the JSON object.`,
+    ENTRY_METADATA_SYSTEM,
     [{ role: 'user', content: `Title: ${entry.title}\n\n${entry.content}` }],
-    500,
+    TOKEN_LIMITS.entryMetadata,
     signal,
   )
 
   console.log('[entryProcessor] processEntry: response', response.length, 'chars')
-  try {
-    // Strip any markdown code fences if present
-    const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = EntryMetadataCoercedSchema.parse(JSON.parse(cleaned))
-    console.log('[entryProcessor] processEntry: parsed ok — mood:', parsed.mood.value, '/', parsed.mood.label, '| tags:', parsed.tags.length, '| summary:', parsed.summary.length, 'chars')
-    return parsed
-  } catch (e) {
-    console.error('[entryProcessor] processEntry: parse failed — response length:', response.length, 'chars |', e)
-    throw new Error(`Failed to parse entry metadata: ${e}`)
-  }
+  const parsed = parseLLMJson(response, EntryMetadataCoercedSchema)
+  console.log('[entryProcessor] processEntry: parsed ok — mood:', parsed.mood.value, '/', parsed.mood.label, '| tags:', parsed.tags.length, '| summary:', parsed.summary.length, 'chars')
+  return parsed
 }
 
 export async function processAllEntries(
@@ -79,52 +66,27 @@ export async function generateProfileFromEntries(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<z.infer<typeof ProfileResponseSchema>> {
-  // Build context from all indexed entries
   const indexed = entries.filter((e) => e.indexed && e.summary)
   console.log('[entryProcessor] generateProfileFromEntries: indexed entries', indexed.length)
   const entrySummaries = indexed
     .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
     .join('\n')
 
-  const entrySummariesChars = indexed
-    .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
-    .join('\n').length
-  console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummariesChars, 'chars to Haiku')
+  console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummaries.length, 'chars to Haiku')
   const response = await sendMessage(
     apiKey,
     HAIKU_MODEL,
-    `You are a clinical psychologist writing a psychological profile based on journal entry summaries. Balance emotional attunement with clinical rigour — name the person's specific experiences, relationships, and struggles by name where they appear, and frame your observations using accurate psychological frameworks (CBT, ACT) without being cold or reductive.
-
-Write as though you are preparing notes for a supervision session — clinically precise, but with genuine care for the person behind the data.
-
-Return ONLY valid JSON with:
-- summary: 2-3 sentence paragraph naming specific people and the core trajectory of change
-- themes: Array of { theme: string, frequency: number (1-10), description: string (1-2 sentences max) } for the top 5-6 recurring themes
-- cognitivePatterns: Array of { pattern: string, framework: "CBT" | "ACT", description: string (1-2 sentences max), frequency: number (1-10) } for 2-3 observed patterns
-- strengths: Array of 3-4 short strength statements (1 sentence each)
-- growthAreas: Array of 2-3 short growth area statements (1 sentence each)
-- frameworkInsights: Array of 2-3 short therapeutic observations (1 sentence each)
-- emotionalTrends: Array of 3-4 short trend descriptions (under 15 words each)
-
-No markdown, just JSON.`,
+    PROFILE_NARRATIVE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
-    4000,
+    TOKEN_LIMITS.profileNarrative,
     signal,
   )
 
   console.log('[entryProcessor] generateProfileFromEntries: response', response.length, 'chars')
-  try {
-    const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = ProfileResponseSchema.parse(JSON.parse(cleaned))
-    console.log('[entryProcessor] generateProfileFromEntries: parsed ok — themes:', parsed.themes.length, '| cognitivePatterns:', parsed.cognitivePatterns.length, '| strengths:', parsed.strengths.length)
-    return parsed
-  } catch (e) {
-    console.error('[entryProcessor] generateProfileFromEntries: parse failed — response length:', response.length, 'chars |', e)
-    throw new Error(`Failed to generate profile: ${e}`)
-  }
+  const parsed = parseLLMJson(response, ProfileResponseSchema)
+  console.log('[entryProcessor] generateProfileFromEntries: parsed ok — themes:', parsed.themes.length, '| cognitivePatterns:', parsed.cognitivePatterns.length, '| strengths:', parsed.strengths.length)
+  return parsed
 }
-
-const OPUS_MODEL = 'claude-opus-4-6'
 
 export async function generateFullProfile(
   entries: JournalEntry[],
@@ -134,7 +96,6 @@ export async function generateFullProfile(
   const indexed = entries.filter((e) => e.indexed)
   console.log('[entryProcessor] generateFullProfile: indexed entries', indexed.length)
 
-  // Build full entry content for Opus (send actual content, not just summaries)
   const entryContent = indexed
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .map((e) => {
@@ -149,58 +110,9 @@ export async function generateFullProfile(
   const response = await sendMessage(
     apiKey,
     OPUS_MODEL,
-    `You are a clinical psychologist writing a comprehensive psychological profile based on a person's journal entries. This is a clinical formulation document — not a journal summary.
-
-Write in the voice of a clinical supervisor preparing notes for a supervision session: clinically precise, warm, and deeply attentive to the person behind the data.
-
-Structure the profile with these markdown sections:
-
-# Comprehensive Psychological Profile
-
-## I. Core Personality Structure
-- Cognitive style and processing patterns
-- Emotional architecture (how they experience and process emotions)
-- Self-concept and identity patterns
-
-## II. Relational Patterns
-- Key relationships and attachment dynamics
-- Recurring interpersonal themes
-- Social patterns and challenges
-
-## III. Core Psychological Dynamics
-- Primary behavioural/cognitive loops (e.g. seeking cycles, avoidance patterns)
-- Insight-action gaps
-- Identity development trajectory
-
-## IV. Emotional Wellbeing Trajectory
-- Timeline of emotional states across the journal period
-- Key turning points and crises
-- Overall direction of change
-
-## V. Strengths & Protective Factors
-- Evidence-based strengths observed across entries
-- Coping resources and resilience indicators
-
-## VI. Risk Factors & Vulnerabilities
-- Areas of ongoing vulnerability
-- Patterns that could re-emerge under stress
-
-## VII. Clinical Observations & Recommendations
-- Therapeutic frameworks that apply (CBT, ACT, etc.)
-- Specific patterns warranting attention
-- Growth trajectory and prognosis
-
-Guidelines:
-- Name specific people, events, and dates from the entries
-- Quote or closely paraphrase specific entry content as evidence for observations
-- Use accurate psychological terminology while remaining accessible
-- Balance clinical rigour with genuine care — this is a real person's inner world
-- Identify patterns across time, not just individual events
-- Note where the person has grown and where they are still working through things
-- Write 2000-4000 words — thorough but not exhaustive
-- Output as clean markdown with proper heading hierarchy`,
+    FULL_PROFILE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],
-    8000,
+    TOKEN_LIMITS.fullProfile,
     signal,
   )
 
@@ -208,27 +120,19 @@ Guidelines:
   return response
 }
 
-// Local computation — no API call needed
 export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof LocalStatsSchema> {
   console.log('[entryProcessor] computeLocalStats: entries', entries.length)
   const indexed = entries.filter((e) => e.indexed)
   if (indexed.length === 0) {
     console.log('[entryProcessor] computeLocalStats: no indexed entries — returning zeros')
-    return {
-      averageMood: 0,
-      journalingStreak: 0,
-      avgEntryLength: 0,
-      reflectionDepth: 'Low',
-    }
+    return { averageMood: 0, journalingStreak: 0, avgEntryLength: 0, reflectionDepth: 'Low' }
   }
 
-  // Average mood
   const moodsWithValues = indexed.filter((e) => e.mood?.value)
   const averageMood = moodsWithValues.length > 0
     ? Math.round((moodsWithValues.reduce((sum, e) => sum + (e.mood?.value ?? 0), 0) / moodsWithValues.length) * 10) / 10
     : 0
 
-  // Journaling streak (consecutive days from most recent)
   const dates = [...new Set(entries.map((e) => e.createdAt.slice(0, 10)))].sort().reverse()
   let journalingStreak = 0
   const today = new Date().toISOString().slice(0, 10)
@@ -242,11 +146,9 @@ export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof Local
     }
   }
 
-  // Average entry length
   const totalWords = entries.reduce((sum, e) => sum + e.content.split(/\s+/).filter(Boolean).length, 0)
   const avgEntryLength = Math.round(totalWords / entries.length)
 
-  // Reflection depth (based on avg entry length)
   const reflectionDepth: 'Low' | 'Medium' | 'High' =
     avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
 

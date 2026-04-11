@@ -5,6 +5,7 @@ import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { streamChatResponse, sendMessage } from '../../services/anthropic'
+import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { PSYCHOLOGIST_SYSTEM_PROMPT } from '../../services/prompts/psychologist'
 import { MainHeader } from '../ui/MainHeader'
@@ -183,10 +184,10 @@ export function ChatView() {
               const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
               const title = await sendMessage(
                 apiKey,
-                'claude-haiku-4-5-20251001',
+                HAIKU_MODEL,
                 'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
                 [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
-                50,
+                TOKEN_LIMITS.titleGeneration,
               )
               if (title.trim()) {
                 await updateSessionTitle(currentSession.id, title.trim())
