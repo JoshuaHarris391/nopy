@@ -1,4 +1,4 @@
-import { sendMessage } from './anthropic'
+import { sendMessage, sendMessageStreaming } from './anthropic'
 import { parseLLMJson } from './parseLLMJson'
 import { HAIKU_MODEL, OPUS_MODEL, TOKEN_LIMITS } from './models'
 import { ENTRY_METADATA_SYSTEM } from './prompts/entryMetadata'
@@ -64,6 +64,7 @@ export async function processAllEntries(
 export async function generateProfileFromEntries(
   entries: JournalEntry[],
   apiKey: string,
+  onStreamProgress?: (charsReceived: number) => void,
   signal?: AbortSignal,
 ): Promise<z.infer<typeof ProfileResponseSchema>> {
   const indexed = entries.filter((e) => e.indexed && e.summary)
@@ -76,12 +77,13 @@ export async function generateProfileFromEntries(
     .join('\n')
 
   console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummaries.length, 'chars to Haiku')
-  const response = await sendMessage(
+  const response = await sendMessageStreaming(
     apiKey,
     HAIKU_MODEL,
     PROFILE_NARRATIVE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
     TOKEN_LIMITS.profileNarrative,
+    onStreamProgress ?? (() => {}),
     signal,
   )
 
@@ -94,6 +96,7 @@ export async function generateProfileFromEntries(
 export async function generateFullProfile(
   entries: JournalEntry[],
   apiKey: string,
+  onStreamProgress?: (charsReceived: number) => void,
   signal?: AbortSignal,
 ): Promise<string> {
   const indexed = entries.filter((e) => e.indexed)
@@ -110,12 +113,13 @@ export async function generateFullProfile(
     .join('\n\n')
 
   console.log('[entryProcessor] generateFullProfile: sending', entryContent.length, 'chars to Opus')
-  const response = await sendMessage(
+  const response = await sendMessageStreaming(
     apiKey,
     OPUS_MODEL,
     FULL_PROFILE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],
     TOKEN_LIMITS.fullProfile,
+    onStreamProgress ?? (() => {}),
     signal,
   )
 

@@ -58,61 +58,75 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
     console.log('[profileStore] generateProfile: starting | total entries', entries.length)
-    try {
-    // Step 1: Process unindexed entries via Haiku
+
+    // Build dynamic step list based on what actually needs to happen
     const unindexed = entries.filter((e) => !e.indexed)
-    console.log('[profileStore] Step 1/5: unindexed entries to process', unindexed.length)
+    const steps: string[] = []
+    if (unindexed.length > 0) steps.push('index')
+    steps.push('stats', 'summary', 'full', 'save')
+    const totalSteps = steps.length
+    const stepNum = (id: string) => steps.indexOf(id) + 1
+
+    try {
+    // Index unprocessed entries via Haiku
     if (unindexed.length > 0) {
-      setPhase(`Step 1/5 — Indexing ${unindexed.length} unprocessed entries...`)
+      const s = stepNum('index')
+      setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
       const results = await processAllEntries(entries, apiKey, false, setProgress, signal)
       if (results.size > 0) {
         await useJournalStore.getState().applyProcessedMetadata(results)
         entries = useJournalStore.getState().entries
-        console.log('[profileStore] Step 1/5: processed', results.size, 'entries')
+        console.log(`[profileStore] Step ${s}/${totalSteps}: processed`, results.size, 'entries')
       }
-    } else {
-      console.log('[profileStore] Step 1/5: all entries already indexed')
-      setPhase('Step 1/5 — All entries already indexed')
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Step 2: Compute local stats
-    console.log('[profileStore] Step 2/5: computing local stats on', entries.length, 'entries')
-    setPhase('Step 2/5 — Computing metrics...')
+    // Compute local stats
+    const sStats = stepNum('stats')
+    setPhase(`Step ${sStats}/${totalSteps} — Computing metrics...`)
     setProgress(0, 0, '')
     const localStats = computeLocalStats(entries)
-
-    console.log('[profileStore] Step 2/5: localStats — averageMood', localStats.averageMood, '| streak', localStats.journalingStreak, '| avgEntryLength', localStats.avgEntryLength, '| reflectionDepth', localStats.reflectionDepth)
-
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-
-    // Step 3: Generate summary profile via Haiku
-    console.log('[profileStore] Step 3/5: generating summary profile via Haiku')
-    setPhase('Step 3/5 — Generating summary profile (Haiku)...')
-    const narrative = await generateProfileFromEntries(entries, apiKey, signal)
-
-    console.log('[profileStore] Step 3/5: summary profile generated')
+    console.log(`[profileStore] Step ${sStats}/${totalSteps}: localStats — averageMood`, localStats.averageMood, '| streak', localStats.journalingStreak)
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Step 4: Generate full psychological profile via Opus
-    console.log('[profileStore] Step 4/5: generating full profile via Opus')
-    setPhase('Step 4/5 — Writing full psychological profile (Opus 4.6)...')
+    // Generate summary profile via Haiku (streaming)
+    const sSummary = stepNum('summary')
+    setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (Haiku)...`)
+    setProgress(0, 0, 'Waiting for response...')
+    const narrative = await generateProfileFromEntries(
+      entries, apiKey,
+      (chars) => setProgress(Math.min(chars, 8000), 8000, `${chars} chars received`),
+      signal,
+    )
+    console.log(`[profileStore] Step ${sSummary}/${totalSteps}: summary profile generated`)
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+
+    // Generate full psychological profile via Opus (streaming)
+    const sFull = stepNum('full')
+    setPhase(`Step ${sFull}/${totalSteps} — Writing full psychological profile (Opus)...`)
+    setProgress(0, 0, 'Waiting for response...')
     let fullProfile: string | null = null
     try {
-      fullProfile = await generateFullProfile(entries, apiKey, signal)
-      console.log('[profileStore] Step 4/5: full profile generated', fullProfile?.length ?? 0, 'chars')
+      fullProfile = await generateFullProfile(
+        entries, apiKey,
+        (chars) => setProgress(Math.min(chars, 20000), 20000, `${chars} chars received`),
+        signal,
+      )
+      console.log(`[profileStore] Step ${sFull}/${totalSteps}: full profile generated`, fullProfile?.length ?? 0, 'chars')
     } catch (e) {
-      console.error('[profileStore] Step 4/5: full profile generation failed —', e)
-      setPhase('Step 4/5 — Full profile generation failed, continuing...')
+      console.error(`[profileStore] Step ${sFull}/${totalSteps}: full profile generation failed —`, e)
+      setPhase(`Step ${sFull}/${totalSteps} — Full profile generation failed, continuing...`)
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Step 5: Save everything
-    console.log('[profileStore] Step 5/5: saving profile')
-    setPhase('Step 5/5 — Saving profile...')
+    // Save everything
+    const sSave = stepNum('save')
+    setPhase(`Step ${sSave}/${totalSteps} — Saving profile...`)
+    setProgress(0, 0, '')
     const profile: PsychologicalProfile = {
       ...narrative,
       ...localStats,

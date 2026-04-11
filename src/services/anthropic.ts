@@ -87,3 +87,35 @@ export async function sendMessage(
   console.log('[anthropic] sendMessage: response', text.length, 'chars | stop_reason', response.stop_reason)
   return text
 }
+
+export async function sendMessageStreaming(
+  apiKey: string,
+  model: string,
+  system: string,
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  maxTokens: number,
+  onProgress: (charsReceived: number) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  console.log('[anthropic] sendMessageStreaming: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
+  const client = getClient(apiKey)
+  const stream = client.messages.stream(
+    {
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+    },
+    { signal },
+  )
+
+  let fullText = ''
+  stream.on('text', (text) => {
+    fullText += text
+    onProgress(fullText.length)
+  })
+
+  await stream.finalMessage()
+  console.log('[anthropic] sendMessageStreaming: complete —', fullText.length, 'chars')
+  return fullText
+}

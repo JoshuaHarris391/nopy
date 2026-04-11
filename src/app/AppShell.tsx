@@ -44,7 +44,7 @@ export function AppShell() {
               <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                 Generating profile...
               </div>
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: profileProgress.total > 0 ? 8 : 0 }}>
+              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: (profileProgress.total > 0 || profileProgress.title) ? 8 : 0 }}>
                 {profilePhase}
               </div>
               {profileProgress.total > 0 && (
