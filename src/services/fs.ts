@@ -52,13 +52,13 @@ export function parseMarkdown(text: string): { frontmatter: Record<string, unkno
   }
 }
 
-export async function saveEntryToDisk(entry: JournalEntry, journalPath: string): Promise<void> {
+export async function saveEntryToDisk(entry: JournalEntry, journalPath: string, oldSourceFilename?: string): Promise<string> {
   if (!hasFileSystem() || !journalPath) {
     console.log('[fs] saveEntryToDisk skipped:', { hasFs: hasFileSystem(), journalPath })
-    return
+    return entry.sourceFilename || `${slugify(entry.title, entry.id)}.md`
   }
 
-  const { mkdir, writeTextFile, exists } = await import('@tauri-apps/plugin-fs')
+  const { mkdir, writeTextFile, exists, remove } = await import('@tauri-apps/plugin-fs')
 
   console.log('[fs] Saving entry to disk:', { id: entry.id, title: entry.title, dir: journalPath })
 
@@ -69,9 +69,20 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string):
 
   const filename = entry.sourceFilename || `${slugify(entry.title, entry.id)}.md`
   const filePath = `${journalPath}/${filename}`
+
+  // If the filename changed (e.g. title was edited), delete the old file
+  if (oldSourceFilename && oldSourceFilename !== filename) {
+    const oldPath = `${journalPath}/${oldSourceFilename}`
+    if (await exists(oldPath)) {
+      await remove(oldPath)
+      console.log('[fs] Removed old file after rename:', oldSourceFilename)
+    }
+  }
+
   console.log('[fs] Writing file:', filePath)
   await writeTextFile(filePath, entryToMarkdown(entry))
   console.log('[fs] File written successfully:', filePath)
+  return filename
 }
 
 export async function deleteEntryFromDisk(id: string, journalPath: string, sourceFilename?: string): Promise<void> {
