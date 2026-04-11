@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Search, BookOpen, Sparkles, ChevronDown } from 'lucide-react'
@@ -6,9 +6,10 @@ import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { MoodDot } from '../ui/MoodDot'
 import { ProgressBar } from '../ui/ProgressBar'
-import { Button } from '../ui/Button'
+import { CancellableActionButton } from '../ui/CancellableActionButton'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useCancellableTask } from '../../hooks/useCancellableTask'
 
 export function IndexView() {
   const navigate = useNavigate()
@@ -16,42 +17,17 @@ export function IndexView() {
   const loaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const [search, setSearch] = useState('')
-  const [processing, setProcessing] = useState(false)
-  const [progress, setProgress] = useState<{ current: number; total: number; title: string }>({ current: 0, total: 0, title: '' })
-  const [result, setResult] = useState<string | null>(null)
   const apiKey = useSettingsStore((s) => s.apiKey)
-  const abortRef = useRef<AbortController | null>(null)
-  const [hovered, setHovered] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const task = useCancellableTask<string>()
 
-  const handleUpdateIndex = useCallback(async () => {
+  const handleUpdateIndex = () => {
     if (!apiKey) return
-    if (processing) {
-      abortRef.current?.abort()
-      return
-    }
-    const controller = new AbortController()
-    abortRef.current = controller
-    setProcessing(true)
-    setResult(null)
-    try {
-      const count = await useJournalStore.getState().processEntries(apiKey, false, (current, total, title) => {
-        setProgress({ current, total, title })
-      }, controller.signal)
-      setResult(count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date')
-      setTimeout(() => setResult(null), 3000)
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        setResult('Cancelled')
-      } else {
-        setResult('Indexing failed')
-      }
-      setTimeout(() => setResult(null), 3000)
-    } finally {
-      abortRef.current = null
-      setProcessing(false)
-    }
-  }, [processing, apiKey])
+    task.run(async (onProgress, signal) => {
+      const count = await useJournalStore.getState().processEntries(apiKey, false, onProgress, signal)
+      return count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date'
+    })
+  }
 
   useEffect(() => {
     if (!loaded) loadEntries()
@@ -75,27 +51,15 @@ export function IndexView() {
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
         {apiKey && (
-          <Button
-            variant="secondary"
-            onClick={handleUpdateIndex}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            className={processing ? 'btn-cancellable' : undefined}
-          >
-            {processing ? (
-              <>
-                <span style={{ visibility: hovered ? 'hidden' : 'visible' }}><Sparkles size={13} strokeWidth={1.8} />Updating...</span>
-                <span style={{ visibility: hovered ? 'visible' : 'hidden' }}><Sparkles size={13} strokeWidth={1.8} />Stop</span>
-              </>
-            ) : (
-              <><Sparkles size={13} strokeWidth={1.8} />Update Index</>
-            )}
-          </Button>
-        )}
-        {result && (
-          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--gentle-green)', fontWeight: 500 }}>
-            {result}
-          </span>
+          <CancellableActionButton
+            state={task.state}
+            result={task.result}
+            error={task.error}
+            idleLabel="Update Index"
+            icon={<Sparkles size={13} strokeWidth={1.8} />}
+            onRun={handleUpdateIndex}
+            onAbort={task.abort}
+          />
         )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
@@ -109,9 +73,9 @@ export function IndexView() {
           ) : (
             <>
               {/* Progress */}
-              {processing && (
+              {task.state === 'running' && (
                 <div style={{ marginBottom: 16 }}>
-                  <ProgressBar current={progress.current} total={progress.total} label={progress.title} />
+                  <ProgressBar current={task.progress.current} total={task.progress.total} label={task.progress.title} />
                 </div>
               )}
 
