@@ -55,7 +55,7 @@ export function parseMarkdown(text: string): { frontmatter: Record<string, unkno
 export async function saveEntryToDisk(entry: JournalEntry, journalPath: string, oldSourceFilename?: string): Promise<string> {
   if (!hasFileSystem() || !journalPath) {
     console.log('[fs] saveEntryToDisk skipped:', { hasFs: hasFileSystem(), journalPath })
-    return entry.sourceFilename || `${slugify(entry.title, entry.id)}.md`
+    return `${slugify(entry.title, entry.id)}.md`
   }
 
   const { mkdir, writeTextFile, exists, remove } = await import('@tauri-apps/plugin-fs')
@@ -67,7 +67,7 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string, 
     await mkdir(journalPath, { recursive: true })
   }
 
-  const filename = entry.sourceFilename || `${slugify(entry.title, entry.id)}.md`
+  const filename = `${slugify(entry.title, entry.id)}.md`
   const filePath = `${journalPath}/${filename}`
 
   // If the filename changed (e.g. title was edited), delete the old file
