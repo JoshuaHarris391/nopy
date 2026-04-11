@@ -95,7 +95,7 @@ export async function deleteEntryFromDisk(id: string, journalPath: string, sourc
     if (!file.name?.endsWith('.md')) continue
     try {
       const text = await readTextFile(`${journalPath}/${file.name}`)
-      if (text.includes(`id: "${id}"`)) {
+      if (text.includes(`id: ${id}`) || text.includes(`id: "${id}"`)) {
         await remove(`${journalPath}/${file.name}`)
         console.log('[fs] Deleted entry from disk (by ID scan):', file.name)
         return
