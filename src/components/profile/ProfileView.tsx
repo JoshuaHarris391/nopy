@@ -3,7 +3,6 @@ import { RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
 import { LeafCatcherGame } from './LeafCatcherGame'
-import { ProgressBar } from '../ui/ProgressBar'
 import { Button } from '../ui/Button'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
@@ -16,8 +15,6 @@ export function ProfileView() {
   const loaded = useProfileStore((s) => s.loaded)
   const loadProfile = useProfileStore((s) => s.loadProfile)
   const generating = useProfileStore((s) => s.generating)
-  const phase = useProfileStore((s) => s.phase)
-  const progress = useProfileStore((s) => s.progress)
   const journalLoaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
@@ -120,22 +117,6 @@ export function ProfileView() {
         {(!profile || generating) && !showFullProfile ? (
           <>
             <LeafCatcherGame />
-            {generating && (
-              <div style={{ position: 'absolute', top: 36, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 760, padding: '0 44px', zIndex: 1 }}>
-                <div style={{
-                  background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)',
-                  borderRadius: 'var(--radius-md)', padding: '16px 20px',
-                  border: '1px solid var(--stone)',
-                }}>
-                  <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: 8 }}>
-                    {phase}
-                  </div>
-                  {progress.total > 0 && (
-                    <ProgressBar current={progress.current} total={progress.total} label={progress.title} />
-                  )}
-                </div>
-              </div>
-            )}
           </>
         ) : (
         <div style={{ maxWidth: 760, margin: '0 auto', width: '100%' }}>
