@@ -1,19 +1,18 @@
 import { Zap } from 'lucide-react'
 import { SettingsSection } from '../../ui/SettingsSection'
-import { ProgressBar } from '../../ui/ProgressBar'
 import { CancellableActionButton } from '../../ui/CancellableActionButton'
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
-import { useCancellableTask } from '../../../hooks/useCancellableTask'
+import { useIndexingStore } from '../../../stores/indexingStore'
 
 export function MaintenanceSection() {
   const apiKey = useSettingsStore((s) => s.apiKey)
-  const task = useCancellableTask<string>()
+  const indexing = useIndexingStore()
 
   if (!apiKey) return null
 
   const handleForceUpdate = () => {
-    task.run(async (onProgress, signal) => {
+    indexing.run(async (onProgress, signal) => {
       const count = await useJournalStore.getState().processEntries(apiKey, true, onProgress, signal)
       return `Done — ${count} entries reprocessed`
     })
@@ -29,19 +28,14 @@ export function MaintenanceSection() {
           </div>
         </div>
         <CancellableActionButton
-          state={task.state}
-          result={task.result}
-          error={task.error}
+          state={indexing.state}
+          result={indexing.result}
+          error={indexing.error}
           idleLabel="Force Update Index"
           icon={<Zap size={13} strokeWidth={1.8} />}
           onRun={handleForceUpdate}
-          onAbort={task.abort}
+          onAbort={indexing.abort}
         />
-        {task.state === 'running' && (
-          <div style={{ marginTop: 12 }}>
-            <ProgressBar current={task.progress.current} total={task.progress.total} label={task.progress.title} />
-          </div>
-        )}
       </div>
     </SettingsSection>
   )

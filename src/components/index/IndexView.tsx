@@ -5,11 +5,11 @@ import { Search, BookOpen, Sparkles, ChevronDown } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { MoodDot } from '../ui/MoodDot'
-import { ProgressBar } from '../ui/ProgressBar'
 import { CancellableActionButton } from '../ui/CancellableActionButton'
+
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { useCancellableTask } from '../../hooks/useCancellableTask'
+import { useIndexingStore } from '../../stores/indexingStore'
 
 export function IndexView() {
   const navigate = useNavigate()
@@ -19,11 +19,11 @@ export function IndexView() {
   const [search, setSearch] = useState('')
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const task = useCancellableTask<string>()
+  const indexing = useIndexingStore()
 
   const handleUpdateIndex = () => {
     if (!apiKey) return
-    task.run(async (onProgress, signal) => {
+    indexing.run(async (onProgress, signal) => {
       const count = await useJournalStore.getState().processEntries(apiKey, false, onProgress, signal)
       return count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date'
     })
@@ -52,13 +52,13 @@ export function IndexView() {
         </span>
         {apiKey && (
           <CancellableActionButton
-            state={task.state}
-            result={task.result}
-            error={task.error}
+            state={indexing.state}
+            result={indexing.result}
+            error={indexing.error}
             idleLabel="Update Index"
             icon={<Sparkles size={13} strokeWidth={1.8} />}
             onRun={handleUpdateIndex}
-            onAbort={task.abort}
+            onAbort={indexing.abort}
           />
         )}
       </MainHeader>
@@ -72,13 +72,6 @@ export function IndexView() {
             />
           ) : (
             <>
-              {/* Progress */}
-              {task.state === 'running' && (
-                <div style={{ marginBottom: 16 }}>
-                  <ProgressBar current={task.progress.current} total={task.progress.total} label={task.progress.title} />
-                </div>
-              )}
-
               {/* Search */}
               <div
                 className="flex items-center gap-2.5"
