@@ -14,7 +14,7 @@ function stripForDisk(session: ChatSession): Record<string, unknown> {
   return {
     ...rest,
     entryContextRef: session.entryContextRef ?? (entryContext ? undefined : null),
-    messages: session.messages.map(({ streaming, ...msg }) => msg),
+    messages: session.messages.map((msg) => { const { streaming, ...rest } = msg; void streaming; return rest }),
   }
 }
 
