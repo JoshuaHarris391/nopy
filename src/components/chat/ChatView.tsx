@@ -263,65 +263,64 @@ export function ChatView() {
   const isStreaming = activeSession?.messages.some((m) => m.streaming) ?? false
 
   return (
-    <>
-      <MainHeader title="Chat">
-        {activeSession && (
-          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
-            {activeSession.messages.length} messages
-          </span>
-        )}
-      </MainHeader>
-      <div className="flex flex-1 overflow-hidden">
-        {/* Session list - desktop only, collapsible */}
-        <div
-          className="hidden lg:flex h-full flex-shrink-0 relative"
-          style={{
-            width: sessionPanelCollapsed ? 0 : 300,
-            overflow: 'hidden',
-            transition: 'width 200ms ease',
-          }}
-        >
-          <ChatSessionList
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelect={handleSelectSession}
-            onCreate={handleNewSession}
-            onRename={(id, title) => updateSessionTitle(id, title)}
-            onDelete={(id) => deleteSession(id)}
-            generatingTitleId={generatingTitleId}
-          />
-        </div>
+    <div className="flex flex-1 overflow-hidden">
+      {/* Session list - desktop only, collapsible */}
+      <div
+        className="hidden lg:flex h-full flex-shrink-0 relative"
+        style={{
+          width: sessionPanelCollapsed ? 0 : 300,
+          overflow: 'hidden',
+          transition: 'width 200ms ease',
+        }}
+      >
+        <ChatSessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={handleSelectSession}
+          onCreate={handleNewSession}
+          onRename={(id, title) => updateSessionTitle(id, title)}
+          onDelete={(id) => deleteSession(id)}
+          generatingTitleId={generatingTitleId}
+        />
+      </div>
 
-        {/* Session panel toggle - desktop only */}
-        <button
-          className="hidden lg:flex items-center justify-center flex-shrink-0 cursor-pointer"
-          onClick={toggleSessionPanel}
-          style={{
-            width: 20,
-            background: 'var(--warm-cream)',
-            border: 'none',
-            borderRight: '1px solid var(--stone)',
-            color: 'var(--sage)',
-            transition: 'color 150ms ease, background 150ms ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--forest)'
-            e.currentTarget.style.background = 'var(--parchment)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--sage)'
-            e.currentTarget.style.background = 'var(--warm-cream)'
-          }}
-          title={sessionPanelCollapsed ? 'Show sessions' : 'Hide sessions'}
-        >
-          {sessionPanelCollapsed
-            ? <PanelLeftOpen size={12} strokeWidth={1.5} />
-            : <PanelLeftClose size={12} strokeWidth={1.5} />
-          }
-        </button>
+      {/* Session panel toggle - desktop only */}
+      <button
+        className="hidden lg:flex items-center justify-center flex-shrink-0 cursor-pointer"
+        onClick={toggleSessionPanel}
+        style={{
+          width: 20,
+          background: 'var(--warm-cream)',
+          border: 'none',
+          borderRight: '1px solid var(--stone)',
+          color: 'var(--sage)',
+          transition: 'color 150ms ease, background 150ms ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = 'var(--forest)'
+          e.currentTarget.style.background = 'var(--parchment)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = 'var(--sage)'
+          e.currentTarget.style.background = 'var(--warm-cream)'
+        }}
+        title={sessionPanelCollapsed ? 'Show sessions' : 'Hide sessions'}
+      >
+        {sessionPanelCollapsed
+          ? <PanelLeftOpen size={12} strokeWidth={1.5} />
+          : <PanelLeftClose size={12} strokeWidth={1.5} />
+        }
+      </button>
 
-        {/* Chat area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Chat area with its own header */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <MainHeader title="Chat">
+          {activeSession && (
+            <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
+              {activeSession.messages.length} messages
+            </span>
+          )}
+        </MainHeader>
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
@@ -388,8 +387,7 @@ export function ChatView() {
               </div>
             </div>
           )}
-        </div>
       </div>
-    </>
+    </div>
   )
 }

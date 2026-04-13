@@ -41,21 +41,21 @@ export function ChatSessionList({ sessions, activeSessionId, onSelect, onCreate,
       className="flex flex-col border-r overflow-hidden h-full"
       style={{ width: 300, background: 'var(--warm-cream)', borderColor: 'var(--stone)' }}
     >
-      <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: 'var(--stone)' }}>
-        <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--sage)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div className="flex items-center justify-between border-b flex-shrink-0" style={{ height: 64, padding: '0 24px', borderColor: 'var(--stone)' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
           Sessions
         </span>
         <button
           onClick={onCreate}
           className="flex items-center justify-center cursor-pointer"
-          style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', background: 'transparent', border: 'none', color: 'var(--sage)', transition: 'all var(--transition-gentle)' }}
+          style={{ width: 30, height: 30, borderRadius: 'var(--radius-sm)', background: 'transparent', border: 'none', color: 'var(--sage)', transition: 'all var(--transition-gentle)' }}
         >
           <Plus size={16} strokeWidth={2} />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {activeSessions.length === 0 ? (
-          <div className="p-4 text-center" style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
+          <div className="text-center" style={{ padding: '20px 24px', fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
             No conversations yet
           </div>
         ) : (
@@ -65,7 +65,7 @@ export function ChatSessionList({ sessions, activeSessionId, onSelect, onCreate,
               onClick={() => onSelect(session.id)}
               className="w-full text-left cursor-pointer block group"
               style={{
-                padding: '12px 14px',
+                padding: '12px 24px',
                 background: session.id === activeSessionId ? 'var(--parchment)' : 'transparent',
                 border: 'none',
                 borderLeftStyle: 'solid',
@@ -122,7 +122,7 @@ export function ChatSessionList({ sessions, activeSessionId, onSelect, onCreate,
                   </div>
                 </div>
               )}
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--sage)' }}>
+              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
                 {formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true })}
                 {session.messageCount > 0 && ` · ${session.messageCount} msgs`}
               </div>
