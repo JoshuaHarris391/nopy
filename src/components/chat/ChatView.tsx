@@ -7,6 +7,7 @@ import { useJournalStore } from '../../stores/journalStore'
 import { streamChatResponse, sendMessage } from '../../services/anthropic'
 import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
+import { hydrateEntryContext } from '../../services/chatPersistence'
 import { PSYCHOLOGIST_SYSTEM_PROMPT } from '../../services/prompts/psychologist'
 import { MainHeader } from '../ui/MainHeader'
 import { ChatMessage } from './ChatMessage'
@@ -164,8 +165,20 @@ export function ChatView() {
     })
 
     // Assemble context and stream
-    const session = useChatStore.getState().activeSession
+    let session = useChatStore.getState().activeSession
     if (!session) return
+
+    // Lazy hydration: if restored from disk with entryContextRef but no entryContext, read the file
+    if (session.entryContextRef && !session.entryContext) {
+      const journalPath = useSettingsStore.getState().journalPath
+      if (journalPath) {
+        const ctx = await hydrateEntryContext(session.entryContextRef, journalPath)
+        if (ctx) {
+          await useChatStore.getState().updateEntryContext(session.id, ctx)
+          session = useChatStore.getState().activeSession!
+        }
+      }
+    }
 
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries

@@ -11,6 +11,7 @@ How a journal entry moves between disk, IndexedDB, and the UI — and where vali
 - [Zustand stores](#zustand-stores) — in-memory state and write paths
 - [Sync and reconciliation](#sync-and-reconciliation) — merging disk and cache
 - [AI processing](#ai-processing) — entry indexing and profile generation
+- [Chat persistence](#chat-persistence) — persisting chat history to disk
 - [Operational notes](#operational-notes) — journal switching and known gaps
 - [File reference](#file-reference) — where each concern lives in the code
 
@@ -275,18 +276,89 @@ Structurally broken responses (missing required fields, unparseable JSON) throw 
 
 Covered in [`profileStore` → Profile generation](#profile-generation).
 
+## Chat persistence
+
+Chat sessions are persisted to `{journalPath}/chat.json` so conversations survive IndexedDB clears and travel with the journal folder. The persistence is **one-way: app → disk.** Disk is a backup and portability layer; IndexedDB remains the runtime source of truth.
+
+### File structure
+
+```json
+{
+  "version": 1,
+  "updatedAt": "2026-04-13T10:00:00.000Z",
+  "sessions": [
+    {
+      "id": "uuid",
+      "title": "2026-04-13 — morning reflection",
+      "messages": [{ "id": "...", "role": "user", "content": "...", "timestamp": "..." }],
+      "summary": null,
+      "createdAt": "...",
+      "updatedAt": "...",
+      "status": "active",
+      "entryContextRef": "2026-04-03.md"
+    }
+  ]
+}
+```
+
+`entryContext` (the full journal entry text) is **not** stored. Instead, `entryContextRef` holds just the filename of the linked entry. This keeps the file small and avoids stale duplicates — the entry content is already on disk as a `.md` file.
+
+### Write path (cache → disk)
+
+Every `chatStore` method that writes to IndexedDB also calls `_persistToDisk()`, which reads all full sessions from IDB and passes them to `scheduleChatSave()`. The save is **debounced by 2 seconds** — rapid sequential writes (e.g. `finalizeStreamingMessage` followed immediately by `updateSessionTitle`) collapse into a single disk write.
+
+`updateStreamingMessage` (the high-frequency, in-memory-only streaming update) does **not** trigger a disk write.
+
+The debounce module (`chatPersistence.ts`) exposes `flushChatSave()` to force an immediate write, used during journal switching.
+
+### Startup fallback (IDB → disk)
+
+`loadSessionList()` checks IndexedDB first. If the `chat:meta` key is empty or missing, it falls back to reading `chat.json` from disk and populating IndexedDB from it. This handles:
+
+- First launch after an IndexedDB clear
+- Opening a journal folder on a new machine
+- Switching to a journal that already has a `chat.json`
+
+### Lazy hydration of entry context
+
+When a session is restored from `chat.json`, it has `entryContextRef` (filename) but no `entryContext` (content). On the **first message send** in that session, `ChatView` detects this and calls `hydrateEntryContext()`:
+
+1. Read the `.md` file from `{journalPath}/{entryContextRef}`
+2. Parse frontmatter to extract title and date
+3. Populate `session.entryContext` in both memory and IDB
+
+After hydration, the entry content is injected into the LLM system prompt as the "Current Session Focus" — exactly as if the user had clicked "Explore with nopy." The file is read once; subsequent messages use the cached `entryContext`.
+
+If the referenced file no longer exists (deleted or renamed), hydration silently returns null and the session continues without focused entry context.
+
+### Journal switching
+
+When the user switches journals, the flow is:
+
+1. `flushChatSave()` — persist any pending writes to the **old** journal
+2. `chatStore.clear()` — wipe all `chat:session:*` and `chat:meta` from IndexedDB
+3. (journal and profile stores clear as before)
+4. Set new journal path
+5. `loadSessionList()` — loads `chat.json` from the **new** journal (or starts empty)
+
+### LLM context continuity
+
+The LLM has no persistent memory. `contextAssembler.ts` sends the full message history (within token budget) on every API call. Restoring sessions from a `chat.json` — even from a different journal — gives the LLM the same conversational context it had originally. No special handling needed.
+
 ## Operational notes
 
 ### Journal switching
 
 Pointing nopy at a different directory (via `SettingsView`) is a hard reset:
 
-1. `del('nopy-entries')` and `del('nopy-profile')` wipe the cache.
-2. `setJournalPath(newPath)` updates the persisted setting.
-3. [`loadEntries()`](#loadentries) runs against the now-empty cache and returns `[]`.
-4. [`syncFromDisk()`](#sync-and-reconciliation) hydrates state from the new directory.
+1. `flushChatSave()` persists any pending chat writes to the old journal.
+2. `chatStore.clear()`, `journalStore.clear()`, and `profileStore.clear()` wipe all caches.
+3. `setJournalPath(newPath)` updates the persisted setting.
+4. [`loadEntries()`](#loadentries) runs against the now-empty cache and returns `[]`.
+5. [`syncFromDisk()`](#sync-and-reconciliation) hydrates entries from the new directory.
+6. `loadSessionList()` loads `chat.json` from the new directory (see [Chat persistence](#chat-persistence)).
 
-There is no merge between old and new journals, and no confirmation beyond the UI prompt. The old journal's `.md` files on disk are untouched.
+There is no merge between old and new journals, and no confirmation beyond the UI prompt. The old journal's `.md` files and `chat.json` on disk are untouched.
 
 ### No file watchers
 
@@ -308,7 +380,8 @@ Nopy does not watch the journal directory for external changes. If the user edit
 | Profile generation pipeline | `src/stores/profileStore.ts` |
 | Settings persistence | `src/stores/settingsStore.ts` |
 | Chat session storage | `src/stores/chatStore.ts` |
-| Core types | `src/types/journal.ts`, `src/types/profile.ts` |
+| Chat disk persistence and hydration | `src/services/chatPersistence.ts` |
+| Core types | `src/types/journal.ts`, `src/types/profile.ts`, `src/types/chat.ts` |
 
 ## Related docs
 

@@ -6,7 +6,9 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
 import { useProfileStore } from '../../../stores/profileStore'
+import { useChatStore } from '../../../stores/chatStore'
 import { hasFileSystem, pickJournalDirectory, grantFsScope } from '../../../services/fs'
+import { flushChatSave } from '../../../services/chatPersistence'
 
 export function DataPrivacySection() {
   const journalPath = useSettingsStore((s) => s.journalPath)
@@ -19,6 +21,10 @@ export function DataPrivacySection() {
     const path = await pickJournalDirectory()
     if (!path) return
 
+    // Persist any pending chat writes to the old journal
+    await flushChatSave()
+
+    await useChatStore.getState().clear()
     await useJournalStore.getState().clear()
     await useProfileStore.getState().clear()
 
@@ -27,6 +33,7 @@ export function DataPrivacySection() {
 
     await useJournalStore.getState().loadEntries()
     const { added } = await useJournalStore.getState().syncFromDisk()
+    await useChatStore.getState().loadSessionList()
     setNewJournalStatus(`Switched to new journal — ${added} entries loaded`)
     setTimeout(() => setNewJournalStatus(null), 4000)
     setShowNewJournalConfirm(false)

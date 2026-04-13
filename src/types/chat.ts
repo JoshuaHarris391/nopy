@@ -21,6 +21,7 @@ export interface ChatSession {
   updatedAt: string
   status: 'active' | 'archived'
   entryContext?: ChatEntryContext | null
+  entryContextRef?: string | null
 }
 
 export interface ChatSessionMeta {
