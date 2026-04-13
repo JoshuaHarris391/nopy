@@ -140,6 +140,13 @@ export function ChatView() {
     }
     await addMessage(userMsg)
 
+    // Snap scroll to bottom when user sends a message
+    isNearBottomRef.current = true
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+
     // Add streaming placeholder
     const assistantMsg: ChatMessageType = {
       id: crypto.randomUUID(),
@@ -149,6 +156,12 @@ export function ChatView() {
       streaming: true,
     }
     await addMessage(assistantMsg)
+
+    // Snap to bottom after both messages are in the DOM
+    requestAnimationFrame(() => {
+      const el = scrollContainerRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
 
     // Assemble context and stream
     const session = useChatStore.getState().activeSession
