@@ -10,6 +10,17 @@ function getJournalPath(): string {
   return useSettingsStore.getState().journalPath
 }
 
+function entryChanged(a: JournalEntry, b: JournalEntry): boolean {
+  return (
+    a.content !== b.content ||
+    a.title !== b.title ||
+    a.summary !== b.summary ||
+    a.indexed !== b.indexed ||
+    JSON.stringify(a.tags) !== JSON.stringify(b.tags) ||
+    JSON.stringify(a.mood) !== JSON.stringify(b.mood)
+  )
+}
+
 interface JournalState {
   entries: JournalEntry[]
   loaded: boolean
@@ -138,17 +149,13 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
       for (const diskEntry of diskEntries) {
         const match = existingById.get(diskEntry.id)
         if (match) {
-          // Exists in both — disk wins on tie or if newer
-          if (new Date(diskEntry.updatedAt) >= new Date(match.updatedAt)) {
-            if (diskEntry.content !== match.content || diskEntry.title !== match.title) {
-              updated++
-            }
+          if (entryChanged(diskEntry, match)) {
             result.push(diskEntry)
+            updated++
           } else {
             result.push(match)
           }
         } else {
-          // New on disk — add
           result.push(diskEntry)
           added++
         }
