@@ -4,7 +4,7 @@ import type { ChatSession, ChatEntryContext } from '../types/chat'
 interface ChatFile {
   version: number
   updatedAt: string
-  sessions: Record<string, unknown>[]
+  sessions: unknown[]
 }
 
 // --- Save ---
