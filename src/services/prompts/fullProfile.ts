@@ -46,5 +46,5 @@ Guidelines:
 - Balance clinical rigour with genuine care — this is a real person's inner world
 - Identify patterns across time, not just individual events
 - Note where the person has grown and where they are still working through things
-- Write 2000-4000 words — thorough but not exhaustive
+- Write 2000-3500 words (strict maximum: 18,000 characters including markdown formatting). You MUST complete all seven sections — do not stop mid-section
 - Output as clean markdown with proper heading hierarchy`
