@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
 import type { PsychologicalProfile } from '../types/profile'
 import type { JournalEntry } from '../types/journal'
-import { saveProfileToDisk } from '../services/fs'
+import { hasFileSystem, saveProfileToDisk } from '../services/fs'
+import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { useJournalStore } from './journalStore'
@@ -16,6 +17,7 @@ interface ProfileState {
   progress: { current: number; total: number; title: string }
   clearLastError: () => void
   loadProfile: () => Promise<void>
+  loadProfileFromDisk: () => Promise<boolean>
   setProfile: (profile: PsychologicalProfile) => Promise<void>
   generateProfile: (
     entries: JournalEntry[],
@@ -39,6 +41,29 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const profile = await get<PsychologicalProfile>('nopy-profile')
     console.log('[profileStore] loadProfile: profile found', profile != null, profile ? '| entriesAnalyzed ' + profile.entriesAnalyzed : '')
     setState({ profile: profile ?? null, loaded: true })
+  },
+
+  loadProfileFromDisk: async () => {
+    const journalPath = useSettingsStore.getState().journalPath
+    if (!hasFileSystem() || !journalPath) return false
+    const { readTextFile, exists } = await import('@tauri-apps/plugin-fs')
+    const filePath = `${journalPath}/profiles/profile.json`
+    if (!(await exists(filePath))) return false
+    try {
+      const text = await readTextFile(filePath)
+      const parsed = PsychologicalProfileSchema.safeParse(JSON.parse(text))
+      if (!parsed.success) {
+        console.warn('[profileStore] profile.json failed schema validation', parsed.error.issues)
+        return false
+      }
+      setState({ profile: parsed.data, loaded: true, lastError: null })
+      await set('nopy-profile', parsed.data)
+      console.log('[profileStore] Restored profile from disk | entriesAnalyzed', parsed.data.entriesAnalyzed)
+      return true
+    } catch (e) {
+      console.warn('[profileStore] Failed to load profile from disk:', e)
+      return false
+    }
   },
 
   setProfile: async (profile) => {
