@@ -9,10 +9,9 @@ const navItems = [
   { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Understand' },
   { to: '/profile', icon: Target, label: 'Profile', section: 'Understand' },
   { to: '/index', icon: List, label: 'Index', section: 'Understand' },
-  { to: '/settings', icon: Settings, label: 'Settings', section: 'Adjust' },
 ]
 
-const sections = ['Reflect', 'Understand', 'Adjust']
+const sections = ['Reflect', 'Understand']
 
 export function Sidebar() {
   const collapsed = useSettingsStore((s) => s.sidebarCollapsed)
@@ -107,7 +106,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto" style={{ padding: '8px 0' }}>
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: '8px 0' }}>
         {sections.map((section, sectionIndex) => {
           const items = navItems.filter((item) => item.section === section)
           if (items.length === 0) return null
@@ -164,43 +163,91 @@ export function Sidebar() {
 
       {/* Footer */}
       <div
-        className="border-t flex items-center"
+        className="border-t flex"
         style={{
           padding: '16px',
           borderColor: 'var(--stone)',
+          flexDirection: collapsed ? 'column' : 'row',
+          alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'space-between',
+          gap: collapsed ? 6 : 0,
         }}
       >
-        {!collapsed && (
-          <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
-            <div
+        {collapsed ? (
+          <>
+            <SettingsCogButton reducedMotion={reducedMotion} />
+            <button
+              onClick={toggleSidebar}
+              aria-label="Expand sidebar"
+              className="flex items-center justify-center cursor-pointer"
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
+                width: 28,
+                height: 28,
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+                border: 'none',
+                color: 'rgb(44 62 44 / 0.55)',
+                transition: reducedMotion ? 'none' : 'color 200ms ease-out',
               }}
-            />
-            <span>{apiKey ? 'Connected' : 'No API key'}</span>
-          </div>
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--forest)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgb(44 62 44 / 0.55)')}
+            >
+              <ChevronsRight size={16} strokeWidth={1.5} />
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center" style={{ gap: 10 }}>
+              <SettingsCogButton reducedMotion={reducedMotion} />
+              <div
+                aria-hidden
+                style={{
+                  width: 1,
+                  height: 14,
+                  background: 'var(--stone)',
+                  flexShrink: 0,
+                }}
+              />
+              <div
+                className="flex items-center"
+                style={{
+                  gap: 6,
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 13,
+                  color: 'var(--sage)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
+                  }}
+                />
+                <span>{apiKey ? 'Connected' : 'No API key'}</span>
+              </div>
+            </div>
+            <button
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              className="flex items-center justify-center cursor-pointer"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+                border: 'none',
+                color: 'rgb(44 62 44 / 0.55)',
+                transition: reducedMotion ? 'none' : 'color 200ms ease-out',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--forest)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgb(44 62 44 / 0.55)')}
+            >
+              <ChevronsLeft size={16} strokeWidth={1.5} />
+            </button>
+          </>
         )}
-        <button
-          onClick={toggleSidebar}
-          className="flex items-center justify-center cursor-pointer"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 'var(--radius-sm)',
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--sage)',
-            transition: reducedMotion ? 'none' : 'color 200ms ease-out',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--forest)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sage)')}
-        >
-          {collapsed ? <ChevronsRight size={16} strokeWidth={1.5} /> : <ChevronsLeft size={16} strokeWidth={1.5} />}
-        </button>
       </div>
     </aside>
   )
@@ -257,6 +304,29 @@ function NavItem({
           {!collapsed && <span>{label}</span>}
         </>
       )}
+    </NavLink>
+  )
+}
+
+function SettingsCogButton({ reducedMotion }: { reducedMotion: boolean }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <NavLink
+      to="/settings"
+      aria-label="Settings"
+      className="flex items-center justify-center no-underline cursor-pointer"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={({ isActive }) => ({
+        width: 28,
+        height: 28,
+        borderRadius: 'var(--radius-sm)',
+        background: 'transparent',
+        color: isActive || hovered ? 'var(--forest)' : 'rgb(44 62 44 / 0.55)',
+        transition: reducedMotion ? 'none' : 'color 200ms ease-out',
+      })}
+    >
+      <Settings size={16} strokeWidth={1.5} />
     </NavLink>
   )
 }
