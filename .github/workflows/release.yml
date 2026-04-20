@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# TODO: before tagging, bump `version` in both package.json and
+# src-tauri/tauri.conf.json so artifact filenames match the tag.
+# TODO: add a Windows target (windows-latest, x86_64-pc-windows-msvc) if/when
+# Windows support is desired — Tauri supports it, just add another matrix entry.
+# TODO: consider adding aarch64-unknown-linux-gnu for Linux ARM (e.g. RPi, ARM
+# servers) — needs cross-compilation setup, not a drop-in matrix entry.
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            file \
+            wget
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # TODO: macOS codesigning + notarization — add these repo secrets to
+          # remove the Gatekeeper "unidentified developer" warning for users.
+          # Requires an Apple Developer Program membership ($99/yr).
+          #   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          #   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          #   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          #   APPLE_ID: ${{ secrets.APPLE_ID }}
+          #   APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # TODO: Tauri updater signing — set once the updater plugin is enabled
+          # so auto-updates can verify release authenticity.
+          #   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'nopy ${{ github.ref_name }}'
+          # TODO: flip to `false` once the release flow is trusted to publish
+          # directly without manual review.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.platform.target }}
+          # TODO: to publish only specific bundle formats per platform, pass
+          # e.g. `--bundles app,dmg` (macOS) or `--bundles appimage,deb` (Linux)
+          # instead of letting `tauri.conf.json`'s `targets: "all"` decide.
