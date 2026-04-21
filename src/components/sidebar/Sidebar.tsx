@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
-import nopyLogo from '../../assets/nopy_logo.png'
+import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
 
 const navItems = [
   { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
