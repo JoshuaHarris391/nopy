@@ -1,5 +1,6 @@
 import { MainHeader } from '../ui/MainHeader'
 import { AppearanceSection } from './sections/AppearanceSection'
+import { TherapySection } from './sections/TherapySection'
 import { ApiSection } from './sections/ApiSection'
 import { DataPrivacySection } from './sections/DataPrivacySection'
 import { MaintenanceSection } from './sections/MaintenanceSection'
@@ -11,6 +12,7 @@ export function SettingsView() {
       <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <AppearanceSection />
+          <TherapySection />
           <ApiSection />
           <DataPrivacySection />
           <MaintenanceSection />

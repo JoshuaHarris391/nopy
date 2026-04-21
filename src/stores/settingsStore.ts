@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { UserSettings } from '../types/settings'
+import { DEFAULT_THERAPY, type TherapyType } from '../services/prompts/therapists'
 
 interface SettingsState extends UserSettings {
   setApiKey: (key: string) => void
@@ -14,6 +15,7 @@ interface SettingsState extends UserSettings {
   setContextBudget: (tokens: number) => void
   setJournalPath: (path: string) => void
   setTheme: (theme: 'light' | 'dark') => void
+  setTherapyType: (type: TherapyType) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -28,6 +30,7 @@ export const useSettingsStore = create<SettingsState>()(
       sessionPanelCollapsed: false,
       journalPath: '',
       theme: 'light',
+      therapyType: DEFAULT_THERAPY,
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
@@ -40,6 +43,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSessionPanelCollapsed: (collapsed) => set({ sessionPanelCollapsed: collapsed }),
       setJournalPath: (path) => set({ journalPath: path }),
       setTheme: (theme) => set({ theme }),
+      setTherapyType: (type) => set({ therapyType: type }),
     }),
     { name: 'nopy-settings' }
   )

@@ -8,7 +8,7 @@ import { streamChatResponse, sendMessage } from '../../services/anthropic'
 import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { hydrateEntryContext } from '../../services/chatPersistence'
-import { PSYCHOLOGIST_SYSTEM_PROMPT } from '../../services/prompts/psychologist'
+import { getTherapyPrompt } from '../../services/prompts/therapists'
 import { MainHeader } from '../ui/MainHeader'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
@@ -21,6 +21,7 @@ export function ChatView() {
   const preferredModel = useSettingsStore((s) => s.preferredModel)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
+  const therapyType = useSettingsStore((s) => s.therapyType)
   const sessionPanelCollapsed = useSettingsStore((s) => s.sessionPanelCollapsed)
   const toggleSessionPanel = useSettingsStore((s) => s.toggleSessionPanel)
   const setSessionPanelCollapsed = useSettingsStore((s) => s.setSessionPanelCollapsed)
@@ -182,7 +183,7 @@ export function ChatView() {
 
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
-    const { system, messages } = assembleContext(session, profile, entries, PSYCHOLOGIST_SYSTEM_PROMPT, contextBudget, session.entryContext ?? undefined)
+    const { system, messages } = assembleContext(session, profile, entries, getTherapyPrompt(therapyType), contextBudget, session.entryContext ?? undefined)
     const filteredMessages = messages.filter((m) => !!m.content)
 
     if (filteredMessages.length === 0) {
@@ -239,7 +240,7 @@ export function ChatView() {
       updateStreamingMessage(`I'm sorry, I couldn't connect: ${msg}`)
       await finalizeStreamingMessage()
     }
-  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, activeSessionId, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
+  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, therapyType, activeSessionId, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
 
 
   // Handle "Explore with nopy" entry context from router state

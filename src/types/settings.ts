@@ -1,3 +1,5 @@
+import type { TherapyType } from '../services/prompts/therapists'
+
 export interface UserSettings {
   apiKey: string
   preferredModel: string
@@ -8,4 +10,5 @@ export interface UserSettings {
   sessionPanelCollapsed: boolean
   journalPath: string
   theme: 'light' | 'dark'
+  therapyType: TherapyType
 }
