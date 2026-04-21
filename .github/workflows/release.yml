@@ -17,6 +17,8 @@ jobs:
   build:
     name: Build ${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
