@@ -9,6 +9,7 @@ How nopy uses Claude to index journal entries, extract themes, and generate psyc
 - [Theme extraction](#theme-extraction) — identifying cross-entry patterns
 - [Profile generation](#profile-generation) — the five-phase pipeline
 - [Chat context assembly](#chat-context-assembly) — building the system prompt for conversations
+- [Therapy agent selection](#therapy-agent-selection) — swapping the chat agent's therapeutic frame (CBT, ACT, …)
 - [Shared utilities](#shared-utilities) — `parseLLMJson`, model IDs, prompt templates
 - [File reference](#file-reference)
 
@@ -84,7 +85,7 @@ Each phase updates `phase` and `progress` in the store for the UI progress bar. 
 
 `assembleContext()` (`src/services/contextAssembler.ts`) builds the system prompt and message history for chat sessions. It is a **pure function** with clean ordering:
 
-1. **Base system prompt** — the agent's personality and today's date.
+1. **Base system prompt** — the active therapy agent's system prompt (see [Therapy agent selection](#therapy-agent-selection)) plus today's date.
 2. **Psychological profile** — the full profile markdown (or summary fallback) if available.
 3. **Themes** — structured theme data from the profile.
 4. **Journal index** — a markdown table of indexed entries (title, date, mood, tags, summary), capped at 30 entries.
@@ -95,6 +96,34 @@ Each phase updates `phase` and `progress` in the store for the UI progress bar. 
 The function has explicit **token budgeting** — it estimates token usage and drops the oldest messages first when the history exceeds the budget. The token estimator is at `src/utils/tokenEstimator.ts`.
 
 This function is well-tested (14 tests in `src/__tests__/services/contextAssembler.test.ts`). Don't split it up — it is a single logical operation. If it feels verbose, it's because context assembly is inherently detailed.
+
+---
+
+## Therapy agent selection
+
+The live chat agent's therapeutic frame is user-selectable. The registry at `src/services/prompts/therapists/` maps a `TherapyType` key to a full `TherapyAgent` definition (label, description, `systemPrompt`). `ChatView.tsx` reads the current `therapyType` from the settings store, calls `getTherapyPrompt(therapyType)`, and passes the result as the base system prompt to `assembleContext()`.
+
+```
+src/services/prompts/therapists/
+├─ index.ts   → TherapyType union, TherapyAgent interface, THERAPIES record,
+│               DEFAULT_THERAPY, getTherapyPrompt(type), listTherapies()
+├─ cbt.ts     → CBT_SYSTEM_PROMPT  (structured CBT session, cognitive restructuring)
+└─ act.ts     → ACT_SYSTEM_PROMPT  (psychological flexibility, defusion, values, workability)
+```
+
+The selection is persisted on the `therapyType` field of the Zustand settings store (`src/stores/settingsStore.ts`, localStorage key `nopy-settings`). When the field is absent — for example on first install or for users who upgraded before the feature shipped — `getTherapyPrompt(undefined)` falls back to `DEFAULT_THERAPY` (`'cbt'`), so existing behaviour is preserved.
+
+The UI control lives in `src/components/settings/sections/TherapySection.tsx` and renders a `<select>` populated from `listTherapies()`. Only the live chat agent prompt swaps; the profile generator (`fullProfile.ts`) remains framework-neutral and does not change when the therapy type is switched.
+
+### Adding a new therapy type
+
+1. Create `src/services/prompts/therapists/<name>.ts` exporting a `<NAME>_SYSTEM_PROMPT` constant (template literal with the full system prompt).
+2. In `src/services/prompts/therapists/index.ts`:
+   - Import the new constant.
+   - Widen the `TherapyType` union with the new key (e.g. `'dbt'`).
+   - Add an entry to the `THERAPIES` record with `id`, `label`, `shortLabel`, `description`, and `systemPrompt`.
+3. Add a corresponding test case to `src/__tests__/services/therapyRegistry.test.ts` (content smoke test for the new prompt + membership assertion).
+4. No other files need to change — `ChatView`, the settings store, the UI dropdown, and the settings type (`TherapyType`) pick up the new entry automatically.
 
 ---
 
@@ -134,11 +163,13 @@ Each AI operation has its prompt template in a dedicated file:
 | File | Operation |
 |---|---|
 | `entryMetadata.ts` | Entry metadata extraction system prompt |
-| `entryThemes.ts` | Theme extraction system prompt |
-| `profile.ts` | Full profile generation system prompt |
-| `chatSystem.ts` | Chat agent personality prompt |
+| `profileNarrative.ts` | Theme extraction system prompt |
+| `fullProfile.ts` | Full profile generation system prompt |
+| `therapists/index.ts` | Chat agent registry (see [Therapy agent selection](#therapy-agent-selection)) |
+| `therapists/cbt.ts` | CBT chat agent system prompt |
+| `therapists/act.ts` | ACT chat agent system prompt |
 
-Each file exports a `systemPrompt` string and optionally a `buildUserMessage(...)` function.
+Each file exports a named constant (e.g. `FULL_PROFILE_SYSTEM`, `CBT_SYSTEM_PROMPT`).
 
 ---
 
@@ -152,6 +183,8 @@ Each file exports a `systemPrompt` string and optionally a `buildUserMessage(...
 | LLM JSON parser | `src/services/parseLLMJson.ts` |
 | Model IDs and token limits | `src/services/models.ts` |
 | Prompt templates | `src/services/prompts/*.ts` |
+| Therapy agent registry | `src/services/prompts/therapists/index.ts` |
+| Therapy settings UI | `src/components/settings/sections/TherapySection.tsx` |
 | Token estimator | `src/utils/tokenEstimator.ts` |
 | AI response schemas | `src/schemas/journal.ts`, `src/schemas/profile.ts` |
 | Profile generation orchestration | `src/stores/profileStore.ts` |
