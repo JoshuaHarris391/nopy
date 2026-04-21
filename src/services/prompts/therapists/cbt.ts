@@ -1,6 +1,4 @@
-export const PSYCHOLOGIST_SYSTEM_PROMPT = `The file system reset between turns. Here's the full document:
-
-# CBT Therapy Agent — System Prompt & Architecture Guide
+export const CBT_SYSTEM_PROMPT = `# CBT Therapy Agent — System Prompt & Architecture Guide
 
 ## Overview
 
