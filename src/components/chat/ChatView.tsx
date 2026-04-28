@@ -264,14 +264,17 @@ export function ChatView() {
   const isStreaming = activeSession?.messages.some((m) => m.streaming) ?? false
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      {/* Session list - desktop only, collapsible */}
+    <div className="flex flex-1 overflow-hidden relative">
+      {/* Session list - collapsible; overlays chat on narrow screens */}
       <div
-        className="hidden lg:flex h-full flex-shrink-0 relative"
+        className="flex h-full flex-shrink-0 relative lg:static absolute top-0 left-0 z-20 lg:z-auto lg:shadow-none"
         style={{
           width: sessionPanelCollapsed ? 0 : 300,
+          maxWidth: '85vw',
+          height: '100%',
           overflow: 'hidden',
           transition: 'width 200ms ease',
+          boxShadow: sessionPanelCollapsed ? 'none' : '2px 0 8px rgba(0,0,0,0.08)',
         }}
       >
         <ChatSessionList
@@ -285,9 +288,9 @@ export function ChatView() {
         />
       </div>
 
-      {/* Session panel toggle - desktop only */}
+      {/* Session panel toggle - always visible so sessions stay reachable on narrow screens */}
       <button
-        className="hidden lg:flex items-center justify-center flex-shrink-0 cursor-pointer"
+        className="flex items-center justify-center flex-shrink-0 cursor-pointer relative z-30"
         onClick={toggleSessionPanel}
         style={{
           width: 20,
