@@ -13,6 +13,12 @@ import { grantFsScope } from './services/fs'
 export default function App() {
   const journalPath = useSettingsStore((s) => s.journalPath)
   const theme = useSettingsStore((s) => s.theme)
+  const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
+
+  // Always start with the sidebar expanded, regardless of persisted state
+  useEffect(() => {
+    setSidebarCollapsed(false)
+  }, [setSidebarCollapsed])
 
   // Grant fs scope on startup for saved journal path
   useEffect(() => {
