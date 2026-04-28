@@ -221,17 +221,21 @@ export function EntryEditor() {
             onChange={(e) => {
               setContent(e.target.value)
               markFieldDirty()
-              // Auto-scroll to keep cursor visible as text grows
+              // Only auto-scroll when appending at the end. Editing mid-document
+              // means the user has chosen a scroll position deliberately.
               const el = e.target
+              const isAppending =
+                el.selectionStart === el.value.length &&
+                el.selectionEnd === el.value.length
+              if (!isAppending) return
               requestAnimationFrame(() => {
                 const scrollParent = el.closest('.overflow-y-auto')
-                if (scrollParent) {
-                  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 28
-                  const cursorY = el.offsetTop + el.scrollHeight - lineHeight
-                  const visibleBottom = scrollParent.scrollTop + scrollParent.clientHeight
-                  if (cursorY > visibleBottom - lineHeight * 2) {
-                    scrollParent.scrollTop = cursorY - scrollParent.clientHeight + lineHeight * 3
-                  }
+                if (!scrollParent) return
+                const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 28
+                const cursorY = el.offsetTop + el.scrollHeight - lineHeight
+                const visibleBottom = scrollParent.scrollTop + scrollParent.clientHeight
+                if (cursorY > visibleBottom - lineHeight * 2) {
+                  scrollParent.scrollTop = cursorY - scrollParent.clientHeight + lineHeight * 3
                 }
               })
             }}
