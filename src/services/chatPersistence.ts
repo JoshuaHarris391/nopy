@@ -1,12 +1,6 @@
 import { hasFileSystem, parseMarkdown, extractDateFromFilename } from './fs'
 import type { ChatSession, ChatEntryContext } from '../types/chat'
 
-interface ChatFile {
-  version: number
-  updatedAt: string
-  sessions: unknown[]
-}
-
 // --- Save ---
 
 function stripForDisk(session: ChatSession): Record<string, unknown> {
@@ -27,34 +21,79 @@ export async function saveChatToDisk(sessions: ChatSession[], journalPath: strin
     await mkdir(journalPath, { recursive: true })
   }
 
-  const data: ChatFile = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    sessions: sessions.map(stripForDisk),
-  }
+  const body = sessions.map((s) => JSON.stringify(stripForDisk(s))).join('\n')
+  const text = sessions.length > 0 ? body + '\n' : ''
 
-  await writeTextFile(`${journalPath}/chat.json`, JSON.stringify(data, null, 2))
-  console.log('[chatPersistence] Saved', sessions.length, 'sessions to disk')
+  await writeTextFile(`${journalPath}/chat.ndjson`, text)
+  console.log('[chatPersistence] Saved', sessions.length, 'sessions to disk (ndjson)')
 }
 
 // --- Load ---
 
+async function migrateLegacyChatJson(journalPath: string): Promise<void> {
+  const { readTextFile, writeTextFile, exists, remove } = await import('@tauri-apps/plugin-fs')
+  const ndjsonPath = `${journalPath}/chat.ndjson`
+  const legacyPath = `${journalPath}/chat.json`
+
+  const [hasNdjson, hasLegacy] = await Promise.all([exists(ndjsonPath), exists(legacyPath)])
+
+  if (!hasLegacy) return
+  if (hasNdjson) {
+    console.warn(
+      '[chatPersistence] Both chat.json and chat.ndjson exist; preferring chat.ndjson and leaving chat.json in place. Delete chat.json manually if intended.',
+    )
+    return
+  }
+
+  try {
+    const text = await readTextFile(legacyPath)
+    const data = JSON.parse(text) as { sessions?: unknown[] }
+    const sessions = Array.isArray(data?.sessions) ? data.sessions : []
+    const body = sessions.map((s) => JSON.stringify(s)).join('\n')
+    await writeTextFile(ndjsonPath, sessions.length > 0 ? body + '\n' : '')
+    await remove(legacyPath)
+    console.log(
+      '[chatPersistence] Migrated',
+      sessions.length,
+      'sessions from chat.json to chat.ndjson',
+    )
+  } catch (e) {
+    console.warn('[chatPersistence] Failed to migrate legacy chat.json:', e)
+  }
+}
+
 export async function loadChatFromDisk(journalPath: string): Promise<ChatSession[]> {
   if (!hasFileSystem() || !journalPath) return []
 
+  await migrateLegacyChatJson(journalPath)
+
   const { readTextFile, exists } = await import('@tauri-apps/plugin-fs')
-  const filePath = `${journalPath}/chat.json`
+  const filePath = `${journalPath}/chat.ndjson`
 
   if (!(await exists(filePath))) return []
 
   try {
     const text = await readTextFile(filePath)
-    const data = JSON.parse(text) as ChatFile
-    if (!data.sessions || !Array.isArray(data.sessions)) return []
-    console.log('[chatPersistence] Loaded', data.sessions.length, 'sessions from disk (version', data.version, ')')
-    return data.sessions as ChatSession[]
+    const lines = text.split('\n')
+    const sessions: ChatSession[] = []
+    let skipped = 0
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+      try {
+        sessions.push(JSON.parse(line) as ChatSession)
+      } catch (e) {
+        skipped++
+        console.warn('[chatPersistence] Skipping malformed line', i + 1, ':', e)
+      }
+    }
+    if (skipped > 0) {
+      console.warn('[chatPersistence] Skipped', skipped, 'malformed line(s) while loading chat.ndjson')
+    }
+    console.log('[chatPersistence] Loaded', sessions.length, 'sessions from disk (ndjson)')
+    return sessions
   } catch (e) {
-    console.warn('[chatPersistence] Failed to parse chat.json:', e)
+    console.warn('[chatPersistence] Failed to read chat.ndjson:', e)
     return []
   }
 }
