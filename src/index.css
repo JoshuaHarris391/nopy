@@ -12,6 +12,7 @@
   --bark: #8B7355;
   --stone: #D4C9B8;
   --gentle-green: #7BAF7B;
+  --icon-muted: rgb(44 62 44 / 0.55);
   --soft-coral: #C4836A;
   --dusk-blue: #7B8FA2;
   --sunlight: #D4B87A;
@@ -47,6 +48,7 @@
   --bark: #A08A6C;
   --stone: #2A3040;
   --gentle-green: #8BC18B;
+  --icon-muted: var(--gentle-green);
   --soft-coral: #D49580;
   --dusk-blue: #92A8BC;
   --sunlight: #E0C48A;

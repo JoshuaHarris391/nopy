@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
+import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
 
 const navItems = [
   { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
@@ -19,9 +20,20 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const theme = useSettingsStore((s) => s.theme)
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+  const isDark = theme === 'dark' || (theme === 'system' && systemDark)
   const [reducedMotion, setReducedMotion] = useState(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
   )
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   // Respect prefers-reduced-motion
   useEffect(() => {
@@ -67,25 +79,23 @@ export function Sidebar() {
       >
         {collapsed ? (
           <img
-            src={nopyLogo}
+            src={isDark ? nopyLogoDark : nopyLogo}
             alt="nopy"
             style={{
               width: 28,
               height: 28,
               objectFit: 'contain',
-              filter: theme === 'dark' ? 'invert(1)' : 'none',
             }}
           />
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img
-              src={nopyLogo}
+              src={isDark ? nopyLogoDark : nopyLogo}
               alt="nopy"
               style={{
                 width: 28,
                 height: 28,
                 objectFit: 'contain',
-                filter: theme === 'dark' ? 'invert(1)' : 'none',
               }}
             />
             <h1
@@ -186,11 +196,11 @@ export function Sidebar() {
                 borderRadius: 'var(--radius-sm)',
                 background: 'transparent',
                 border: 'none',
-                color: 'rgb(44 62 44 / 0.55)',
+                color: 'var(--icon-muted)',
                 transition: reducedMotion ? 'none' : 'color 200ms ease-out',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--forest)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgb(44 62 44 / 0.55)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--icon-muted)')}
             >
               <ChevronsRight size={16} strokeWidth={1.5} />
             </button>
@@ -238,11 +248,11 @@ export function Sidebar() {
                 borderRadius: 'var(--radius-sm)',
                 background: 'transparent',
                 border: 'none',
-                color: 'rgb(44 62 44 / 0.55)',
+                color: 'var(--icon-muted)',
                 transition: reducedMotion ? 'none' : 'color 200ms ease-out',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--forest)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgb(44 62 44 / 0.55)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--icon-muted)')}
             >
               <ChevronsLeft size={16} strokeWidth={1.5} />
             </button>
@@ -322,7 +332,7 @@ function SettingsCogButton({ reducedMotion }: { reducedMotion: boolean }) {
         height: 28,
         borderRadius: 'var(--radius-sm)',
         background: 'transparent',
-        color: isActive || hovered ? 'var(--forest)' : 'rgb(44 62 44 / 0.55)',
+        color: isActive || hovered ? 'var(--forest)' : 'var(--icon-muted)',
         transition: reducedMotion ? 'none' : 'color 200ms ease-out',
       })}
     >
