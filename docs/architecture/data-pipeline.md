@@ -278,30 +278,28 @@ Covered in [`profileStore` → Profile generation](#profile-generation).
 
 ## Chat persistence
 
-Chat sessions are persisted to `{journalPath}/chat.json` so conversations survive IndexedDB clears and travel with the journal folder. The persistence is **one-way: app → disk.** Disk is a backup and portability layer; IndexedDB remains the runtime source of truth.
+Chat sessions are persisted to `{journalPath}/chat.ndjson` so conversations survive IndexedDB clears and travel with the journal folder. The file is newline-delimited JSON: one session per line, no envelope. The persistence is **one-way: app → disk.** Disk is a backup and portability layer; IndexedDB remains the runtime source of truth.
 
 ### File structure
 
-```json
-{
-  "version": 1,
-  "updatedAt": "2026-04-13T10:00:00.000Z",
-  "sessions": [
-    {
-      "id": "uuid",
-      "title": "2026-04-13 — morning reflection",
-      "messages": [{ "id": "...", "role": "user", "content": "...", "timestamp": "..." }],
-      "summary": null,
-      "createdAt": "...",
-      "updatedAt": "...",
-      "status": "active",
-      "entryContextRef": "2026-04-03.md"
-    }
-  ]
-}
+```
+{"id":"uuid-1","title":"2026-04-13 — morning reflection","messages":[{"id":"...","role":"user","content":"...","timestamp":"..."}],"summary":null,"createdAt":"...","updatedAt":"...","status":"active","entryContextRef":"2026-04-03.md"}
+{"id":"uuid-2","title":"Evening recap","messages":[...],"summary":null,"createdAt":"...","updatedAt":"...","status":"active","entryContextRef":null}
 ```
 
+Each non-empty line is one `ChatSession` (after `stripForDisk` filtering). The loader parses line-by-line and skips malformed lines with a warning, so a single corrupt session cannot lose every other one. Writes still rewrite the whole file — this is one-session-per-line for **read tolerance**, not append-only. An empty session list writes a zero-byte file (preserving "user deleted everything" intent on next load).
+
 `entryContext` (the full journal entry text) is **not** stored. Instead, `entryContextRef` holds just the filename of the linked entry. This keeps the file small and avoids stale duplicates — the entry content is already on disk as a `.md` file.
+
+### Migration from legacy `chat.json`
+
+Older versions wrote a single pretty-printed JSON object (`{ version, updatedAt, sessions: [...] }`) to `chat.json`. On first load after upgrade, `loadChatFromDisk` calls `migrateLegacyChatJson()`:
+
+1. If only `chat.json` exists → parse it, write the equivalent `chat.ndjson`, delete `chat.json`.
+2. If both files exist → leave both in place and log a warning. This is defensive: the legacy file could be a user-restored backup.
+3. If only `chat.ndjson` (or neither) exists → no-op.
+
+The migration is wrapped in a try/catch — if writing the new file fails, the legacy file is **not** deleted, and the next startup retries. There is no half-migrated state.
 
 ### Write path (cache → disk)
 
@@ -313,15 +311,15 @@ The debounce module (`chatPersistence.ts`) exposes `flushChatSave()` to force an
 
 ### Startup fallback (IDB → disk)
 
-`loadSessionList()` checks IndexedDB first. If the `chat:meta` key is empty or missing, it falls back to reading `chat.json` from disk and populating IndexedDB from it. This handles:
+`loadSessionList()` checks IndexedDB first. If the `chat:meta` key is empty or missing, it falls back to reading `chat.ndjson` from disk and populating IndexedDB from it. This handles:
 
 - First launch after an IndexedDB clear
 - Opening a journal folder on a new machine
-- Switching to a journal that already has a `chat.json`
+- Switching to a journal that already has a `chat.ndjson`
 
 ### Lazy hydration of entry context
 
-When a session is restored from `chat.json`, it has `entryContextRef` (filename) but no `entryContext` (content). On the **first message send** in that session, `ChatView` detects this and calls `hydrateEntryContext()`:
+When a session is restored from `chat.ndjson`, it has `entryContextRef` (filename) but no `entryContext` (content). On the **first message send** in that session, `ChatView` detects this and calls `hydrateEntryContext()`:
 
 1. Read the `.md` file from `{journalPath}/{entryContextRef}`
 2. Parse frontmatter to extract title and date
@@ -339,11 +337,11 @@ When the user switches journals, the flow is:
 2. `chatStore.clear()` — wipe all `chat:session:*` and `chat:meta` from IndexedDB
 3. (journal and profile stores clear as before)
 4. Set new journal path
-5. `loadSessionList()` — loads `chat.json` from the **new** journal (or starts empty)
+5. `loadSessionList()` — loads `chat.ndjson` from the **new** journal (or starts empty)
 
 ### LLM context continuity
 
-The LLM has no persistent memory. `contextAssembler.ts` sends the full message history (within token budget) on every API call. Restoring sessions from a `chat.json` — even from a different journal — gives the LLM the same conversational context it had originally. No special handling needed.
+The LLM has no persistent memory. `contextAssembler.ts` sends the full message history (within token budget) on every API call. Restoring sessions from a `chat.ndjson` — even from a different journal — gives the LLM the same conversational context it had originally. No special handling needed.
 
 ## Operational notes
 
@@ -356,9 +354,9 @@ Pointing nopy at a different directory (via `SettingsView`) is a hard reset:
 3. `setJournalPath(newPath)` updates the persisted setting.
 4. [`loadEntries()`](#loadentries) runs against the now-empty cache and returns `[]`.
 5. [`syncFromDisk()`](#sync-and-reconciliation) hydrates entries from the new directory.
-6. `loadSessionList()` loads `chat.json` from the new directory (see [Chat persistence](#chat-persistence)).
+6. `loadSessionList()` loads `chat.ndjson` from the new directory (see [Chat persistence](#chat-persistence)).
 
-There is no merge between old and new journals, and no confirmation beyond the UI prompt. The old journal's `.md` files and `chat.json` on disk are untouched.
+There is no merge between old and new journals, and no confirmation beyond the UI prompt. The old journal's `.md` files and `chat.ndjson` on disk are untouched.
 
 ### No file watchers
 
