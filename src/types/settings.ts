@@ -9,6 +9,6 @@ export interface UserSettings {
   sidebarCollapsed: boolean
   sessionPanelCollapsed: boolean
   journalPath: string
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'system'
   therapyType: TherapyType
 }

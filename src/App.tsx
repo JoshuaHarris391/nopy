@@ -21,9 +21,19 @@ export default function App() {
     }
   }, [journalPath])
 
-  // Sync theme to document
+  // Sync theme to document; when 'system', follow OS prefers-color-scheme live.
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    if (theme !== 'system') {
+      document.documentElement.dataset.theme = theme
+      return
+    }
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => {
+      document.documentElement.dataset.theme = mql.matches ? 'dark' : 'light'
+    }
+    apply()
+    mql.addEventListener('change', apply)
+    return () => mql.removeEventListener('change', apply)
   }, [theme])
 
   return (

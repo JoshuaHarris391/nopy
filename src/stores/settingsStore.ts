@@ -14,7 +14,7 @@ interface SettingsState extends UserSettings {
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
   setJournalPath: (path: string) => void
-  setTheme: (theme: 'light' | 'dark') => void
+  setTheme: (theme: 'light' | 'dark' | 'system') => void
   setTherapyType: (type: TherapyType) => void
 }
 
@@ -29,7 +29,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarCollapsed: false,
       sessionPanelCollapsed: false,
       journalPath: '',
-      theme: 'light',
+      theme: 'system',
       therapyType: DEFAULT_THERAPY,
 
       setApiKey: (key) => set({ apiKey: key }),
