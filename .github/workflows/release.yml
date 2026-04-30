@@ -27,7 +27,12 @@ jobs:
             os: macos-14
             target: aarch64-apple-darwin
           - name: macos-x64
-            os: macos-13
+            # Cross-compile x86_64 from an arm64 runner: GH-hosted macos-13
+            # (Intel) runners frequently fail to allocate. macos-14 (Apple
+            # Silicon) has the x86_64-apple-darwin Rust target available and
+            # produces a valid Intel binary; the workflow doesn't run the
+            # binary, only bundles it.
+            os: macos-14
             target: x86_64-apple-darwin
           - name: linux-x64
             os: ubuntu-22.04
