@@ -125,8 +125,14 @@ export function ChatView() {
   const handleSend = useCallback(async (content: string) => {
     if (!apiKey || streamingRef.current) return
 
-    // Create session if none active
-    let sessionId = activeSessionId
+    // Read activeSessionId from the store at call time, not from the
+    // useCallback closure. The entry-context useEffect awaits
+    // createSession(entryContext) and then setTimeout(() => handleSend(...)).
+    // Using the closure value here would see the stale activeSessionId from
+    // the render that captured handleSend (typically null on first navigation
+    // into /chat), causing this branch to create a SECOND, orphan session
+    // without entryContext — losing the journal entry from the LLM context.
+    let sessionId = useChatStore.getState().activeSessionId
     if (!sessionId) {
       sessionId = await createSession()
     }
@@ -240,7 +246,7 @@ export function ChatView() {
       updateStreamingMessage(`I'm sorry, I couldn't connect: ${msg}`)
       await finalizeStreamingMessage()
     }
-  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, therapyType, activeSessionId, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
+  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
 
 
   // Handle "Explore with nopy" entry context from router state
