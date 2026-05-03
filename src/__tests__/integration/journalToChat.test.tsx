@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, fireEvent, screen, waitFor, act } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, fireEvent, screen, waitFor, act, cleanup } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 /**
@@ -48,6 +48,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
+import type { PsychologicalProfile } from '../../types/profile'
 
 function renderApp() {
   return render(
@@ -59,6 +60,40 @@ function renderApp() {
       </Routes>
     </MemoryRouter>,
   )
+}
+
+function renderChatOnly() {
+  return render(
+    <MemoryRouter initialEntries={['/chat']}>
+      <Routes>
+        <Route path="/chat" element={<ChatView />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+// Sentinel string used to assert the profile reached the LLM. Picked to be
+// unique enough that no other piece of the system prompt could contain it.
+const PROFILE_MARKER = 'PROFILE-MARKER: tends toward perfectionism under stress.'
+
+function makeProfile(overrides: Partial<PsychologicalProfile> = {}): PsychologicalProfile {
+  return {
+    summary: 'A brief profile summary.',
+    themes: [],
+    cognitivePatterns: [],
+    emotionalTrends: [],
+    growthAreas: [],
+    strengths: [],
+    frameworkInsights: [],
+    averageMood: 7,
+    journalingStreak: 3,
+    avgEntryLength: 200,
+    reflectionDepth: 'Medium',
+    updatedAt: new Date().toISOString(),
+    entriesAnalyzed: 5,
+    fullProfile: null,
+    ...overrides,
+  }
 }
 
 describe('Journal entry → first chat message', () => {
@@ -118,6 +153,14 @@ describe('Journal entry → first chat message', () => {
       loaded: false,
     })
     useProfileStore.setState({ profile: null })
+  })
+
+  afterEach(() => {
+    // Vitest does not enable RTL globals here, so unmount any rendered tree
+    // between tests. Without this, the previous test's <ChatView> stays in
+    // the DOM and screen.findByRole picks up duplicates (or fires on the
+    // wrong instance).
+    cleanup()
   })
 
   it('injects journal entry content into the first AI request when Start Session is clicked', async () => {
@@ -195,5 +238,145 @@ describe('Journal entry → first chat message', () => {
     expect(systemPrompt).toContain(ENTRY_TITLE)
     expect(systemPrompt).toContain(ENTRY_CONTENT)
     expect(messages[0].content).toContain(ENTRY_TITLE)
+  })
+
+  it('injects the psychological profile into the system prompt when starting a brand-new chat', async () => {
+    /**
+     * Verifies that opening the chat from the empty state, creating a new
+     * conversation, and sending a first message results in the user's
+     * generated psychological profile appearing in the system prompt sent to
+     * the LLM. This is the personalisation signal the therapist AI relies on
+     * to tailor its first response.
+     *
+     * What this guards against: ChatView.handleSend reads the profile via
+     * useProfileStore.getState().profile at call time (ChatView.tsx:190). A
+     * regression that swapped this for a render-time selector — captured in
+     * the useCallback closure — would silently strip the profile from the
+     * very first message of every new conversation, because the closure
+     * snapshots before the user has had a chance to load or generate their
+     * profile in this session. The full profile is the more important branch
+     * (lines 32-34 of contextAssembler) so we test that variant.
+     *
+     * Input: profile.fullProfile set to PROFILE_MARKER, user clicks "New
+     * conversation" then types and sends a message in a chat with no journal
+     * entry context.
+     * Expected output: streamChatResponse is called once and its system
+     * prompt argument contains both the "## Psychological Profile" header
+     * and the PROFILE_MARKER sentinel.
+     */
+    useProfileStore.setState({
+      profile: makeProfile({ fullProfile: PROFILE_MARKER }),
+      loaded: true,
+    })
+
+    renderChatOnly()
+
+    // Empty state — click the "New conversation" button to create a fresh
+    // session. The textarea only renders once activeSession exists.
+    const newBtn = await screen.findByRole('button', { name: /new conversation/i })
+    await act(async () => {
+      fireEvent.click(newBtn)
+    })
+
+    const textarea = await screen.findByPlaceholderText(/share what's on your mind/i)
+
+    const FIRST_MESSAGE = 'I want to talk about how my week has been.'
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: FIRST_MESSAGE } })
+    })
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' })
+    })
+
+    await waitFor(
+      () => {
+        expect(streamChatResponseMock).toHaveBeenCalled()
+      },
+      { timeout: 3000 },
+    )
+
+    expect(streamChatResponseMock).toHaveBeenCalledTimes(1)
+
+    // Args: (apiKey, model, system, messages, maxTokens, onChunk, onComplete, onError)
+    const call = streamChatResponseMock.mock.calls[0]
+    const systemPrompt = call[2] as string
+    const messages = call[3] as { role: string; content: string }[]
+
+    expect(systemPrompt).toContain('## Psychological Profile')
+    expect(systemPrompt).toContain(PROFILE_MARKER)
+    // Confirm the typed message reached the LLM — proves the new session was
+    // actually created and the send went through (not just that the mock was
+    // called from some unrelated code path).
+    expect(messages[0].content).toBe(FIRST_MESSAGE)
+  })
+
+  it('injects the psychological profile into the system prompt when Start Session is clicked', async () => {
+    /**
+     * Verifies that the Start Session flow from the journal editor injects
+     * BOTH the focused journal entry and the user's psychological profile
+     * into the first AI request. The existing "injects journal entry content"
+     * test above proves the entry path; this test extends that scenario with
+     * a profile set in profileStore and asserts it survives the same flow.
+     *
+     * What this guards against: a fix that adds profile injection but breaks
+     * the entry path (or vice versa). Both must reach the LLM in the same
+     * call for the conversation to feel personalised AND focused on the
+     * entry the user just wrote about.
+     *
+     * Input: profile.fullProfile set to PROFILE_MARKER, user types title +
+     * content, presses Cmd+S to save, clicks Start Session.
+     * Expected output: streamChatResponse is called once with a system
+     * prompt containing the profile header, PROFILE_MARKER, the
+     * "Current Session Focus" header, the entry title, and the entry content.
+     */
+    useProfileStore.setState({
+      profile: makeProfile({ fullProfile: PROFILE_MARKER }),
+      loaded: true,
+    })
+
+    renderApp()
+
+    const titleInput = await screen.findByPlaceholderText("What's on your mind today?")
+    const contentInput = await screen.findByPlaceholderText('Begin writing...')
+
+    const ENTRY_TITLE = 'A reflective Wednesday'
+    const ENTRY_CONTENT = 'Some context for the AI to chew on.'
+
+    fireEvent.change(titleInput, { target: { value: ENTRY_TITLE } })
+    fireEvent.change(contentInput, { target: { value: ENTRY_CONTENT } })
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true }))
+    })
+
+    await waitFor(() => {
+      expect(useJournalStore.getState().entries).toHaveLength(1)
+    })
+
+    const startBtn = await screen.findByRole('button', { name: /start session/i })
+    await act(async () => {
+      fireEvent.click(startBtn)
+    })
+
+    await waitFor(
+      () => {
+        expect(streamChatResponseMock).toHaveBeenCalled()
+      },
+      { timeout: 3000 },
+    )
+
+    expect(streamChatResponseMock).toHaveBeenCalledTimes(1)
+
+    const call = streamChatResponseMock.mock.calls[0]
+    const systemPrompt = call[2] as string
+
+    expect(systemPrompt).toContain('## Psychological Profile')
+    expect(systemPrompt).toContain(PROFILE_MARKER)
+    // The entry must still land in the same prompt — guards against a future
+    // change that adds profile injection but regresses the Start Session
+    // entry-context path.
+    expect(systemPrompt).toContain('Current Session Focus')
+    expect(systemPrompt).toContain(ENTRY_TITLE)
+    expect(systemPrompt).toContain(ENTRY_CONTENT)
   })
 })
