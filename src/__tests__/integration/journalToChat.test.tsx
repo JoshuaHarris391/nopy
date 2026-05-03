@@ -310,6 +310,72 @@ describe('Journal entry → first chat message', () => {
     expect(messages[0].content).toBe(FIRST_MESSAGE)
   })
 
+  it('loads the psychological profile from IndexedDB on chat mount and injects it into the first message', async () => {
+    /**
+     * Reproduces a real load-order bug: the user has a generated profile
+     * persisted in IndexedDB (key "nopy-profile"), but profileStore.profile
+     * is still null in memory because nothing has called loadProfile() yet.
+     * Today, loadProfile is only called from ProfileView's mount effect
+     * (ProfileView.tsx:53). A user who opens the app and goes straight to
+     * Chat without first visiting the Profile page will send their first
+     * message with profile=null in handleSend, and the system prompt will
+     * have no profile injected — the AI silently loses all personalisation.
+     *
+     * This test isolates that load-order bug by populating only the mocked
+     * IDB (NOT the store) and leaves profileStore at its post-beforeEach
+     * default (profile: null, loaded: false). It will fail on any code path
+     * where ChatView/handleSend does not ensure the profile is loaded
+     * before reading it.
+     *
+     * Input: a profile written to idbStore['nopy-profile'] before render;
+     * profileStore.profile is null; user clicks "New conversation", types,
+     * and sends.
+     * Expected output: streamChatResponse system prompt contains
+     * PROFILE_MARKER (the profile was loaded from IDB and injected).
+     */
+    // Force profileStore back to its app-start state. The shared beforeEach
+    // resets `profile: null` but does not reset `loaded`, so a prior test
+    // (or the fix's mount-effect calling loadProfile) can leave loaded=true
+    // and bypass the load path we're trying to exercise here.
+    useProfileStore.setState({ profile: null, loaded: false })
+
+    // Seed the mocked IDB with a profile, but DO NOT touch profileStore.
+    // This mirrors the real-world state at app start: profile is on disk
+    // (and in IDB if loaded previously), but the in-memory store is empty
+    // until something calls loadProfile().
+    idbStore.set('nopy-profile', makeProfile({ fullProfile: PROFILE_MARKER }))
+
+    renderChatOnly()
+
+    const newBtn = await screen.findByRole('button', { name: /new conversation/i })
+    await act(async () => {
+      fireEvent.click(newBtn)
+    })
+
+    const textarea = await screen.findByPlaceholderText(/share what's on your mind/i)
+
+    const FIRST_MESSAGE = 'How do I stop spiralling at night?'
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: FIRST_MESSAGE } })
+    })
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' })
+    })
+
+    await waitFor(
+      () => {
+        expect(streamChatResponseMock).toHaveBeenCalled()
+      },
+      { timeout: 3000 },
+    )
+
+    const call = streamChatResponseMock.mock.calls[0]
+    const systemPrompt = call[2] as string
+
+    expect(systemPrompt).toContain('## Psychological Profile')
+    expect(systemPrompt).toContain(PROFILE_MARKER)
+  })
+
   it('injects the psychological profile into the system prompt when Start Session is clicked', async () => {
     /**
      * Verifies that the Start Session flow from the journal editor injects
