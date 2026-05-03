@@ -37,6 +37,8 @@ export function ChatView() {
   const finalizeStreamingMessage = useChatStore((s) => s.finalizeStreamingMessage)
   const updateSessionTitle = useChatStore((s) => s.updateSessionTitle)
   const deleteSession = useChatStore((s) => s.deleteSession)
+  const profileLoaded = useProfileStore((s) => s.loaded)
+  const loadProfile = useProfileStore((s) => s.loadProfile)
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -51,6 +53,14 @@ export function ChatView() {
   useEffect(() => {
     if (!loaded) loadSessionList()
   }, [loaded, loadSessionList])
+
+  // Load the psychological profile from IDB on mount so the first send has
+  // it available. Without this, a user opening the app and going straight
+  // to /chat sends with profile=null because nothing else hydrates it
+  // (loadProfile is otherwise only called from ProfileView).
+  useEffect(() => {
+    if (!profileLoaded) loadProfile()
+  }, [profileLoaded, loadProfile])
 
   // Auto-collapse session panel below 1024px
   useEffect(() => {
@@ -187,6 +197,13 @@ export function ChatView() {
       }
     }
 
+    // Belt-and-suspenders for the mount-time loadProfile() effect: if the
+    // user sends before that effect resolves (or it never ran because this
+    // is the first time anyone reads the profile) hydrate it now so the
+    // first message never goes out without personalisation.
+    if (!useProfileStore.getState().loaded) {
+      await useProfileStore.getState().loadProfile()
+    }
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
     const { system, messages } = assembleContext(session, profile, entries, getTherapyPrompt(therapyType), contextBudget, session.entryContext ?? undefined)
