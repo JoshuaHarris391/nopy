@@ -135,18 +135,29 @@ describe('fetchLoadedModelDetails', () => {
      * request body shape from `/v1/chat/completions`. We don't speak the
      * native chat endpoint (would lock us out of Ollama compat), but we
      * DO call /api/v1/models because it's the only place LM Studio
-     * surfaces per-model loaded/max context length. Tests pin both the
-     * URL construction and the field mapping.
+     * surfaces per-model loaded/max context length.
+     *
+     * Response shape pinned here is from a real LM Studio 0.3.x install:
+     * top-level `models[]`, model id under `key`, loaded context under
+     * `loaded_instances[0].config.context_length`, max under top-level
+     * `max_context_length`.
      */
     fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
-      data: [
-        { id: 'google/gemma-4-e4b', loaded_context_length: 4096, max_context_length: 32768 },
+      models: [
+        {
+          type: 'llm',
+          key: 'google/gemma-4-e4b',
+          max_context_length: 131072,
+          loaded_instances: [
+            { id: 'google/gemma-4-e4b', config: { context_length: 47783 } },
+          ],
+        },
       ],
     }), { status: 200 }))
     const result = await fetchLoadedModelDetails('http://localhost:1234/v1')
     expect(fetchSpy.mock.calls[0][0]).toBe('http://localhost:1234/api/v1/models')
     expect(result).toEqual([
-      { id: 'google/gemma-4-e4b', loadedContextLength: 4096, maxContextLength: 32768 },
+      { id: 'google/gemma-4-e4b', loadedContextLength: 47783, maxContextLength: 131072 },
     ])
   })
 
@@ -164,23 +175,35 @@ describe('fetchLoadedModelDetails', () => {
     expect(await fetchLoadedModelDetails('http://localhost:1234/v1')).toEqual([])
   })
 
-  it('preserves null when LM Studio omits a numeric field for one of the models', async () => {
+  it('returns loadedContextLength: null when a known model has no loaded_instances (e.g. an embedding model the user downloaded but never loaded)', async () => {
     /**
-     * Some LM Studio versions omit max_context_length even when
-     * loaded_context_length is set. The mapper coerces missing or
-     * non-numeric values to null so downstream code (the UI warning
-     * threshold check) doesn't compare against undefined.
+     * The /api/v1/models endpoint lists *every* model LM Studio knows
+     * about, including ones not currently loaded. Their
+     * loaded_instances array is empty. We surface them with null context
+     * (rather than dropping them) so the merge with /v1/models can still
+     * tag them by id. The "is this model usable" decision lives in
+     * /v1/models (which only lists loaded chat models), not here.
      */
     fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
-      data: [
-        { id: 'gemma', loaded_context_length: 4096 /* no max_context_length */ },
-        { id: 'qwen' /* neither field */ },
+      models: [
+        {
+          type: 'llm',
+          key: 'google/gemma-4-e4b',
+          max_context_length: 131072,
+          loaded_instances: [{ id: 'google/gemma-4-e4b', config: { context_length: 4096 } }],
+        },
+        {
+          type: 'embedding',
+          key: 'text-embedding-nomic-embed-text-v1.5',
+          max_context_length: 2048,
+          loaded_instances: [], // not loaded
+        },
       ],
     }), { status: 200 }))
     const result = await fetchLoadedModelDetails('http://localhost:1234/v1')
     expect(result).toEqual([
-      { id: 'gemma', loadedContextLength: 4096, maxContextLength: null },
-      { id: 'qwen', loadedContextLength: null, maxContextLength: null },
+      { id: 'google/gemma-4-e4b', loadedContextLength: 4096, maxContextLength: 131072 },
+      { id: 'text-embedding-nomic-embed-text-v1.5', loadedContextLength: null, maxContextLength: 2048 },
     ])
   })
 })

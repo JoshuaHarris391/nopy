@@ -99,8 +99,24 @@ export interface LoadedModelDetails {
 }
 
 export async function fetchLoadedModelDetails(baseUrl: string, timeoutMs: number = 2000): Promise<LoadedModelDetails[]> {
-  // /api/v1 is a sibling of /v1 under the same host, not nested. Strip
-  // the trailing /vN segment from the normalized base to get the host root.
+  // LM Studio's native /api/v1/models is a sibling of /v1 under the same
+  // host, not nested. Strip the trailing /vN segment from the normalized
+  // base to get the host root.
+  //
+  // Response shape (verified against LM Studio 0.3.x):
+  //   { models: [{
+  //       key: "google/gemma-4-e4b",
+  //       max_context_length: 131072,
+  //       loaded_instances: [{ id, config: { context_length: 47783 } }],
+  //       ...
+  //   }] }
+  //
+  // The "loaded" context is per-instance under loaded_instances[0].config —
+  // LM Studio supports loading the same model multiple times with different
+  // configs, so we take the first instance as canonical. Models with an
+  // empty loaded_instances list (e.g. embedding models the user has
+  // downloaded but not loaded) get loadedContextLength: null and won't
+  // affect any chat-model warning.
   const normalized = normalizeBaseUrl(baseUrl)
   const root = normalized.replace(/\/v\d+$/, '')
   const url = `${root}/api/v1/models`
@@ -110,13 +126,22 @@ export async function fetchLoadedModelDetails(baseUrl: string, timeoutMs: number
     const res = await lmFetch(url, { signal: controller.signal })
     if (!res.ok) return []
     const body = (await res.json()) as {
-      data?: Array<{ id: string; loaded_context_length?: number; max_context_length?: number }>
+      models?: Array<{
+        key?: string
+        max_context_length?: number
+        loaded_instances?: Array<{ config?: { context_length?: number } }>
+      }>
     }
-    return (body.data ?? []).map((m) => ({
-      id: m.id,
-      loadedContextLength: typeof m.loaded_context_length === 'number' ? m.loaded_context_length : null,
-      maxContextLength: typeof m.max_context_length === 'number' ? m.max_context_length : null,
-    }))
+    return (body.models ?? [])
+      .filter((m) => typeof m.key === 'string')
+      .map((m) => {
+        const loadedCtx = m.loaded_instances?.[0]?.config?.context_length
+        return {
+          id: m.key as string,
+          loadedContextLength: typeof loadedCtx === 'number' ? loadedCtx : null,
+          maxContextLength: typeof m.max_context_length === 'number' ? m.max_context_length : null,
+        }
+      })
   } catch {
     return []
   } finally {
