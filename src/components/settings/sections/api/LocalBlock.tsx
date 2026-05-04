@@ -114,12 +114,10 @@ export function LocalBlock() {
           <span className="flex items-center">
             Base URL
             <HelpTooltip label="Help: base URL">
-              The OpenAI-compatible endpoint LM Studio exposes when you
-              click "Start Server" — path is <code>/v1</code>, NOT{' '}
-              <code>/api/v1</code> (that's LM Studio's separate native
-              REST API and isn't supported here). The default works out
-              of the box. Ollama users can paste{' '}
-              <code>http://localhost:11434/v1</code>.
+              Where nopy connects to LM Studio. The default works as
+              long as LM Studio is open and you've clicked Start Server
+              inside it. Only change this if you've moved LM Studio to a
+              different port.
             </HelpTooltip>
           </span>
         }
@@ -140,13 +138,11 @@ export function LocalBlock() {
           <span className="flex items-center">
             Model
             <HelpTooltip label="Help: model name">
-              When LM Studio is running and a model is loaded, this dropdown
-              lists every model returned by <code>GET /v1/models</code> so
-              you can pick the one to chat with. Pick "Custom…" to type a
-              name manually — useful if you want to set the name before
-              loading the model in LM Studio. Common ids look like
-              {' '}<code>google/gemma-4-e4b</code> or
-              {' '}<code>lmstudio-community/Gemma-2-2B-it-GGUF</code>.
+              The model nopy will chat with. Pick from the list of
+              models you've loaded in LM Studio. If your model isn't
+              loaded yet, choose "Custom…" and type its name — once you
+              load it in LM Studio, click "Check again" above and it
+              will show up here.
             </HelpTooltip>
           </span>
         }
@@ -198,16 +194,15 @@ export function LocalBlock() {
             <span className="flex items-center">
               Loaded context
               <HelpTooltip label="Help: loaded context">
-                The context window LM Studio is using for this model — set
-                in LM Studio's Tools → Model loader → Context Length when
-                you loaded it. nopy's system prompt (therapy + profile +
-                journal index) usually needs at least 32k. Below ~8k,
-                chats will fail with a "context too large" error.
+                How much your model can read at once. nopy sends a fair
+                bit of background (your therapy frame, profile, journal
+                summaries) so replies stay personal — load your model
+                with at least 32,000 to keep things smooth. Below
+                roughly 8,000 your chats will fail with a "too long"
+                error.
                 <br /><br />
-                This number is read from LM Studio's native API at
-                {' '}<code>/api/v1/models</code>; other OpenAI-compatible
-                runtimes (e.g. Ollama) don't expose it and won't show
-                this row at all.
+                To change it: in LM Studio, click Eject, then re-load
+                the model and pick a higher Context Length.
               </HelpTooltip>
             </span>
           }
