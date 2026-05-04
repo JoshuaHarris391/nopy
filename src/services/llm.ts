@@ -57,7 +57,7 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
   RATE_LIMITED:
     'Too many requests. Wait a moment and try again.',
   CONTEXT_TOO_LARGE:
-    'The conversation is too long for this model. Lower the context budget in Settings or start a new session.',
+    "Your prompt is too large for this model's context window. In LM Studio, click Eject and re-load the model with a larger Context Length (Tools → Model loader). For long journal sessions, load a model with at least 32k context.",
   UNKNOWN:
     'Something went wrong with the AI request. Check the console for details.',
 }

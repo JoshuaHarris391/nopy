@@ -121,7 +121,9 @@ What's **not** guaranteed:
 
 ## Errors you might see
 
-`services/llm.ts` exports a single `LlmError` class with stable codes. The chat UI's inline error card and the settings status indicator both look up user-facing copy from `LLM_ERROR_MESSAGES`.
+`services/llm.ts` exports a single `LlmError` class with stable codes. Errors surface in **two places**:
+1. **Inline** — the assistant message placeholder is replaced with the user-facing copy so the chat history shows what happened in context.
+2. **Bottom-right notification card** — same fixed-position stack as the indexing / profile-generation progress cards (`AppShell` renders `NotificationCard` for each item in `useNotificationStore`). Coral left-border accent for errors. Auto-dismisses after 8 seconds; click `×` to dismiss earlier.
 
 | Code | When it fires | What the UI says |
 |---|---|---|
@@ -132,7 +134,7 @@ What's **not** guaranteed:
 | `TIMEOUT` | The probe call (`GET /v1/models`) doesn't respond within 2 seconds. | "Local AI didn't respond in time. Make sure LM Studio is running and a model is loaded." |
 | `INVALID_API_KEY` | Anthropic returns 401 (wrong or revoked key). Surfaces in Anthropic mode only. | "Your Anthropic API key isn't valid. Update it in Settings." |
 | `RATE_LIMITED` | Provider returns 429. | "Too many requests. Wait a moment and try again." |
-| `CONTEXT_TOO_LARGE` | Provider returns 400 with a context-length signal. | "The conversation is too long for this model. Lower the context budget in Settings or start a new session." |
+| `CONTEXT_TOO_LARGE` | Provider returns 400 with a context-length signal **OR** sends a `data: {"error": "..."}` SSE event mid-stream mentioning context. The localServer parser sniffs both shapes for "context size", "context length", "n_keep" and similar phrases. | "Your prompt is too large for this model's context window. In LM Studio, click Eject and re-load the model with a larger Context Length (Tools → Model loader). For long journal sessions, load a model with at least 32k context." |
 
 ## What's still on Anthropic
 

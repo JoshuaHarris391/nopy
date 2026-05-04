@@ -106,21 +106,72 @@ function buildOpenAiBody(model: string, system: string, messages: Message[], max
 }
 
 /**
+ * Sniff for LM Studio's various ways of saying "your prompt won't fit in
+ * this model's context window". Wording differs between the model
+ * runtime (llama.cpp emits "n_keep ... is greater than the context
+ * length") and the OpenAI-compat layer ("exceeds the available context
+ * size"), so we match a few fragments rather than one exact phrase.
+ */
+function looksLikeContextOverflow(text: string): boolean {
+  if (!text) return false
+  const lowered = text.toLowerCase()
+  return (
+    lowered.includes('context size') ||
+    lowered.includes('context length') ||
+    lowered.includes('exceeds the available context') ||
+    lowered.includes('n_keep') ||
+    lowered.includes('larger context length')
+  )
+}
+
+/**
  * Translate fetch / HTTP errors into a stable LlmError. The dispatcher
  * UI catalog reads `err.code` for its message lookup — keep this map in
  * sync with `LlmErrorCode` in llm.ts.
+ *
+ * 400s from LM Studio are ambiguous: it returns 400 for "no model
+ * loaded" AND for "context length exceeded" AND for any other validation
+ * failure. We sniff the body for context-overflow wording so users get
+ * "your prompt is too big" instead of the misleading "load a model".
  */
 async function translateHttpError(res: Response): Promise<LlmError> {
   const text = await res.text().catch(() => '')
   if (res.status === 401) return new LlmError('INVALID_API_KEY', LLM_ERROR_MESSAGES.INVALID_API_KEY)
   if (res.status === 429) return new LlmError('RATE_LIMITED', LLM_ERROR_MESSAGES.RATE_LIMITED)
   if (res.status === 400 || res.status === 404) {
-    // LM Studio returns 400 with "no model loaded" when /chat/completions is
-    // hit before a model has been clicked Load in the UI. Treat 400/404 the
-    // same way so the user gets actionable copy.
+    if (looksLikeContextOverflow(text)) {
+      return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, { status: res.status, body: text })
+    }
     return new LlmError('NO_MODEL_LOADED', LLM_ERROR_MESSAGES.NO_MODEL_LOADED, { status: res.status, body: text })
   }
   return new LlmError('UNKNOWN', `Local server returned HTTP ${res.status}`, { status: res.status, body: text })
+}
+
+/**
+ * LM Studio (and any OpenAI-compatible runtime) can stream errors
+ * mid-response when the model errors *after* the HTTP 200 has already
+ * been sent — context overflow is the most common cause. Without this
+ * check our SSE parser silently swallows the error event, runs to the
+ * end of the stream, and fires `onComplete('')` with empty text — which
+ * is exactly the "title gets generated but no chat reply appears"
+ * symptom we hit in production.
+ *
+ * Returns a typed `LlmError` so the streaming loop can throw it; the
+ * outer try/catch routes it to `onError` without re-translating it as a
+ * connection-refused error.
+ */
+function errorFromSseEvent(parsed: unknown): LlmError | null {
+  if (!parsed || typeof parsed !== 'object') return null
+  const errorField = (parsed as { error?: unknown }).error
+  if (!errorField) return null
+  const message =
+    typeof errorField === 'string'
+      ? errorField
+      : (errorField as { message?: string }).message ?? JSON.stringify(errorField)
+  if (looksLikeContextOverflow(message)) {
+    return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, { sseError: message })
+  }
+  return new LlmError('UNKNOWN', `Local model returned an error: ${message}`, { sseError: message })
 }
 
 function translateFetchError(e: unknown): LlmError {
@@ -198,24 +249,33 @@ export async function streamChatResponse(
           if (!line.startsWith('data:')) continue
           const data = line.slice(5).trim()
           if (data === '' || data === '[DONE]') continue
+          let parsed: unknown
           try {
-            const parsed = JSON.parse(data) as {
-              choices?: { delta?: { content?: string } }[]
-            }
-            const delta = parsed.choices?.[0]?.delta?.content
-            if (typeof delta === 'string' && delta.length > 0) {
-              fullText += delta
-              onChunk(fullText)
-            }
+            parsed = JSON.parse(data)
           } catch {
             // Malformed JSON line — common for keepalive comments. Ignore.
+            continue
+          }
+          // Error events take priority over content deltas: throwing here
+          // short-circuits the loop so onComplete is never called with
+          // empty/partial text. The outer catch routes the LlmError
+          // straight to onError without re-translating it.
+          const sseError = errorFromSseEvent(parsed)
+          if (sseError) throw sseError
+          const delta = (parsed as { choices?: { delta?: { content?: string } }[] }).choices?.[0]?.delta?.content
+          if (typeof delta === 'string' && delta.length > 0) {
+            fullText += delta
+            onChunk(fullText)
           }
         }
       }
     }
     onComplete(fullText)
   } catch (e) {
-    onError(translateFetchError(e))
+    // Don't double-translate an LlmError — that would label the
+    // CONTEXT_TOO_LARGE we just threw as CONNECTION_REFUSED.
+    if (e instanceof LlmError) onError(e)
+    else onError(translateFetchError(e))
   }
 }
 

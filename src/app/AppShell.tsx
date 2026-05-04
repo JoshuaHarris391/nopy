@@ -1,9 +1,16 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { BottomNav } from '../components/sidebar/BottomNav'
-import { ProgressBar } from '../components/ui/ProgressBar'
+import { NotificationCard, type NotificationAccent } from '../components/ui/NotificationCard'
 import { useIndexingStore } from '../stores/indexingStore'
 import { useProfileStore } from '../stores/profileStore'
+import { useNotificationStore } from '../stores/notificationStore'
+
+const KIND_TO_ACCENT: Record<'error' | 'success' | 'info', NotificationAccent> = {
+  error: 'error',
+  success: 'success',
+  info: 'neutral',
+}
 
 export function AppShell() {
   const indexingState = useIndexingStore((s) => s.state)
@@ -11,6 +18,13 @@ export function AppShell() {
   const profileGenerating = useProfileStore((s) => s.generating)
   const profilePhase = useProfileStore((s) => s.phase)
   const profileProgress = useProfileStore((s) => s.progress)
+  const notifications = useNotificationStore((s) => s.items)
+  const dismissNotification = useNotificationStore((s) => s.dismiss)
+
+  const showStack =
+    indexingState === 'running' ||
+    profileGenerating ||
+    notifications.length > 0
 
   return (
     <div className="flex h-screen" style={{ animation: 'appIn 700ms ease-out 150ms forwards', opacity: 0 }}>
@@ -19,39 +33,38 @@ export function AppShell() {
         <Outlet />
       </main>
       <BottomNav />
-      {(indexingState === 'running' || profileGenerating) && (
+      {showStack && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {indexingState === 'running' && (
-            <div style={{
-              background: 'var(--parchment)', border: '1px solid var(--stone)',
-              borderRadius: 'var(--radius-sm)', padding: '14px 18px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-              minWidth: 280, maxWidth: 340,
-            }}>
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                Indexing...
-              </div>
-              <ProgressBar current={indexingProgress.current} total={indexingProgress.total} label={indexingProgress.title} />
-            </div>
+            <NotificationCard
+              title="Indexing..."
+              progress={
+                indexingProgress.total > 0
+                  ? { current: indexingProgress.current, total: indexingProgress.total, label: indexingProgress.title }
+                  : undefined
+              }
+            />
           )}
           {profileGenerating && (
-            <div style={{
-              background: 'var(--parchment)', border: '1px solid var(--stone)',
-              borderRadius: 'var(--radius-sm)', padding: '14px 18px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-              minWidth: 280, maxWidth: 340,
-            }}>
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                Generating profile...
-              </div>
-              <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginBottom: (profileProgress.total > 0 || profileProgress.title) ? 8 : 0 }}>
-                {profilePhase}
-              </div>
-              {profileProgress.total > 0 && (
-                <ProgressBar current={profileProgress.current} total={profileProgress.total} label={profileProgress.title} />
-              )}
-            </div>
+            <NotificationCard
+              title="Generating profile..."
+              description={profilePhase || undefined}
+              progress={
+                profileProgress.total > 0
+                  ? { current: profileProgress.current, total: profileProgress.total, label: profileProgress.title }
+                  : undefined
+              }
+            />
           )}
+          {notifications.map((n) => (
+            <NotificationCard
+              key={n.id}
+              title={n.title}
+              description={n.message}
+              accent={KIND_TO_ACCENT[n.kind]}
+              onDismiss={() => dismissNotification(n.id)}
+            />
+          ))}
         </div>
       )}
     </div>

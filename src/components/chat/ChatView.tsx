@@ -6,6 +6,7 @@ import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
+import { useNotificationStore } from '../../stores/notificationStore'
 import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { hydrateEntryContext } from '../../services/chatPersistence'
@@ -237,9 +238,16 @@ export function ChatView() {
         filteredMessages,
         maxOutputTokens,
         (fullText) => updateStreamingMessage(fullText),
-        async () => {
+        async (fullText) => {
           await finalizeStreamingMessage()
           streamingRef.current = false
+
+          // Defensive guard: if a provider misbehaves and fires onComplete
+          // with empty text (the SSE-error-event bug we hit in production
+          // before the localServer parser was fixed), don't generate a
+          // title for an empty conversation. The error path runs onError
+          // separately — here we just bail.
+          if (!fullText.trim()) return
 
           // Generate title after first exchange
           const currentSession = useChatStore.getState().activeSession
@@ -267,8 +275,19 @@ export function ChatView() {
         (error) => {
           console.error('Chat stream error:', error)
           streamingRef.current = false
-          updateStreamingMessage(renderErrorMessage(error))
+          const message = renderErrorMessage(error)
+          // Inline error in the assistant placeholder so the conversation
+          // history shows what happened in context.
+          updateStreamingMessage(message)
           finalizeStreamingMessage()
+          // Plus a bottom-right notification so users can't miss an error
+          // that happens off-screen (e.g. they scrolled up). Title is
+          // intentionally generic — the actionable copy lives in `message`.
+          useNotificationStore.getState().push({
+            kind: 'error',
+            title: 'Chat error',
+            message,
+          })
         },
       )
     } catch (error) {

@@ -255,6 +255,76 @@ describe('streamChatResponse', () => {
     expect((errors[0] as LlmError).code).toBe('NO_MODEL_LOADED')
   })
 
+  it('translates a 400 with context-overflow wording in the body to CONTEXT_TOO_LARGE, not NO_MODEL_LOADED', async () => {
+    /**
+     * Same 400 status, very different remediation. If the body mentions
+     * context size / length / n_keep, the user needs to re-load the model
+     * with a larger context window — telling them "load a model" is
+     * actively wrong and would send them in circles.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(
+      JSON.stringify({ error: 'request (29922 tokens) exceeds the available context size (4096 tokens), try increasing it' }),
+      { status: 400 },
+    ))
+    const errors: unknown[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      () => {}, () => {}, (e) => errors.push(e),
+    )
+    expect((errors[0] as LlmError).code).toBe('CONTEXT_TOO_LARGE')
+  })
+
+  it('detects an SSE error event mid-stream → onError fires once and onComplete is NEVER called', async () => {
+    /**
+     * The actual production bug we hit: LM Studio returns HTTP 200 (the
+     * server is up, the model loaded), starts the stream, then sends
+     * `data: {"error": "..."}` because the model couldn't fit the prompt.
+     * The old parser silently swallowed the error event, ran to the end
+     * of the stream, and called onComplete('') with empty text. ChatView
+     * then ran title generation against the empty assistant message,
+     * producing the "title appears, no reply" symptom.
+     *
+     * After the fix: error events route to onError, onComplete never
+     * fires. ChatView sees a real error and surfaces it.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      'data: {"error": "n_keep is greater than the context length"}\n\n',
+    ]))
+    const onChunk = vi.fn()
+    const onComplete = vi.fn()
+    const errors: unknown[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      onChunk, onComplete, (e) => errors.push(e),
+    )
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(LlmError)
+    expect((errors[0] as LlmError).code).toBe('CONTEXT_TOO_LARGE')
+  })
+
+  it('handles the {error: {message, type}} object shape (alternate LM Studio format)', async () => {
+    /**
+     * LM Studio sometimes wraps the error as a flat string ("error":
+     * "...") and sometimes as an object ({"error": {"message": "...",
+     * "type": "..."}}) depending on the version and which subsystem
+     * tripped. Both shapes must surface to onError; only the
+     * context-overflow sniff distinguishes the user-facing message.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      'data: {"error": {"message": "something went wrong", "type": "internal"}}\n\n',
+    ]))
+    const errors: unknown[] = []
+    const onComplete = vi.fn()
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      () => {}, onComplete, (e) => errors.push(e),
+    )
+    expect(onComplete).not.toHaveBeenCalled()
+    expect((errors[0] as LlmError).code).toBe('UNKNOWN')
+    expect((errors[0] as LlmError).message).toContain('something went wrong')
+  })
+
   it('translates a network throw to CONNECTION_REFUSED and never calls onComplete', async () => {
     /**
      * If LM Studio's server is off, the very first fetch throws TypeError
