@@ -114,10 +114,8 @@ export function LocalBlock() {
           <span className="flex items-center">
             Base URL
             <HelpTooltip label="Help: base URL">
-              Where nopy connects to LM Studio. The default works as
-              long as LM Studio is open and you've clicked Start Server
-              inside it. Only change this if you've moved LM Studio to a
-              different port.
+              Where nopy talks to LM Studio. The default works for most
+              setups.
             </HelpTooltip>
           </span>
         }
@@ -138,11 +136,8 @@ export function LocalBlock() {
           <span className="flex items-center">
             Model
             <HelpTooltip label="Help: model name">
-              The model nopy will chat with. Pick from the list of
-              models you've loaded in LM Studio. If your model isn't
-              loaded yet, choose "Custom…" and type its name — once you
-              load it in LM Studio, click "Check again" above and it
-              will show up here.
+              Which model nopy chats with. Pick a loaded one, or type a
+              name with "Custom…".
             </HelpTooltip>
           </span>
         }
@@ -194,15 +189,8 @@ export function LocalBlock() {
             <span className="flex items-center">
               Loaded context
               <HelpTooltip label="Help: loaded context">
-                How much your model can read at once. nopy sends a fair
-                bit of background (your therapy frame, profile, journal
-                summaries) so replies stay personal — load your model
-                with at least 32,000 to keep things smooth. Below
-                roughly 8,000 your chats will fail with a "too long"
-                error.
-                <br /><br />
-                To change it: in LM Studio, click Eject, then re-load
-                the model and pick a higher Context Length.
+                How much your model can hold. Load with 32k+ in LM
+                Studio for smooth chats.
               </HelpTooltip>
             </span>
           }
