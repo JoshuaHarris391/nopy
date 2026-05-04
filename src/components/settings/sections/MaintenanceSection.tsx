@@ -1,19 +1,25 @@
 import { Zap } from 'lucide-react'
 import { SettingsSection } from '../../ui/SettingsSection'
 import { CancellableActionButton } from '../../ui/CancellableActionButton'
-import { useSettingsStore } from '../../../stores/settingsStore'
+import { useShallow } from 'zustand/react/shallow'
+import { useSettingsStore, selectLlmConfig } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
 import { useIndexingStore } from '../../../stores/indexingStore'
 
 export function MaintenanceSection() {
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const indexing = useIndexingStore()
 
-  if (!apiKey) return null
+  // Hide the section until the active provider is configured. In Anthropic
+  // mode that means an API key; in local mode that means a model name.
+  // The dispatcher would throw NO_MODEL_CONFIGURED otherwise — friendlier
+  // to hide the button than show one that's guaranteed to fail.
+  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+  if (!ready) return null
 
   const handleForceUpdate = () => {
     indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(apiKey, true, onProgress, signal)
+      const count = await useJournalStore.getState().processEntries(llmConfig, true, onProgress, signal)
       return `Done — ${count} entries reprocessed`
     })
   }

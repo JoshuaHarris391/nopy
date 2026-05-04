@@ -5,6 +5,7 @@ import type { MoodScore } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
 import { processAllEntries } from '../services/entryProcessor'
 import { useSettingsStore } from './settingsStore'
+import type { LlmConfig } from '../types/settings'
 
 function getJournalPath(): string {
   return useSettingsStore.getState().journalPath
@@ -37,8 +38,8 @@ interface JournalState {
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
   applyProcessedMetadata: (results: Map<string, { mood: MoodScore | null; tags: string[]; summary: string }>) => Promise<void>
-  processEntries: (apiKey: string, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
-  startForceUpdate: (apiKey: string) => Promise<void>
+  processEntries: (config: LlmConfig, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
+  startForceUpdate: (config: LlmConfig) => Promise<void>
   stopForceUpdate: () => void
   clear: () => Promise<void>
 }
@@ -207,16 +208,16 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     }
   },
 
-  processEntries: async (apiKey, force, onProgress, signal) => {
+  processEntries: async (config, force, onProgress, signal) => {
     console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
     const { entries } = getState()
-    const results = await processAllEntries(entries, apiKey, force, onProgress, signal)
+    const results = await processAllEntries(entries, config, force, onProgress, signal)
     if (results.size === 0) return 0
     await getState().applyProcessedMetadata(results)
     return results.size
   },
 
-  startForceUpdate: async (apiKey) => {
+  startForceUpdate: async (config) => {
     if (getState().forceProcessing) {
       getState().stopForceUpdate()
       return
@@ -224,7 +225,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const controller = new AbortController()
     setState({ forceProcessing: true, forceResult: null, forceProgress: { current: 0, total: 0, title: '' }, forceAbortController: controller })
     try {
-      const count = await getState().processEntries(apiKey, true, (current, total, title) => {
+      const count = await getState().processEntries(config, true, (current, total, title) => {
         setState({ forceProgress: { current, total, title } })
       }, controller.signal)
       if (!controller.signal.aborted) {

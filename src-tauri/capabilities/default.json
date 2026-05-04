@@ -15,6 +15,8 @@
     "fs:allow-write-text-file",
     "fs:allow-remove",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

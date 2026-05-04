@@ -1,10 +1,11 @@
 # LLM Pipeline
 
-How nopy uses Claude to index journal entries, extract themes, and generate psychological profiles.
+How nopy uses Claude (or a local LM Studio model) to index journal entries, extract themes, and generate psychological profiles.
 
 **Contents**
 
 - [Overview](#overview) — the three AI operations
+- [Provider routing](#provider-routing) — Anthropic vs. local LM Studio
 - [Entry metadata extraction](#entry-metadata-extraction) — indexing individual entries via Haiku
 - [Theme extraction](#theme-extraction) — identifying cross-entry patterns
 - [Profile generation](#profile-generation) — the five-phase pipeline
@@ -19,13 +20,22 @@ How nopy uses Claude to index journal entries, extract themes, and generate psyc
 
 Nopy makes three categories of AI calls:
 
-| Operation | Model | Trigger | Output |
+| Operation | Model (Anthropic mode) | Trigger | Output |
 |---|---|---|---|
 | Entry metadata extraction | Haiku | "Update Index" button | mood, tags, summary per entry |
 | Theme extraction | Haiku | Profile generation (step 3) | themes, cognitive patterns, strengths, growth areas |
 | Full profile generation | Opus 4.6 | Profile generation (step 4) | 2000-4000 word clinical markdown document |
 
-All calls go through `src/services/anthropic.ts`, which wraps the Anthropic SDK.
+All calls flow through the dispatcher at `src/services/llm.ts`, which routes to either `src/services/anthropic.ts` or `src/services/localServer.ts` based on `settings.provider`.
+
+## Provider routing
+
+The dispatcher (`src/services/llm.ts`) takes an `LlmConfig` slice from `settingsStore` (`{ provider, apiKey, localBaseUrl, localModel }`) and routes every call. Two important rules:
+
+- **All-or-nothing scope.** When `settings.provider === 'local'`, *every* AI call (chat, title generation, entry indexing, profile narrative, full profile) goes to LM Studio. There is no "mixed" mode where indexing stays on Anthropic — that would silently leak journal data to Anthropic while the user thought they were running everything locally.
+- **Model resolution.** In Anthropic mode, the dispatcher passes the caller's `requestedModel` through unchanged (so callers can pick `HAIKU_MODEL` for cheap one-shots and `OPUS_MODEL` for high-quality work). In local mode, the dispatcher ignores `requestedModel` and uses `config.localModel` — LM Studio loads one model at a time and will 404 on any model name it doesn't have loaded.
+
+For the user-facing walk-through of local mode (setup, security guarantees, troubleshooting), see [`local-llm-integration.md`](./local-llm-integration.md).
 
 ---
 

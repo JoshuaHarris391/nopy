@@ -1,10 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useSettingsStore } from '../../stores/settingsStore'
+import { useShallow } from 'zustand/react/shallow'
+import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
-import { streamChatResponse, sendMessage } from '../../services/anthropic'
+import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
 import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { hydrateEntryContext } from '../../services/chatPersistence'
@@ -17,7 +18,11 @@ import { MessageCircle, Leaf, PanelLeftClose, PanelLeftOpen } from 'lucide-react
 import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
+  // Active-provider readiness: anthropic needs apiKey, local needs localModel.
+  // Same gate every other AI-using component uses (IndexView, ProfileView,
+  // MaintenanceSection) so the chat composer is hidden in the same situations.
+  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
   const preferredModel = useSettingsStore((s) => s.preferredModel)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
@@ -133,7 +138,7 @@ export function ChatView() {
   }, [loadSession])
 
   const handleSend = useCallback(async (content: string) => {
-    if (!apiKey || streamingRef.current) return
+    if (!ready || streamingRef.current) return
 
     // Read activeSessionId from the store at call time, not from the
     // useCallback closure. The entry-context useEffect awaits
@@ -214,9 +219,19 @@ export function ChatView() {
       return
     }
 
+    // Translate dispatcher errors into the curated user-facing copy from
+    // LLM_ERROR_MESSAGES. For non-LlmError throws (rare — usually a code
+    // bug), fall back to the raw message.
+    const renderErrorMessage = (error: Error): string => {
+      if (error instanceof LlmError) {
+        return error.message || LLM_ERROR_MESSAGES[error.code]
+      }
+      return `I'm sorry, I encountered an error: ${error.message}`
+    }
+
     try {
       await streamChatResponse(
-        apiKey,
+        llmConfig,
         preferredModel,
         system,
         filteredMessages,
@@ -233,7 +248,7 @@ export function ChatView() {
               setGeneratingTitleId(currentSession.id)
               const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
               const title = await sendMessage(
-                apiKey,
+                llmConfig,
                 HAIKU_MODEL,
                 'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
                 [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
@@ -252,24 +267,24 @@ export function ChatView() {
         (error) => {
           console.error('Chat stream error:', error)
           streamingRef.current = false
-          updateStreamingMessage(`I'm sorry, I encountered an error: ${error.message}`)
+          updateStreamingMessage(renderErrorMessage(error))
           finalizeStreamingMessage()
         },
       )
     } catch (error) {
       console.error('Chat setup error:', error)
       streamingRef.current = false
-      const msg = error instanceof Error ? error.message : String(error)
-      updateStreamingMessage(`I'm sorry, I couldn't connect: ${msg}`)
+      const msg = error instanceof Error ? renderErrorMessage(error) : `I'm sorry, I couldn't connect: ${String(error)}`
+      updateStreamingMessage(msg)
       await finalizeStreamingMessage()
     }
-  }, [apiKey, preferredModel, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
+  }, [llmConfig, ready, preferredModel, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
 
 
   // Handle "Explore with nopy" entry context from router state
   useEffect(() => {
     const state = location.state as { entryTitle?: string; entryContent?: string; entryDate?: string } | null
-    if (!state?.entryContent || !apiKey || !loaded || entryContextHandled.current) return
+    if (!state?.entryContent || !ready || !loaded || entryContextHandled.current) return
     entryContextHandled.current = true
     navigate('/chat', { replace: true, state: null })
 
@@ -282,7 +297,7 @@ export function ChatView() {
       // Let session state settle, then send
       setTimeout(() => handleSend(visibleMessage), 100)
     })()
-  }, [location.state, apiKey, loaded, navigate, createSession, handleSend])
+  }, [location.state, ready, loaded, navigate, createSession, handleSend])
 
   const isStreaming = activeSession?.messages.some((m) => m.streaming) ?? false
 
@@ -372,11 +387,13 @@ export function ChatView() {
                     Start a conversation
                   </h3>
                   <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--sage)', maxWidth: 320, marginBottom: 20 }}>
-                    {apiKey
+                    {ready
                       ? "Share what's on your mind. I'm here to listen and help you explore your thoughts."
-                      : 'Add your Anthropic API key in Settings to begin chatting.'}
+                      : llmConfig.provider === 'local'
+                        ? 'Pick a local model in Settings to begin chatting.'
+                        : 'Add your Anthropic API key in Settings to begin chatting.'}
                   </p>
-                  {apiKey && (
+                  {ready && (
                     <button
                       onClick={handleNewSession}
                       className="cursor-pointer flex items-center gap-2"
@@ -410,7 +427,7 @@ export function ChatView() {
           {activeSession && (
             <div style={{ padding: '0 44px' }}>
               <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
-                <ChatInput onSend={handleSend} disabled={!apiKey || isStreaming} />
+                <ChatInput onSend={handleSend} disabled={!ready || isStreaming} />
               </div>
             </div>
           )}

@@ -1,0 +1,340 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { normalizeBaseUrl, probe, fetchModels, streamChatResponse, sendMessage } from '../../services/localServer'
+import { LlmError } from '../../services/llm'
+
+/**
+ * `fetch` lives on globalThis in jsdom; `vi.spyOn(globalThis, 'fetch')` lets
+ * each test pin its own response without polluting other tests. The mock
+ * returns a real `Response` (with `ReadableStream` body when streaming) so
+ * the production code's `response.body.getReader()` path runs unchanged.
+ */
+const fetchSpy = vi.fn()
+
+beforeEach(() => {
+  fetchSpy.mockReset()
+  vi.stubGlobal('fetch', fetchSpy)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+/**
+ * Build a Response whose body is a ReadableStream emitting the given chunks
+ * one at a time. This is how we exercise the SSE parser's chunk-boundary
+ * buffering — splitting a JSON event across two reader chunks proves the
+ * buffer-until-`\n\n` logic is correct.
+ */
+function streamingResponse(chunks: (string | Uint8Array)[]): Response {
+  const encoder = new TextEncoder()
+  const encoded = chunks.map((c) => (typeof c === 'string' ? encoder.encode(c) : c))
+  let i = 0
+  const stream = new ReadableStream({
+    pull(controller) {
+      if (i < encoded.length) controller.enqueue(encoded[i++])
+      else controller.close()
+    },
+  })
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+describe('normalizeBaseUrl', () => {
+  it('trims trailing slashes and forgives a missing /v1 suffix', () => {
+    /**
+     * Users routinely paste either "http://localhost:1234" (Tauri devtools
+     * suggestion) or "http://localhost:1234/v1" (LM Studio docs). Both must
+     * work without surprising 404s. The normalizer also strips trailing
+     * slashes so `${url}/chat/completions` doesn't double-slash.
+     */
+    expect(normalizeBaseUrl('http://localhost:1234')).toBe('http://localhost:1234/v1')
+    expect(normalizeBaseUrl('http://localhost:1234/v1')).toBe('http://localhost:1234/v1')
+    expect(normalizeBaseUrl('http://localhost:1234/v1/')).toBe('http://localhost:1234/v1')
+    expect(normalizeBaseUrl('http://localhost:1234///')).toBe('http://localhost:1234/v1')
+  })
+})
+
+describe('probe', () => {
+  it('returns ok with model list on a 200 response', async () => {
+    /**
+     * Happy path: LM Studio is running and has at least one model loaded.
+     * The settings UI uses this to populate the model autocomplete and
+     * drive the "Ready" status indicator.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'gemma-2-2b' }, { id: 'qwen-2-7b' }] }), { status: 200 }))
+    const result = await probe('http://localhost:1234/v1')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.models).toEqual([
+      { id: 'gemma-2-2b', displayName: 'gemma-2-2b' },
+      { id: 'qwen-2-7b', displayName: 'qwen-2-7b' },
+    ])
+  })
+
+  it('returns ok with empty models when the server is up but no model is loaded', async () => {
+    /**
+     * LM Studio runs the server independently of model loading. Empty
+     * `data: []` is the signal for "Start Server pressed but no Load
+     * Model click yet" — the UI maps this to the amber status state.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
+    const result = await probe('http://localhost:1234/v1')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.models).toEqual([])
+  })
+
+  it('returns connection-refused when fetch throws', async () => {
+    /**
+     * `fetch` to a closed port throws TypeError "Failed to fetch" with no
+     * specific code. Probe catches all non-AbortError throws and labels
+     * them connection-refused so the UI can show the "Start Server" prompt.
+     */
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const result = await probe('http://localhost:1234/v1')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe('connection-refused')
+  })
+
+  it('returns timeout when the request exceeds the deadline', async () => {
+    /**
+     * 2-second default keeps a misconfigured base URL from hanging the
+     * settings page. Real fetch responds synchronously to abort() so the
+     * test only needs to abort before resolving.
+     */
+    fetchSpy.mockImplementationOnce((_url, init) => new Promise((_, reject) => {
+      const sig = (init as RequestInit | undefined)?.signal
+      sig?.addEventListener('abort', () => {
+        const e = new Error('aborted'); e.name = 'AbortError'; reject(e)
+      })
+    }))
+    const result = await probe('http://localhost:1234/v1', 10)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe('timeout')
+  })
+})
+
+describe('fetchModels', () => {
+  it('throws LlmError(CONNECTION_REFUSED) when the server is unreachable', async () => {
+    /**
+     * `fetchModels` is the dispatcher's escape hatch when callers want a
+     * thrown error rather than a probe result tuple. The settings UI
+     * uses `probe`; chat send paths use `fetchModels` and rely on the
+     * thrown error to reach the catalog mapping in `LLM_ERROR_MESSAGES`.
+     */
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetchModels('http://localhost:1234')).rejects.toBeInstanceOf(LlmError)
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetchModels('http://localhost:1234')).rejects.toMatchObject({ code: 'CONNECTION_REFUSED' })
+  })
+})
+
+describe('streamChatResponse', () => {
+  it('decodes OpenAI-style SSE chunks and forwards cumulative onChunk in arrival order', async () => {
+    /**
+     * The contract chatStore.updateStreamingMessage relies on: every
+     * onChunk call carries the full text so far, not the delta. If the
+     * SSE parser emitted deltas, the chat UI would render only the last
+     * chunk. Test with three chunks so the cumulative property is visible.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const chunks: string[] = []
+    const completes: string[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [{ role: 'user', content: 'hi' }], 100,
+      (c) => chunks.push(c), (c) => completes.push(c), () => {},
+    )
+    expect(chunks).toEqual(['Hel', 'Hello', 'Hello world'])
+    expect(completes).toEqual(['Hello world'])
+  })
+
+  it('buffers across reader chunk boundaries (event split mid-stream)', async () => {
+    /**
+     * The reader returns Uint8Arrays in arbitrary chunk sizes. A single
+     * SSE event can be split across reads, e.g. half the JSON arriving
+     * in chunk N and the rest in chunk N+1. The parser must wait for
+     * the full `\n\n` terminator before parsing — without buffering, the
+     * partial JSON would throw and the message would be dropped.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      'data: {"choices":[{"de',
+      'lta":{"content":"split-ok"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const chunks: string[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      (c) => chunks.push(c), () => {}, () => {},
+    )
+    expect(chunks).toEqual(['split-ok'])
+  })
+
+  it('handles multi-byte UTF-8 split across reader chunks without corruption', async () => {
+    /**
+     * The most-likely silent breakage in any SSE client. The 4-byte UTF-8
+     * sequence for "𝐀" (U+1D400) is bytes [F0 9D 90 80]. Split it across
+     * two reader chunks: TextDecoder({stream:true}) holds the leading
+     * bytes until it has a complete code point. Without `{stream:true}`,
+     * the decoder emits a replacement char at the boundary and the model
+     * output corrupts mid-stream.
+     */
+    const fullEvent = 'data: {"choices":[{"delta":{"content":"𝐀"}}]}\n\n'
+    const bytes = new TextEncoder().encode(fullEvent)
+    // Find the first byte of the 4-byte UTF-8 sequence and split inside it.
+    const splitAt = bytes.indexOf(0xf0)
+    expect(splitAt).toBeGreaterThan(-1)
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      bytes.slice(0, splitAt + 2), // first half — middle of the 4-byte char
+      bytes.slice(splitAt + 2),    // second half — completes the char
+      'data: [DONE]\n\n',
+    ]))
+    const chunks: string[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      (c) => chunks.push(c), () => {}, () => {},
+    )
+    expect(chunks).toEqual(['𝐀'])
+  })
+
+  it('skips [DONE] markers and malformed/empty data lines without crashing', async () => {
+    /**
+     * `[DONE]` is the OpenAI sentinel for "stream finished cleanly". A
+     * keepalive can arrive as `: ping` or as an empty `data: ` line, and
+     * occasional malformed JSON shouldn't kill the whole stream — just
+     * skip the bad event and keep going.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse([
+      'data: \n\n',                                                    // empty
+      ': keepalive\n\n',                                                // comment
+      'data: not-json\n\n',                                             // malformed
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',             // valid
+      'data: [DONE]\n\n',
+    ]))
+    const chunks: string[] = []
+    let completed = ''
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      (c) => chunks.push(c), (c) => { completed = c }, () => {},
+    )
+    expect(chunks).toEqual(['ok'])
+    expect(completed).toBe('ok')
+  })
+
+  it('translates a 400/404 from /chat/completions to NO_MODEL_LOADED', async () => {
+    /**
+     * LM Studio returns 400 with "no model loaded" before any model has
+     * been clicked Load. The UI catalog treats 400 and 404 the same way
+     * because both mean "send a message later, after loading a model."
+     */
+    fetchSpy.mockResolvedValueOnce(new Response('{}', { status: 400 }))
+    const errors: unknown[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      () => {}, () => {}, (e) => errors.push(e),
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(LlmError)
+    expect((errors[0] as LlmError).code).toBe('NO_MODEL_LOADED')
+  })
+
+  it('translates a network throw to CONNECTION_REFUSED and never calls onComplete', async () => {
+    /**
+     * If LM Studio's server is off, the very first fetch throws TypeError
+     * "Failed to fetch". The wrapper must convert that to a stable code
+     * and must NOT call onComplete — otherwise the chat store would
+     * finalize an empty assistant message and the user would think their
+     * AI just sent them silence.
+     */
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const onComplete = vi.fn()
+    const errors: unknown[] = []
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      () => {}, onComplete, (e) => errors.push(e),
+    )
+    expect((errors[0] as LlmError).code).toBe('CONNECTION_REFUSED')
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+
+  it('places the system prompt as the leading {role:system} message in the request body', async () => {
+    /**
+     * OpenAI convention vs Anthropic SDK: OpenAI takes the system prompt
+     * as the first message in the array, Anthropic takes it as a top-level
+     * field. The wrapper must do that translation or the model receives
+     * an empty system prompt and ignores all therapy/profile context.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse(['data: [DONE]\n\n']))
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', 'You are helpful.',
+      [{ role: 'user', content: 'hi' }], 100,
+      () => {}, () => {}, () => {},
+    )
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'hi' },
+    ])
+    expect(body.model).toBe('gemma')
+    expect(body.max_tokens).toBe(100)
+    expect(body.stream).toBe(true)
+  })
+
+  it('joins baseUrl and /chat/completions cleanly regardless of trailing slash', async () => {
+    /**
+     * If the user pastes a base URL with a trailing slash, the wrapper
+     * must not produce a double-slash URL like `localhost:1234/v1//chat/...`.
+     * Some servers tolerate it; LM Studio in particular does not on the
+     * v1 router for the chat endpoint.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse(['data: [DONE]\n\n']))
+    await streamChatResponse(
+      'http://localhost:1234/v1/', 'gemma', '', [], 100,
+      () => {}, () => {}, () => {},
+    )
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://localhost:1234/v1/chat/completions')
+  })
+
+  it('forwards an AbortSignal to fetch so callers can cancel mid-stream', async () => {
+    /**
+     * Chat-cancel and entryProcessor's stop button both rely on aborts
+     * propagating through to the underlying fetch. Without this wiring,
+     * clicking Stop leaves the request churning until LM Studio finishes
+     * generating — and on a slow local model that can be tens of seconds.
+     */
+    fetchSpy.mockResolvedValueOnce(streamingResponse(['data: [DONE]\n\n']))
+    const controller = new AbortController()
+    await streamChatResponse(
+      'http://localhost:1234', 'gemma', '', [], 100,
+      () => {}, () => {}, () => {}, controller.signal,
+    )
+    const opts = fetchSpy.mock.calls[0][1] as RequestInit
+    expect(opts.signal).toBe(controller.signal)
+  })
+})
+
+describe('sendMessage', () => {
+  it('returns the choices[0].message.content from a 200 response', async () => {
+    /**
+     * Non-streaming counterpart used by entryProcessor for one-shot
+     * summarization. OpenAI shape: response.choices[0].message.content.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+      choices: [{ message: { content: 'parsed metadata json' } }],
+    }), { status: 200 }))
+    const result = await sendMessage('http://localhost:1234', 'gemma', 'sys', [{ role: 'user', content: 'q' }])
+    expect(result).toBe('parsed metadata json')
+  })
+
+  it('throws LlmError(NO_MODEL_LOADED) on 400/404 so callers can map to user-friendly copy', async () => {
+    /**
+     * entryProcessor's processEntry throws when sendMessage throws — the
+     * journalStore.processEntries loop catches it and continues with the
+     * next entry. The UI sees a "skipped" toast rather than a stack trace.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response('not loaded', { status: 404 }))
+    await expect(sendMessage('http://localhost:1234', 'gemma', 'sys', [], 100))
+      .rejects.toMatchObject({ code: 'NO_MODEL_LOADED' })
+  })
+})

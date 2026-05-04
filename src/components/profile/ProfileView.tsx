@@ -6,7 +6,8 @@ import { LeafCatcherGame } from './LeafCatcherGame'
 import { Button } from '../ui/Button'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
-import { useSettingsStore } from '../../stores/settingsStore'
+import { useShallow } from 'zustand/react/shallow'
+import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 import { moodLabelColors } from '../../utils/mood'
 
@@ -18,7 +19,10 @@ export function ProfileView() {
   const journalLoaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
+  // Same readiness gate as IndexView / MaintenanceSection. In Anthropic mode
+  // we need an apiKey; in Local mode we need a localModel name.
+  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)
@@ -55,7 +59,7 @@ export function ProfileView() {
   }, [loaded, loadProfile, journalLoaded, loadEntries])
 
   const handleGenerateProfile = () => {
-    if (!apiKey) return
+    if (!ready) return
     if (generating) {
       abortRef.current?.abort()
       return
@@ -63,7 +67,7 @@ export function ProfileView() {
     const controller = new AbortController()
     abortRef.current = controller
     const entries = useJournalStore.getState().entries
-    useProfileStore.getState().generateProfile(entries, apiKey, controller.signal).finally(() => {
+    useProfileStore.getState().generateProfile(entries, llmConfig, controller.signal).finally(() => {
       abortRef.current = null
     })
   }
@@ -87,7 +91,7 @@ export function ProfileView() {
             Last updated: {new Date(profile.updatedAt).toLocaleDateString()} · {profile.entriesAnalyzed} entries analysed
           </span>
         )}
-        {apiKey && (
+        {ready && (
           <>
             <Button
               variant="primary"

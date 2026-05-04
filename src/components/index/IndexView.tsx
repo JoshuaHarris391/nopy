@@ -8,7 +8,8 @@ import { MoodDot } from '../ui/MoodDot'
 import { CancellableActionButton } from '../ui/CancellableActionButton'
 
 import { useJournalStore } from '../../stores/journalStore'
-import { useSettingsStore } from '../../stores/settingsStore'
+import { useShallow } from 'zustand/react/shallow'
+import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useIndexingStore } from '../../stores/indexingStore'
 
 export function IndexView() {
@@ -17,14 +18,18 @@ export function IndexView() {
   const loaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const [search, setSearch] = useState('')
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const indexing = useIndexingStore()
 
+  // Same readiness gate as MaintenanceSection — hide the Update button until
+  // the active provider is configured, otherwise the dispatcher would throw.
+  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+
   const handleUpdateIndex = () => {
-    if (!apiKey) return
+    if (!ready) return
     indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(apiKey, false, onProgress, signal)
+      const count = await useJournalStore.getState().processEntries(llmConfig, false, onProgress, signal)
       return count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date'
     })
   }
@@ -50,7 +55,7 @@ export function IndexView() {
         <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
-        {apiKey && (
+        {ready && (
           <CancellableActionButton
             state={indexing.state}
             result={indexing.result}

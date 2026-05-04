@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useSettingsStore } from '../../stores/settingsStore'
+import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { DEFAULT_THERAPY } from '../../services/prompts/therapists'
 
 /**
@@ -18,6 +18,9 @@ const DEFAULTS = {
   journalPath: '',
   theme: 'system' as const,
   therapyType: DEFAULT_THERAPY,
+  provider: 'anthropic' as const,
+  localBaseUrl: 'http://localhost:1234/v1',
+  localModel: '',
 }
 
 beforeEach(() => {
@@ -62,6 +65,9 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setSessionPanelCollapsed(true), expectField: 'sessionPanelCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setJournalPath('/tmp/j'), expectField: 'journalPath', expectValue: '/tmp/j' },
       { call: () => useSettingsStore.getState().setTheme('dark'), expectField: 'theme', expectValue: 'dark' },
+      { call: () => useSettingsStore.getState().setProvider('local'), expectField: 'provider', expectValue: 'local' },
+      { call: () => useSettingsStore.getState().setLocalBaseUrl('http://localhost:11434/v1'), expectField: 'localBaseUrl', expectValue: 'http://localhost:11434/v1' },
+      { call: () => useSettingsStore.getState().setLocalModel('google/gemma-4-e4b'), expectField: 'localModel', expectValue: 'google/gemma-4-e4b' },
     ]
 
     for (const { call, expectField, expectValue } of cases) {
@@ -136,10 +142,84 @@ describe('useSettingsStore', () => {
   })
 })
 
-describe('forward-looking multi-provider settings (todo)', () => {
-  // Pinned for the LM Studio integration in docs/tasks/10-gemma4-local-integration.md.
-  // The new `provider` field must default to 'anthropic' for existing installs
-  // (so an in-place upgrade doesn't break a chat-mid-flight) and persist across
-  // reloads alongside `apiKey`.
-  it.todo('adding `provider` field defaults to "anthropic" for existing installs and persists across reloads')
+describe('multi-provider settings', () => {
+  it('defaults provider to "anthropic" so existing installs keep working in-place', () => {
+    /**
+     * The whole "users won't notice the upgrade" property hinges on this
+     * default. Anyone shipping with `provider: 'local'` as the default would
+     * silently break every existing user the moment their app updates.
+     */
+    expect(useSettingsStore.getState().provider).toBe('anthropic')
+    expect(useSettingsStore.getState().localBaseUrl).toBe('http://localhost:1234/v1')
+    expect(useSettingsStore.getState().localModel).toBe('')
+  })
+
+  it('migrates a v0 persisted blob (no provider/localBaseUrl/localModel) to v1 defaults without losing other fields', async () => {
+    /**
+     * Existing installs have a `nopy-settings` blob in localStorage that
+     * predates the multi-provider refactor — no `provider`, no
+     * `localBaseUrl`, no `localModel`. The persist middleware's `migrate`
+     * function must add those fields with safe defaults (anthropic mode)
+     * while preserving everything the user already configured.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: {
+          apiKey: 'sk-existing',
+          preferredModel: 'claude-opus-4-5',
+          maxOutputTokens: 8192,
+          contextBudget: 200000,
+          onboardingComplete: true,
+          sidebarCollapsed: false,
+          sessionPanelCollapsed: false,
+          journalPath: '/tmp/journal',
+          theme: 'dark',
+          therapyType: DEFAULTS.therapyType,
+        },
+        version: 0,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    // Pre-existing fields preserved.
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.preferredModel).toBe('claude-opus-4-5')
+    expect(state.maxOutputTokens).toBe(8192)
+    expect(state.journalPath).toBe('/tmp/journal')
+    expect(state.theme).toBe('dark')
+    // New fields filled in with safe defaults.
+    expect(state.provider).toBe('anthropic')
+    expect(state.localBaseUrl).toBe('http://localhost:1234/v1')
+    expect(state.localModel).toBe('')
+  })
+
+  it('selectLlmConfig returns only the four LLM-routing fields', () => {
+    /**
+     * The dispatcher in services/llm.ts only needs provider + apiKey +
+     * localBaseUrl + localModel. Keeping the selector narrow means call
+     * sites re-render only when LLM-relevant settings change, and the
+     * dispatcher's test surface stays tiny.
+     */
+    useSettingsStore.setState({
+      apiKey: 'sk-x',
+      preferredModel: 'claude-haiku-4-5',
+      provider: 'local',
+      localBaseUrl: 'http://localhost:11434/v1',
+      localModel: 'gemma',
+      theme: 'dark', // not in the slice
+    })
+
+    const config = selectLlmConfig(useSettingsStore.getState())
+    expect(config).toEqual({
+      provider: 'local',
+      apiKey: 'sk-x',
+      localBaseUrl: 'http://localhost:11434/v1',
+      localModel: 'gemma',
+    })
+    expect(Object.keys(config).sort()).toEqual(['apiKey', 'localBaseUrl', 'localModel', 'provider'])
+  })
 })

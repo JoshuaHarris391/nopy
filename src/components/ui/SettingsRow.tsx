@@ -1,5 +1,5 @@
 interface SettingsRowProps {
-  label: string
+  label: React.ReactNode
   description?: string
   descriptionFont?: 'ui' | 'mono'
   children: React.ReactNode

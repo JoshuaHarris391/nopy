@@ -1,10 +1,11 @@
-import { sendMessage, sendMessageStreaming } from './anthropic'
+import { sendMessage, sendMessageStreaming } from './llm'
 import { parseLLMJson } from './parseLLMJson'
 import { HAIKU_MODEL, OPUS_MODEL, TOKEN_LIMITS } from './models'
 import { ENTRY_METADATA_SYSTEM } from './prompts/entryMetadata'
 import { PROFILE_NARRATIVE_SYSTEM } from './prompts/profileNarrative'
 import { FULL_PROFILE_SYSTEM } from './prompts/fullProfile'
 import type { JournalEntry, MoodLabel } from '../types/journal'
+import type { LlmConfig } from '../types/settings'
 import type { z } from 'zod'
 import type { LocalStatsSchema } from '../schemas/profile'
 import { EntryMetadataCoercedSchema } from '../schemas/journal'
@@ -16,11 +17,11 @@ interface EntryMetadata {
   summary: string
 }
 
-export async function processEntry(entry: JournalEntry, apiKey: string, signal?: AbortSignal): Promise<EntryMetadata> {
+export async function processEntry(entry: JournalEntry, config: LlmConfig, signal?: AbortSignal): Promise<EntryMetadata> {
   const inputChars = (entry.title.length + entry.content.length)
   console.log('[entryProcessor] processEntry: input', inputChars, 'chars')
   const response = await sendMessage(
-    apiKey,
+    config,
     HAIKU_MODEL,
     ENTRY_METADATA_SYSTEM,
     [{ role: 'user', content: `Title: ${entry.title}\n\n${entry.content}` }],
@@ -36,7 +37,7 @@ export async function processEntry(entry: JournalEntry, apiKey: string, signal?:
 
 export async function processAllEntries(
   entries: JournalEntry[],
-  apiKey: string,
+  config: LlmConfig,
   force: boolean,
   onProgress: (current: number, total: number, entryTitle: string) => void,
   signal?: AbortSignal,
@@ -50,7 +51,7 @@ export async function processAllEntries(
     const entry = toProcess[i]
     onProgress(i + 1, toProcess.length, entry.title)
     try {
-      const metadata = await processEntry(entry, apiKey, signal)
+      const metadata = await processEntry(entry, config, signal)
       results.set(entry.id, metadata)
     } catch (e) {
       console.error('[entryProcessor] processAllEntries: entry', i + 1, 'of', toProcess.length, 'failed —', e)
@@ -63,7 +64,7 @@ export async function processAllEntries(
 
 export async function generateProfileFromEntries(
   entries: JournalEntry[],
-  apiKey: string,
+  config: LlmConfig,
   onStreamProgress?: (charsReceived: number) => void,
   signal?: AbortSignal,
 ): Promise<z.infer<typeof ProfileResponseSchema>> {
@@ -78,7 +79,7 @@ export async function generateProfileFromEntries(
 
   console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummaries.length, 'chars to Haiku')
   const response = await sendMessageStreaming(
-    apiKey,
+    config,
     HAIKU_MODEL,
     PROFILE_NARRATIVE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
@@ -95,7 +96,7 @@ export async function generateProfileFromEntries(
 
 export async function generateFullProfile(
   entries: JournalEntry[],
-  apiKey: string,
+  config: LlmConfig,
   onStreamProgress?: (charsReceived: number) => void,
   signal?: AbortSignal,
 ): Promise<string> {
@@ -114,7 +115,7 @@ export async function generateFullProfile(
 
   console.log('[entryProcessor] generateFullProfile: sending', entryContent.length, 'chars to Opus')
   const response = await sendMessageStreaming(
-    apiKey,
+    config,
     OPUS_MODEL,
     FULL_PROFILE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],

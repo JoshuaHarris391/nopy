@@ -7,6 +7,7 @@ import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { useJournalStore } from './journalStore'
+import type { LlmConfig } from '../types/settings'
 
 interface ProfileState {
   profile: PsychologicalProfile | null
@@ -21,7 +22,7 @@ interface ProfileState {
   setProfile: (profile: PsychologicalProfile) => Promise<void>
   generateProfile: (
     entries: JournalEntry[],
-    apiKey: string,
+    config: LlmConfig,
     signal?: AbortSignal,
   ) => Promise<void>
   clear: () => Promise<void>
@@ -78,7 +79,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     }
   },
 
-  generateProfile: async (entries, apiKey, signal) => {
+  generateProfile: async (entries, config, signal) => {
     const setPhase = (phase: string) => setState({ phase })
     const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
@@ -97,7 +98,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     if (unindexed.length > 0) {
       const s = stepNum('index')
       setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
-      const results = await processAllEntries(entries, apiKey, false, setProgress, signal)
+      const results = await processAllEntries(entries, config, false, setProgress, signal)
       if (results.size > 0) {
         await useJournalStore.getState().applyProcessedMetadata(results)
         entries = useJournalStore.getState().entries
@@ -121,7 +122,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (Haiku)...`)
     setProgress(0, 0, 'Waiting for response...')
     const narrative = await generateProfileFromEntries(
-      entries, apiKey,
+      entries, config,
       (chars) => setProgress(Math.min(chars, 8000), 8000, `${chars} chars received`),
       signal,
     )
@@ -136,7 +137,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     let fullProfile: string | null = null
     try {
       fullProfile = await generateFullProfile(
-        entries, apiKey,
+        entries, config,
         (chars) => setProgress(Math.min(chars, 20000), 20000, `${chars} chars received`),
         signal,
       )
