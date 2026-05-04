@@ -302,12 +302,12 @@ describe('ApiSection — Provider toggle and Local mode', () => {
     expect(screen.getByText(/Loaded:/)).toHaveTextContent('gemma-2-2b')
   })
 
-  it('typing into the Model input then blurring writes setLocalModel', async () => {
+  it('typing into the Model text input (no models loaded) then blurring writes setLocalModel', async () => {
     /**
-     * Free-text model entry is the v1 design (no auto-pick from the
-     * dropdown). Same blur-to-commit pattern as the Anthropic API key
-     * field so users can paste long ids without firing a re-render per
-     * keystroke.
+     * When LM Studio reports zero models, we fall back to a free-text
+     * input so the user can set a model id BEFORE loading it in LM
+     * Studio. Same blur-to-commit pattern as the Anthropic API key
+     * field — no re-render per keystroke.
      */
     probeMock.mockResolvedValue({ ok: true, models: [] })
     useSettingsStore.setState({ provider: 'local' })
@@ -316,6 +316,61 @@ describe('ApiSection — Provider toggle and Local mode', () => {
     fireEvent.change(input, { target: { value: 'google/gemma-4-e4b' } })
     fireEvent.blur(input)
     expect(useSettingsStore.getState().localModel).toBe('google/gemma-4-e4b')
+  })
+
+  it('renders a dropdown of /v1/models results when LM Studio reports loaded models, and selecting one writes setLocalModel', async () => {
+    /**
+     * When the probe returns >= 1 loaded model, the Model field becomes a
+     * `<select>` populated from the same `/v1/models` payload that drives
+     * the status indicator. This is the headline UX for "Local mode is
+     * Ready" — the user sees their loaded models, picks one, and the
+     * dispatcher uses it. The text input still appears for the empty-list
+     * case (covered above) and via the "Custom…" option for power users.
+     */
+    probeMock.mockResolvedValue({
+      ok: true,
+      models: [
+        { id: 'google/gemma-4-e4b', displayName: 'google/gemma-4-e4b' },
+        { id: 'lmstudio-community/Gemma-2-2B-it-GGUF', displayName: 'lmstudio-community/Gemma-2-2B-it-GGUF' },
+      ],
+    })
+    useSettingsStore.setState({ provider: 'local', localModel: '' })
+    render(<ApiSection />)
+
+    // Text input gone; select present.
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('google/gemma-4-e4b')).not.toBeInTheDocument()
+    })
+    const allSelects = document.querySelectorAll('select')
+    // [0] Model dropdown, [1] Max Tokens, [2] Context Budget — model is the
+    // first because it lives inside LocalBlock, before the shared rows.
+    const modelSelect = allSelects[0] as HTMLSelectElement
+    expect(within(modelSelect).getByText('google/gemma-4-e4b')).toBeInTheDocument()
+    expect(within(modelSelect).getByText('lmstudio-community/Gemma-2-2B-it-GGUF')).toBeInTheDocument()
+    expect(within(modelSelect).getByText('Custom…')).toBeInTheDocument()
+    expect(screen.getByText(/2 models loaded in LM Studio/i)).toBeInTheDocument()
+
+    fireEvent.change(modelSelect, { target: { value: 'lmstudio-community/Gemma-2-2B-it-GGUF' } })
+    expect(useSettingsStore.getState().localModel).toBe('lmstudio-community/Gemma-2-2B-it-GGUF')
+  })
+
+  it('auto-selects the only loaded model when LM Studio has exactly one and nothing is set', async () => {
+    /**
+     * The most common case: user installed LM Studio, loaded one model,
+     * toggled nopy to Local. Forcing them to also pick that one model
+     * from a one-item dropdown is friction. The hook auto-fills it
+     * instead, so the status indicator goes straight to "Ready".
+     */
+    probeMock.mockResolvedValue({
+      ok: true,
+      models: [{ id: 'google/gemma-4-e4b', displayName: 'google/gemma-4-e4b' }],
+    })
+    useSettingsStore.setState({ provider: 'local', localModel: '' })
+    render(<ApiSection />)
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().localModel).toBe('google/gemma-4-e4b')
+    })
   })
 
   it('clicking Download LM Studio invokes openUrl with the LM Studio site', async () => {

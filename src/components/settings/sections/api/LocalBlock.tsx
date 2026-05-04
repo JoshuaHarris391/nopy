@@ -14,6 +14,16 @@ const inputStyle: React.CSSProperties = {
   outline: 'none', transition: 'border-color var(--transition-gentle)',
 }
 
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  fontFamily: 'var(--font-ui)',
+  fontSize: 13,
+  cursor: 'pointer',
+  width: 280,
+}
+
+const CUSTOM_VALUE = '__nopy_custom__'
+
 /**
  * Local-mode settings block: status indicator + (conditional) onboarding
  * card + base URL + model name. Reads probe state from `useLocalModels`
@@ -35,6 +45,28 @@ export function LocalBlock() {
   useEffect(() => { setModelInput(localModel) }, [localModel])
 
   const { models, loading, error, refresh } = useLocalModels(localBaseUrl)
+
+  // Auto-select the only loaded model so the common case (one model in
+  // LM Studio, nothing set in nopy yet) lights up green without the user
+  // having to read a dropdown. Skipped when the user already has a model
+  // chosen — even if the typed name doesn't match — because they may be
+  // mid-edit or about to load that model in LM Studio.
+  useEffect(() => {
+    if (!localModel && models.length === 1) {
+      setLocalModel(models[0].id)
+    }
+  }, [models, localModel, setLocalModel])
+
+  // Track whether the model field is in "custom" (typed) mode. We're in
+  // custom mode when a model is set but it isn't one of the loaded ones —
+  // that's how the user signals "I want to type a name, not pick from
+  // /v1/models" (e.g. they want to set a name BEFORE loading the model
+  // in LM Studio). Empty + models loaded → the dropdown handles it.
+  const isCustom = localModel !== '' && models.length > 0 && !models.some((m) => m.id === localModel)
+  const [customMode, setCustomMode] = useState(isCustom)
+  useEffect(() => { if (isCustom) setCustomMode(true) }, [isCustom])
+
+  const showDropdown = models.length > 0 && !customMode
 
   const status = useMemo<{ code: 'loading' | 'not-running' | 'no-model' | 'name-mismatch' | 'ready'; label: string }>(() => {
     if (loading) return { code: 'loading', label: 'Checking LM Studio…' }
@@ -97,28 +129,56 @@ export function LocalBlock() {
           <span className="flex items-center">
             Model
             <HelpTooltip label="Help: model name">
-              The exact model id LM Studio reports. After you load a model in
-              LM Studio, click "Check again" above and pick from the
-              suggestions. Common ids look like
+              When LM Studio is running and a model is loaded, this dropdown
+              lists every model returned by <code>GET /v1/models</code> so
+              you can pick the one to chat with. Pick "Custom…" to type a
+              name manually — useful if you want to set the name before
+              loading the model in LM Studio. Common ids look like
               {' '}<code>google/gemma-4-e4b</code> or
               {' '}<code>lmstudio-community/Gemma-2-2B-it-GGUF</code>.
             </HelpTooltip>
           </span>
         }
-        description="Type or pick a model loaded in LM Studio"
+        description={
+          showDropdown
+            ? `${models.length} model${models.length === 1 ? '' : 's'} loaded in LM Studio`
+            : models.length > 0
+              ? 'Custom — type a model id; pick from the dropdown above to switch back'
+              : 'No models loaded yet — type a model id, or load one in LM Studio and click "Check again"'
+        }
       >
-        <input
-          type="text"
-          list="local-model-suggestions"
-          value={modelInput}
-          onChange={(e) => setModelInput(e.target.value)}
-          onBlur={() => setLocalModel(modelInput.trim())}
-          placeholder="google/gemma-4-e4b"
-          style={{ ...inputStyle, width: 280 }}
-        />
-        <datalist id="local-model-suggestions">
-          {models.map((m) => <option key={m.id} value={m.id} />)}
-        </datalist>
+        {showDropdown ? (
+          <select
+            value={localModel}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === CUSTOM_VALUE) {
+                setCustomMode(true)
+                return
+              }
+              setLocalModel(v)
+            }}
+            style={selectStyle}
+          >
+            {/* Placeholder when nothing is set yet AND we have multiple
+                models — the user must explicitly pick one. Hidden once a
+                value is set so it doesn't crowd the menu. */}
+            {!localModel && <option value="" disabled>Pick a model…</option>}
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.id}</option>
+            ))}
+            <option value={CUSTOM_VALUE}>Custom…</option>
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={modelInput}
+            onChange={(e) => setModelInput(e.target.value)}
+            onBlur={() => setLocalModel(modelInput.trim())}
+            placeholder="google/gemma-4-e4b"
+            style={{ ...inputStyle, width: 280 }}
+          />
+        )}
       </SettingsRow>
     </div>
   )
