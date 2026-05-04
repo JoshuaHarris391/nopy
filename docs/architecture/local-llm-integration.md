@@ -93,7 +93,9 @@ A `version: 1` migration in the persist middleware fills these in for existing v
 
 **Files written**: identical to Anthropic mode (`chat.ndjson` and `entries/*.md` under `journalPath`, plus IDB caches). No local-provider-specific files are created.
 
-**Tauri capabilities**: one new permission (`opener:default`, declared in `src-tauri/capabilities/default.json`) to power the "Download LM Studio" link.
+**Tauri capabilities** (in `src-tauri/capabilities/default.json`):
+- `opener:default` — powers the "Download LM Studio" link.
+- `http:default` scoped to `http://localhost:*`, `http://127.0.0.1:*`, and `http://0.0.0.0:*` — lets the LM Studio fetches go through Rust's reqwest (`tauri-plugin-http`) instead of the WebView's fetch. Without this, the WebView blocks responses from LM Studio because LM Studio doesn't send `Access-Control-Allow-Origin` headers (CORS), even though the request itself succeeds. Routing through Rust bypasses the browser's same-origin policy entirely.
 
 ## Security & local data
 

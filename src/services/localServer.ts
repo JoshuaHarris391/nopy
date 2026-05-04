@@ -1,6 +1,29 @@
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import { hasFileSystem } from './fs'
 
 type Message = { role: 'user' | 'assistant'; content: string }
+
+/**
+ * Route HTTP via Tauri's `tauri-plugin-http` (Rust reqwest under the hood)
+ * when running inside the Tauri webview, and fall back to native fetch
+ * otherwise (jsdom tests, plain `npm run dev` in a browser).
+ *
+ * Why: LM Studio doesn't send Access-Control-Allow-Origin headers, so the
+ * WebKit/Chromium renderer refuses to expose `/v1/models` responses to JS
+ * even though the request succeeds (status 200). Going through Rust
+ * bypasses the browser's same-origin policy entirely — no LM Studio CORS
+ * toggle required.
+ *
+ * `hasFileSystem()` is the cheapest "are we in Tauri?" check we already
+ * have (it tests `__TAURI_INTERNALS__` on window). Using globalThis.fetch
+ * in tests means the existing vi.spyOn(globalThis, 'fetch') setup keeps
+ * working untouched.
+ */
+const lmFetch: typeof fetch = (input, init) => {
+  if (hasFileSystem()) return tauriFetch(input as string, init) as Promise<Response>
+  return fetch(input, init)
+}
 
 /**
  * Trim trailing slash and forgive a missing `/v1` suffix so users can paste
@@ -43,7 +66,7 @@ export async function probe(baseUrl: string, timeoutMs: number = 2000): Promise<
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(url, { signal: controller.signal })
+    const res = await lmFetch(url, { signal: controller.signal })
     if (!res.ok) return { ok: false, reason: 'http-error', status: res.status }
     const body = (await res.json()) as { data?: { id: string }[] }
     const models = (body.data ?? []).map((m) => ({ id: m.id, displayName: m.id }))
@@ -133,7 +156,7 @@ export async function streamChatResponse(
 
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await lmFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -213,7 +236,7 @@ export async function sendMessage(
   const body = buildOpenAiBody(model, system, messages, maxTokens, false)
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await lmFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
