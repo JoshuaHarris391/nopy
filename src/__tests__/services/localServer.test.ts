@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { normalizeBaseUrl, probe, fetchModels, streamChatResponse, sendMessage } from '../../services/localServer'
+import { normalizeBaseUrl, probe, fetchModels, fetchLoadedModelDetails, streamChatResponse, sendMessage } from '../../services/localServer'
 import { LlmError } from '../../services/llm'
 
 /**
@@ -124,6 +124,64 @@ describe('probe', () => {
     const result = await probe('http://localhost:1234/v1', 10)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toBe('timeout')
+  })
+})
+
+describe('fetchLoadedModelDetails', () => {
+  it('hits the LMS-native /api/v1/models endpoint (sibling of /v1, not nested) and maps loaded/max context length', async () => {
+    /**
+     * LM Studio exposes a NATIVE REST API at /api/v1/* that's distinct
+     * from the OpenAI-compat /v1/* path — `/api/v1/chat` has a different
+     * request body shape from `/v1/chat/completions`. We don't speak the
+     * native chat endpoint (would lock us out of Ollama compat), but we
+     * DO call /api/v1/models because it's the only place LM Studio
+     * surfaces per-model loaded/max context length. Tests pin both the
+     * URL construction and the field mapping.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+      data: [
+        { id: 'google/gemma-4-e4b', loaded_context_length: 4096, max_context_length: 32768 },
+      ],
+    }), { status: 200 }))
+    const result = await fetchLoadedModelDetails('http://localhost:1234/v1')
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://localhost:1234/api/v1/models')
+    expect(result).toEqual([
+      { id: 'google/gemma-4-e4b', loadedContextLength: 4096, maxContextLength: 32768 },
+    ])
+  })
+
+  it('returns [] (not an error) when the endpoint is unreachable — graceful fallback for Ollama et al', async () => {
+    /**
+     * Ollama and llama.cpp's server speak the OpenAI-compat /v1/models
+     * but don't have the LMS-native /api/v1 endpoint. Their probe will
+     * 404 (or in some setups, the request will throw). Either way the
+     * UI shouldn't crash or show a warning — just no context-length row.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+    expect(await fetchLoadedModelDetails('http://localhost:1234/v1')).toEqual([])
+
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    expect(await fetchLoadedModelDetails('http://localhost:1234/v1')).toEqual([])
+  })
+
+  it('preserves null when LM Studio omits a numeric field for one of the models', async () => {
+    /**
+     * Some LM Studio versions omit max_context_length even when
+     * loaded_context_length is set. The mapper coerces missing or
+     * non-numeric values to null so downstream code (the UI warning
+     * threshold check) doesn't compare against undefined.
+     */
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+      data: [
+        { id: 'gemma', loaded_context_length: 4096 /* no max_context_length */ },
+        { id: 'qwen' /* neither field */ },
+      ],
+    }), { status: 200 }))
+    const result = await fetchLoadedModelDetails('http://localhost:1234/v1')
+    expect(result).toEqual([
+      { id: 'gemma', loadedContextLength: 4096, maxContextLength: null },
+      { id: 'qwen', loadedContextLength: null, maxContextLength: null },
+    ])
   })
 })
 

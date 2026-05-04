@@ -71,6 +71,26 @@ describe('NotificationCard', () => {
     expect(card.style.borderLeft).toContain('gentle-green')
   })
 
+  it('renders a spinning loader icon when inProgress is true (drives indexing/profile-gen cards)', () => {
+    /**
+     * Visually distinguishes "live work" cards (indexing, profile gen)
+     * from static error/success ones. Without this, a stuck or stale
+     * neutral card looks the same as a frozen one. The spinner is the
+     * unmistakable signal that the card represents a running operation.
+     */
+    render(<NotificationCard title="Indexing..." inProgress />)
+    expect(screen.getByLabelText('In progress')).toBeInTheDocument()
+  })
+
+  it('does not render the spinner when inProgress is omitted', () => {
+    /**
+     * Default state — error/success notifications shouldn't show a
+     * spinner. They're terminal states, not in-flight work.
+     */
+    render(<NotificationCard title="Error" accent="error" />)
+    expect(screen.queryByLabelText('In progress')).not.toBeInTheDocument()
+  })
+
   it('keeps the neutral look (no accent border) by default for backwards compat with indexing/profile cards', () => {
     /**
      * The existing indexing + profile-gen cards previously had no left

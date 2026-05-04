@@ -81,6 +81,7 @@ A `version: 1` migration in the persist middleware fills these in for existing v
 
 - `POST {localBaseUrl}/chat/completions` — chat send, title generation, entry summarisation, profile narrative, full profile (all routed through `services/localServer.ts`).
 - `GET {localBaseUrl}/models` — settings-page probe (drives the status indicator and model autocomplete).
+- `GET {host}/api/v1/models` — LM-Studio-only probe for the loaded model's context length (sibling of `/v1`, not nested). 404s silently for Ollama / non-LM-Studio runtimes — no warning is shown if the endpoint isn't there.
 - One outbound call to `https://lmstudio.ai/` — only when you click **Download LM Studio** in the onboarding card. Opens via `tauri-plugin-opener` in the system browser.
 
 **Zero requests to `api.anthropic.com`** while in local mode. You can verify this in the DevTools Network tab — see [Verification](#verification) below.

@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
 import { ProgressBar } from './ProgressBar'
 
 export type NotificationAccent = 'neutral' | 'error' | 'success'
@@ -18,6 +18,13 @@ interface NotificationCardProps {
   accent?: NotificationAccent
   /** When provided, renders a small × close button in the top-right. */
   onDismiss?: () => void
+  /**
+   * Renders a small spinning Loader2 icon next to the title. Used by
+   * AppShell's indexing + profile-gen cards so it's visually obvious
+   * they're live work-in-progress (not a stale error or success message
+   * stuck on screen).
+   */
+  inProgress?: boolean
 }
 
 const ACCENT_COLOR: Record<NotificationAccent, string | null> = {
@@ -34,7 +41,7 @@ const ACCENT_COLOR: Record<NotificationAccent, string | null> = {
  * stone visual language as before — neutral accent renders identically
  * to the old inline cards.
  */
-export function NotificationCard({ title, description, progress, accent = 'neutral', onDismiss }: NotificationCardProps) {
+export function NotificationCard({ title, description, progress, accent = 'neutral', onDismiss, inProgress }: NotificationCardProps) {
   const accentColor = ACCENT_COLOR[accent]
   return (
     <div
@@ -51,7 +58,16 @@ export function NotificationCard({ title, description, progress, accent = 'neutr
         position: 'relative',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: description || progress ? 8 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: description || progress ? 8 : 0 }}>
+        {inProgress && (
+          <Loader2
+            size={13}
+            strokeWidth={1.8}
+            className="animate-spin"
+            style={{ color: 'var(--sage)', flex: '0 0 auto' }}
+            aria-label="In progress"
+          />
+        )}
         <div style={{ flex: 1, fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
           {title}
         </div>

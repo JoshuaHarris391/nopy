@@ -80,6 +80,51 @@ export async function probe(baseUrl: string, timeoutMs: number = 2000): Promise<
 }
 
 /**
+ * LM Studio's *native* REST API (separate from the OpenAI-compat path)
+ * exposes per-model loaded/max context length under `/api/v1/models`.
+ * The OpenAI-compat `/v1/models` doesn't include those fields. This
+ * function tries the native endpoint and silently no-ops if it 404s
+ * (Ollama and other OpenAI-compat runtimes don't have it) — graceful
+ * degradation, never throws.
+ *
+ * Why we want this: a Gemma 4 E4B loaded with the default 4096-token
+ * context will fail every chat send with our system prompt (~30k
+ * tokens). Surfacing the loaded context in Settings lets the user spot
+ * this BEFORE sending a message, with a "you probably want 32k+" hint.
+ */
+export interface LoadedModelDetails {
+  id: string
+  loadedContextLength: number | null
+  maxContextLength: number | null
+}
+
+export async function fetchLoadedModelDetails(baseUrl: string, timeoutMs: number = 2000): Promise<LoadedModelDetails[]> {
+  // /api/v1 is a sibling of /v1 under the same host, not nested. Strip
+  // the trailing /vN segment from the normalized base to get the host root.
+  const normalized = normalizeBaseUrl(baseUrl)
+  const root = normalized.replace(/\/v\d+$/, '')
+  const url = `${root}/api/v1/models`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await lmFetch(url, { signal: controller.signal })
+    if (!res.ok) return []
+    const body = (await res.json()) as {
+      data?: Array<{ id: string; loaded_context_length?: number; max_context_length?: number }>
+    }
+    return (body.data ?? []).map((m) => ({
+      id: m.id,
+      loadedContextLength: typeof m.loaded_context_length === 'number' ? m.loaded_context_length : null,
+      maxContextLength: typeof m.max_context_length === 'number' ? m.max_context_length : null,
+    }))
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * Same shape as `anthropic.fetchModels` so callers don't care which provider
  * supplied the list. Throws `LlmError('CONNECTION_REFUSED' | 'NO_MODEL_LOADED')`
  * if the daemon is unreachable or returns an empty model list.

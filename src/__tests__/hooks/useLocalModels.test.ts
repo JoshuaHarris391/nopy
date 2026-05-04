@@ -5,18 +5,27 @@ import { renderHook, waitFor, act } from '@testing-library/react'
  * Mock the underlying probe so the hook test never touches the network and
  * never depends on localServer's SSE / fetch logic. Each test pushes the
  * desired probe result via `probeMock.mockResolvedValueOnce(...)`.
+ *
+ * `fetchLoadedModelDetailsMock` is the LMS-native context-length sniff —
+ * defaults to an empty array (the Ollama / non-LM-Studio case) so existing
+ * tests don't need to think about it. Tests that care about loaded context
+ * lengths override per-call.
  */
-const { probeMock } = vi.hoisted(() => ({
+const { probeMock, fetchLoadedModelDetailsMock } = vi.hoisted(() => ({
   probeMock: vi.fn(),
+  fetchLoadedModelDetailsMock: vi.fn(async () => [] as unknown[]),
 }))
 vi.mock('../../services/localServer', () => ({
   probe: probeMock,
+  fetchLoadedModelDetails: fetchLoadedModelDetailsMock,
 }))
 
 import { useLocalModels } from '../../hooks/useLocalModels'
 
 beforeEach(() => {
   probeMock.mockReset()
+  fetchLoadedModelDetailsMock.mockReset()
+  fetchLoadedModelDetailsMock.mockResolvedValue([])
 })
 
 describe('useLocalModels', () => {
@@ -30,7 +39,9 @@ describe('useLocalModels', () => {
     probeMock.mockResolvedValueOnce({ ok: true, models: [{ id: 'gemma-2-2b', displayName: 'gemma-2-2b' }] })
     const { result } = renderHook(() => useLocalModels('http://localhost:1234/v1'))
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.models).toEqual([{ id: 'gemma-2-2b', displayName: 'gemma-2-2b' }])
+    expect(result.current.models).toEqual([
+      { id: 'gemma-2-2b', displayName: 'gemma-2-2b', loadedContextLength: null, maxContextLength: null },
+    ])
     expect(result.current.error).toBeNull()
   })
 
@@ -74,8 +85,58 @@ describe('useLocalModels', () => {
     act(() => result.current.refresh())
     await waitFor(() => {
       expect(result.current.error).toBeNull()
-      expect(result.current.models).toEqual([{ id: 'gemma', displayName: 'gemma' }])
+      expect(result.current.models).toEqual([
+        { id: 'gemma', displayName: 'gemma', loadedContextLength: null, maxContextLength: null },
+      ])
     })
     expect(probeMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('merges loaded/max context length from /api/v1/models when LM Studio reports it', async () => {
+    /**
+     * The whole reason `fetchLoadedModelDetails` exists: warn the user
+     * about a too-small context window before they hit a chat-time
+     * CONTEXT_TOO_LARGE. The hook stitches the OpenAI-compat /v1/models
+     * list (source of truth for "what's loaded") with the LMS-native
+     * /api/v1/models payload (carrier of the context numbers) by id.
+     */
+    probeMock.mockResolvedValueOnce({
+      ok: true,
+      models: [
+        { id: 'google/gemma-4-e4b', displayName: 'google/gemma-4-e4b' },
+        { id: 'qwen-2-7b', displayName: 'qwen-2-7b' },
+      ],
+    })
+    fetchLoadedModelDetailsMock.mockResolvedValueOnce([
+      { id: 'google/gemma-4-e4b', loadedContextLength: 4096, maxContextLength: 32768 },
+      // qwen-2-7b intentionally absent — proves the merge tolerates a
+      // partial /api/v1 payload (which can happen if LM Studio's native
+      // API only knows about loaded models).
+    ])
+    const { result } = renderHook(() => useLocalModels('http://localhost:1234/v1'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.models).toEqual([
+      { id: 'google/gemma-4-e4b', displayName: 'google/gemma-4-e4b', loadedContextLength: 4096, maxContextLength: 32768 },
+      { id: 'qwen-2-7b', displayName: 'qwen-2-7b', loadedContextLength: null, maxContextLength: null },
+    ])
+  })
+
+  it('keeps loadedContextLength null when /api/v1/models is unreachable (Ollama / non-LM-Studio runtimes)', async () => {
+    /**
+     * The native API call returns `[]` on 404 / timeout / non-LM-Studio
+     * (handled inside `fetchLoadedModelDetails`). The hook must keep the
+     * model list intact and silently leave context fields null — no
+     * spurious warning row in LocalBlock for users on Ollama.
+     */
+    probeMock.mockResolvedValueOnce({
+      ok: true,
+      models: [{ id: 'gemma', displayName: 'gemma' }],
+    })
+    fetchLoadedModelDetailsMock.mockResolvedValueOnce([])
+    const { result } = renderHook(() => useLocalModels('http://localhost:1234/v1'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.models).toEqual([
+      { id: 'gemma', displayName: 'gemma', loadedContextLength: null, maxContextLength: null },
+    ])
   })
 })

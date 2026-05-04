@@ -38,6 +38,7 @@ export function AppShell() {
           {indexingState === 'running' && (
             <NotificationCard
               title="Indexing..."
+              inProgress
               progress={
                 indexingProgress.total > 0
                   ? { current: indexingProgress.current, total: indexingProgress.total, label: indexingProgress.title }
@@ -48,6 +49,7 @@ export function AppShell() {
           {profileGenerating && (
             <NotificationCard
               title="Generating profile..."
+              inProgress
               description={profilePhase || undefined}
               progress={
                 profileProgress.total > 0

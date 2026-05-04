@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useNotificationStore } from './notificationStore'
 
 export type IndexingState = 'idle' | 'running' | 'done' | 'error'
 
@@ -41,8 +42,19 @@ export const useIndexingStore = create<IndexingStore>()((set, get) => ({
       if (e instanceof DOMException && e.name === 'AbortError') {
         set({ state: 'idle' })
       } else {
-        set({ state: 'error', error: e instanceof Error ? e.message : String(e) })
+        const message = e instanceof Error ? e.message : String(e)
+        set({ state: 'error', error: message })
         resultTimer = setTimeout(() => { set({ state: 'idle', error: null }); resultTimer = null }, 3000)
+        // Errors during indexing are easy to miss with the inline-text-
+        // next-to-button pattern (3s TTL, possibly off-screen if the user
+        // navigated away). Surface them in the bottom-right notification
+        // stack alongside chat errors. Successes stay inline since
+        // they're contextual to where the action was triggered.
+        useNotificationStore.getState().push({
+          kind: 'error',
+          title: 'Indexing failed',
+          message,
+        })
       }
     } finally {
       controller = null

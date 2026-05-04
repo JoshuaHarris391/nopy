@@ -3,8 +3,8 @@ import { useSettingsStore } from '../../../../stores/settingsStore'
 import type { LlmProvider } from '../../../../types/settings'
 
 const OPTIONS: { value: LlmProvider; label: string; Icon: typeof Cloud }[] = [
-  { value: 'anthropic', label: 'Anthropic API', Icon: Cloud },
   { value: 'local', label: 'Local (LM Studio)', Icon: HardDrive },
+  { value: 'anthropic', label: 'Anthropic API', Icon: Cloud },
 ]
 
 /**

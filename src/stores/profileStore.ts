@@ -7,6 +7,7 @@ import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { useJournalStore } from './journalStore'
+import { useNotificationStore } from './notificationStore'
 import type { LlmConfig } from '../types/settings'
 
 interface ProfileState {
@@ -173,6 +174,14 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
         console.error('[profileStore] generateProfile: failed —', e)
         const msg = e instanceof Error ? e.message : 'check console for details'
         setState({ phase: `Generation failed — ${msg}` })
+        // Same rationale as indexingStore: profile gen takes minutes; if
+        // the user navigated away the inline phase text is invisible.
+        // Bottom-right notification ensures they see the failure.
+        useNotificationStore.getState().push({
+          kind: 'error',
+          title: 'Profile generation failed',
+          message: msg,
+        })
       }
     } finally {
       setTimeout(() => setState({ generating: false, phase: '' }), 2000)

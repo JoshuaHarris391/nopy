@@ -68,6 +68,17 @@ export function LocalBlock() {
 
   const showDropdown = models.length > 0 && !customMode
 
+  // Find the loaded context window for the currently picked model. Only
+  // available when LM Studio's native /api/v1/models endpoint is reachable
+  // (Ollama users get null and no info is shown — no false alarm).
+  // 8192 is the threshold below which nopy's full system prompt almost
+  // always overflows; warn the user before they hit a chat-time error.
+  const SMALL_CONTEXT_THRESHOLD = 8192
+  const selectedModel = models.find((m) => m.id === localModel)
+  const loadedCtx = selectedModel?.loadedContextLength ?? null
+  const maxCtx = selectedModel?.maxContextLength ?? null
+  const ctxWarning = loadedCtx !== null && loadedCtx < SMALL_CONTEXT_THRESHOLD
+
   const status = useMemo<{ code: 'loading' | 'not-running' | 'no-model' | 'name-mismatch' | 'ready'; label: string }>(() => {
     if (loading) return { code: 'loading', label: 'Checking LM Studio…' }
     if (error === 'connection-refused' || error === 'timeout' || error === 'http-error') {
@@ -180,6 +191,42 @@ export function LocalBlock() {
           />
         )}
       </SettingsRow>
+
+      {loadedCtx !== null && (
+        <SettingsRow
+          label={
+            <span className="flex items-center">
+              Loaded context
+              <HelpTooltip label="Help: loaded context">
+                The context window LM Studio is using for this model — set
+                in LM Studio's Tools → Model loader → Context Length when
+                you loaded it. nopy's system prompt (therapy + profile +
+                journal index) usually needs at least 32k. Below ~8k,
+                chats will fail with a "context too large" error.
+                <br /><br />
+                This number is read from LM Studio's native API at
+                {' '}<code>/api/v1/models</code>; other OpenAI-compatible
+                runtimes (e.g. Ollama) don't expose it and won't show
+                this row at all.
+              </HelpTooltip>
+            </span>
+          }
+          description={ctxWarning ? 'Re-load this model in LM Studio with a larger Context Length to avoid chat failures.' : undefined}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: 12.5,
+              color: ctxWarning ? 'var(--soft-coral)' : 'var(--ink)',
+              fontWeight: ctxWarning ? 600 : 400,
+            }}
+          >
+            {loadedCtx.toLocaleString()} tokens
+            {maxCtx !== null && maxCtx > loadedCtx && (
+              <span style={{ color: 'var(--sage)', fontWeight: 400 }}> · max {maxCtx.toLocaleString()}</span>
+            )}
+          </span>
+        </SettingsRow>
+      )}
     </div>
   )
 }
