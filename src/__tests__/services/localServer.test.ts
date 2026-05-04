@@ -51,6 +51,22 @@ describe('normalizeBaseUrl', () => {
     expect(normalizeBaseUrl('http://localhost:1234/v1/')).toBe('http://localhost:1234/v1')
     expect(normalizeBaseUrl('http://localhost:1234///')).toBe('http://localhost:1234/v1')
   })
+
+  it('rewrites the /api/v1 native LMS path to /v1 OpenAI-compat path', () => {
+    /**
+     * LM Studio's "use in code" snippets sometimes show the native REST
+     * path "http://localhost:1234/api/v1/chat" — a different API with a
+     * different request body that this module doesn't speak. If a user
+     * pastes that URL, naively forwarding it would POST to
+     * `/api/v1/chat/completions` and get a confusing 404. Rewriting to
+     * `/v1` gets them onto the OpenAI-compatible endpoint that LM Studio
+     * also exposes, which is what we actually call.
+     */
+    expect(normalizeBaseUrl('http://localhost:1234/api/v1')).toBe('http://localhost:1234/v1')
+    expect(normalizeBaseUrl('http://localhost:1234/api/v1/')).toBe('http://localhost:1234/v1')
+    // /api on its own (no version) is left alone — could be a real proxy.
+    expect(normalizeBaseUrl('http://localhost:1234/api')).toBe('http://localhost:1234/api/v1')
+  })
 })
 
 describe('probe', () => {

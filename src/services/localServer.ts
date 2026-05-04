@@ -6,9 +6,17 @@ type Message = { role: 'user' | 'assistant'; content: string }
  * Trim trailing slash and forgive a missing `/v1` suffix so users can paste
  * either form ("http://localhost:1234" or "http://localhost:1234/v1") and
  * the rest of this module just appends `/chat/completions` etc. cleanly.
+ *
+ * Also strips a leading `/api` segment if the user pasted LM Studio's
+ * native REST path (`http://localhost:1234/api/v1`) by mistake. LM Studio
+ * shows that URL in some "use in code" snippets, but it's a different
+ * (LMS-native, non-OpenAI-compat) API that this module doesn't speak.
+ * Auto-correcting saves the user a confusing 404.
  */
 export function normalizeBaseUrl(input: string): string {
   let url = input.trim().replace(/\/+$/, '')
+  // Strip /api before /v\d so http://host/api/v1 → http://host/v1.
+  url = url.replace(/\/api(\/v\d+)$/, '$1')
   if (!/\/v\d+$/.test(url)) url = `${url}/v1`
   return url
 }

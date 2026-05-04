@@ -35,6 +35,17 @@ The same chat UX, settings layout, and journal flow apply in both modes — togg
   - **Gemma 4 E4B (Q4_K_M)** — ~5 GB resident, good quality. Default we guide users toward.
   - **Gemma 4 E2B (Q4_K_M)** — ~2 GB resident, fallback for older M1 Air-class machines.
 
+### A note on which LM Studio endpoint we use
+
+LM Studio exposes **two** HTTP APIs when "Start Server" is clicked:
+
+| Endpoint | Path | Request shape | Used by nopy? |
+|---|---|---|---|
+| OpenAI-compatible | `/v1/chat/completions`, `/v1/models` | Standard OpenAI (`messages: [{role, content}]`, `stream: true`, etc.) | **Yes** |
+| LM Studio native REST API | `/api/v1/chat`, `/api/v1/models` | LMS-specific (`system_prompt: string`, `input: string`) | No |
+
+We use the **OpenAI-compatible** path because it's the cross-tool standard — the same client code works against Ollama, llama.cpp's server, and any other OpenAI-compatible runtime. LM Studio's "use in code" snippets sometimes default to the native REST API; if you copy one of those URLs (`http://localhost:1234/api/v1`) into nopy's Base URL field, the normalizer will quietly rewrite it to `http://localhost:1234/v1` so the request still reaches the right endpoint.
+
 ## Setup walk-through
 
 If you prefer to skip the in-app onboarding card, here's what it walks you through:

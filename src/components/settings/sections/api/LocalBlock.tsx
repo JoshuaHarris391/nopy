@@ -71,14 +71,16 @@ export function LocalBlock() {
           <span className="flex items-center">
             Base URL
             <HelpTooltip label="Help: base URL">
-              The URL of LM Studio's local server. The default is the address
-              LM Studio uses out of the box. If you changed the port in LM
-              Studio's Developer tab, paste the new URL here. Ollama users
-              can paste <code>http://localhost:11434/v1</code>.
+              The OpenAI-compatible endpoint LM Studio exposes when you
+              click "Start Server" — path is <code>/v1</code>, NOT{' '}
+              <code>/api/v1</code> (that's LM Studio's separate native
+              REST API and isn't supported here). The default works out
+              of the box. Ollama users can paste{' '}
+              <code>http://localhost:11434/v1</code>.
             </HelpTooltip>
           </span>
         }
-        description="Default: http://localhost:1234/v1"
+        description="Default: http://localhost:1234/v1 — LM Studio's OpenAI-compatible endpoint"
       >
         <input
           type="text"
