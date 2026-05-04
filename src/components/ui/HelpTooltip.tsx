@@ -4,7 +4,11 @@ import { HelpCircle } from 'lucide-react'
 interface HelpTooltipProps {
   /** Tooltip body. Plain text or React nodes; rendered inside a styled popover. */
   children: React.ReactNode
-  /** Optional max width override (px). Default 280. */
+  /**
+   * Optional max width override (px). Default 560 — wide enough that
+   * 2-3 sentences of help copy don't wrap into a tall, hard-to-scan
+   * column. Pass a smaller number for short single-line labels.
+   */
   maxWidth?: number
   /** Aria-label for the trigger button (e.g. "Help: base URL"). */
   label?: string
@@ -15,8 +19,14 @@ interface HelpTooltipProps {
  * settings field needs an explanation that's too long for the row's
  * description text but doesn't deserve its own modal — e.g. the Local
  * provider's base-URL and model-name inputs.
+ *
+ * Theming: background uses `var(--ink)` and text uses `var(--parchment)`.
+ * Both tokens swap roles between light and dark mode (light mode: ink is
+ * dark green-black, parchment is cream → dark tooltip with cream text;
+ * dark mode: ink is cream, parchment is dark navy → cream tooltip with
+ * dark text). Always readable, no hardcoded `#fff`.
  */
-export function HelpTooltip({ children, maxWidth = 280, label = 'Help' }: HelpTooltipProps) {
+export function HelpTooltip({ children, maxWidth = 560, label = 'Help' }: HelpTooltipProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLSpanElement>(null)
 
@@ -55,7 +65,7 @@ export function HelpTooltip({ children, maxWidth = 280, label = 'Help' }: HelpTo
             maxWidth,
             padding: '10px 12px',
             background: 'var(--ink)',
-            color: '#fff',
+            color: 'var(--parchment)',
             fontFamily: 'var(--font-ui)',
             fontSize: 12,
             lineHeight: 1.5,
