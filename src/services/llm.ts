@@ -1,5 +1,6 @@
 import * as anthropic from './anthropic'
 import * as localServer from './localServer'
+import * as openai from './openai'
 import type { LlmConfig } from '../types/settings'
 
 export type { LlmConfig } from '../types/settings'
@@ -53,7 +54,7 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
   NO_MODEL_CONFIGURED:
     'Pick a local model in Settings before sending a message.',
   INVALID_API_KEY:
-    "Your Anthropic API key isn't valid. Update it in Settings.",
+    "Your API key isn't valid. Update it in Settings.",
   RATE_LIMITED:
     'Too many requests. Wait a moment and try again.',
   CONTEXT_TOO_LARGE:
@@ -67,7 +68,9 @@ type Message = { role: 'user' | 'assistant'; content: string }
 /**
  * In local mode, the dispatcher ignores the caller's `requestedModel` and
  * uses `config.localModel` instead. LM Studio loads one model at a time —
- * asking it for `claude-haiku-4-5` returns 404. In Anthropic mode, the
+ * asking it for `claude-haiku-4-5` returns 404. OpenAI mode uses the same
+ * override pattern with `config.openaiModel` because Anthropic-shaped model
+ * IDs (`claude-...`) aren't valid OpenAI models. In Anthropic mode the
  * caller's `requestedModel` is honored so callers can still pick Haiku for
  * cheap one-shots and Opus for high-quality tasks.
  */
@@ -77,6 +80,12 @@ function resolveModel(config: LlmConfig, requestedModel: string): string {
       throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
     }
     return config.localModel
+  }
+  if (config.provider === 'openai') {
+    if (!config.openaiModel) {
+      throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
+    }
+    return config.openaiModel
   }
   return requestedModel
 }
@@ -104,6 +113,12 @@ export async function streamChatResponse(
       onChunk, onComplete, onError,
     )
   }
+  if (config.provider === 'openai') {
+    return openai.streamChatResponse(
+      config.openaiApiKey, model, system, messages, maxTokens,
+      onChunk, onComplete, onError,
+    )
+  }
   return anthropic.streamChatResponse(
     config.apiKey, model, system, messages, maxTokens,
     onChunk, onComplete, onError,
@@ -122,6 +137,9 @@ export async function sendMessage(
   if (config.provider === 'local') {
     return localServer.sendMessage(config.localBaseUrl, model, system, messages, maxTokens, signal)
   }
+  if (config.provider === 'openai') {
+    return openai.sendMessage(config.openaiApiKey, model, system, messages, maxTokens, signal)
+  }
   return anthropic.sendMessage(config.apiKey, model, system, messages, maxTokens, signal)
 }
 
@@ -138,12 +156,18 @@ export async function sendMessageStreaming(
   if (config.provider === 'local') {
     return localServer.sendMessageStreaming(config.localBaseUrl, model, system, messages, maxTokens, onProgress, signal)
   }
+  if (config.provider === 'openai') {
+    return openai.sendMessageStreaming(config.openaiApiKey, model, system, messages, maxTokens, onProgress, signal)
+  }
   return anthropic.sendMessageStreaming(config.apiKey, model, system, messages, maxTokens, onProgress, signal)
 }
 
 export async function fetchModels(config: LlmConfig): Promise<{ id: string; displayName: string }[]> {
   if (config.provider === 'local') {
     return localServer.fetchModels(config.localBaseUrl)
+  }
+  if (config.provider === 'openai') {
+    return openai.fetchModels(config.openaiApiKey)
   }
   return anthropic.fetchModels(config.apiKey)
 }

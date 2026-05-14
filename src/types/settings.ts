@@ -1,6 +1,6 @@
 import type { TherapyType } from '../services/prompts/therapists'
 
-export type LlmProvider = 'anthropic' | 'local'
+export type LlmProvider = 'anthropic' | 'local' | 'openai'
 
 /**
  * Slice consumed by the dispatcher in `services/llm.ts`. Kept narrow so
@@ -11,6 +11,8 @@ export interface LlmConfig {
   apiKey: string
   localBaseUrl: string
   localModel: string
+  openaiApiKey: string
+  openaiModel: string
 }
 
 export interface UserSettings {
@@ -27,4 +29,6 @@ export interface UserSettings {
   provider: LlmProvider
   localBaseUrl: string
   localModel: string
+  openaiApiKey: string
+  openaiModel: string
 }

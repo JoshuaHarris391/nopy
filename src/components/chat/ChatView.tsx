@@ -20,10 +20,15 @@ import type { ChatMessage as ChatMessageType } from '../../types/chat'
 
 export function ChatView() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
-  // Active-provider readiness: anthropic needs apiKey, local needs localModel.
+  // Active-provider readiness: anthropic needs apiKey, openai needs both
+  // openaiApiKey and openaiModel (the model dropdown can't auto-fill like
+  // LM Studio's single-loaded-model heuristic), local needs localModel.
   // Same gate every other AI-using component uses (IndexView, ProfileView,
   // MaintenanceSection) so the chat composer is hidden in the same situations.
-  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+  const ready =
+    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
+      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
+        : !!llmConfig.localModel
   const preferredModel = useSettingsStore((s) => s.preferredModel)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
@@ -410,7 +415,9 @@ export function ChatView() {
                       ? "Share what's on your mind. I'm here to listen and help you explore your thoughts."
                       : llmConfig.provider === 'local'
                         ? 'Pick a local model in Settings to begin chatting.'
-                        : 'Add your Anthropic API key in Settings to begin chatting.'}
+                        : llmConfig.provider === 'openai'
+                          ? 'Add your OpenAI API key and pick a model in Settings to begin chatting.'
+                          : 'Add your Anthropic API key in Settings to begin chatting.'}
                   </p>
                   {ready && (
                     <button

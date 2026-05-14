@@ -19,6 +19,8 @@ interface SettingsState extends UserSettings {
   setProvider: (provider: LlmProvider) => void
   setLocalBaseUrl: (url: string) => void
   setLocalModel: (model: string) => void
+  setOpenaiApiKey: (key: string) => void
+  setOpenaiModel: (model: string) => void
 }
 
 const DEFAULT_LOCAL_BASE_URL = 'http://localhost:1234/v1'
@@ -39,6 +41,8 @@ export const useSettingsStore = create<SettingsState>()(
       provider: 'anthropic',
       localBaseUrl: DEFAULT_LOCAL_BASE_URL,
       localModel: '',
+      openaiApiKey: '',
+      openaiModel: '',
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
@@ -55,23 +59,35 @@ export const useSettingsStore = create<SettingsState>()(
       setProvider: (provider) => set({ provider }),
       setLocalBaseUrl: (url) => set({ localBaseUrl: url }),
       setLocalModel: (model) => set({ localModel: model }),
+      setOpenaiApiKey: (key) => set({ openaiApiKey: key }),
+      setOpenaiModel: (model) => set({ openaiModel: model }),
     }),
     {
       name: 'nopy-settings',
-      version: 1,
-      // Migrate v0 (pre-multi-provider) blobs by filling in the new fields with
-      // defaults. Existing users hydrate seamlessly into Anthropic mode.
+      version: 2,
+      // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
+      // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel). Both
+      // migrations are additive: existing users keep their Anthropic config and
+      // whichever provider they were on; the new fields default to empty.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
+        let next = state
         if (version < 1) {
-          return {
-            ...state,
-            provider: state.provider ?? 'anthropic',
-            localBaseUrl: state.localBaseUrl ?? DEFAULT_LOCAL_BASE_URL,
-            localModel: state.localModel ?? '',
+          next = {
+            ...next,
+            provider: next.provider ?? 'anthropic',
+            localBaseUrl: next.localBaseUrl ?? DEFAULT_LOCAL_BASE_URL,
+            localModel: next.localModel ?? '',
           }
         }
-        return state
+        if (version < 2) {
+          next = {
+            ...next,
+            openaiApiKey: next.openaiApiKey ?? '',
+            openaiModel: next.openaiModel ?? '',
+          }
+        }
+        return next
       },
     }
   )
@@ -97,4 +113,6 @@ export const selectLlmConfig = (s: SettingsState): LlmConfig => ({
   apiKey: s.apiKey,
   localBaseUrl: s.localBaseUrl,
   localModel: s.localModel,
+  openaiApiKey: s.openaiApiKey,
+  openaiModel: s.openaiModel,
 })

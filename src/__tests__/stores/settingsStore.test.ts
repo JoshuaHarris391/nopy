@@ -21,6 +21,8 @@ const DEFAULTS = {
   provider: 'anthropic' as const,
   localBaseUrl: 'http://localhost:1234/v1',
   localModel: '',
+  openaiApiKey: '',
+  openaiModel: '',
 }
 
 beforeEach(() => {
@@ -68,6 +70,8 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setProvider('local'), expectField: 'provider', expectValue: 'local' },
       { call: () => useSettingsStore.getState().setLocalBaseUrl('http://localhost:11434/v1'), expectField: 'localBaseUrl', expectValue: 'http://localhost:11434/v1' },
       { call: () => useSettingsStore.getState().setLocalModel('google/gemma-4-e4b'), expectField: 'localModel', expectValue: 'google/gemma-4-e4b' },
+      { call: () => useSettingsStore.getState().setOpenaiApiKey('sk-openai-x'), expectField: 'openaiApiKey', expectValue: 'sk-openai-x' },
+      { call: () => useSettingsStore.getState().setOpenaiModel('gpt-4o-mini'), expectField: 'openaiModel', expectValue: 'gpt-4o-mini' },
     ]
 
     for (const { call, expectField, expectValue } of cases) {
@@ -148,10 +152,15 @@ describe('multi-provider settings', () => {
      * The whole "users won't notice the upgrade" property hinges on this
      * default. Anyone shipping with `provider: 'local'` as the default would
      * silently break every existing user the moment their app updates.
+     * The OpenAI fields default to empty strings so the readiness gate in
+     * ChatView/ProfileView/IndexView/MaintenanceSection treats a fresh
+     * install as "not configured" rather than "ready to call OpenAI".
      */
     expect(useSettingsStore.getState().provider).toBe('anthropic')
     expect(useSettingsStore.getState().localBaseUrl).toBe('http://localhost:1234/v1')
     expect(useSettingsStore.getState().localModel).toBe('')
+    expect(useSettingsStore.getState().openaiApiKey).toBe('')
+    expect(useSettingsStore.getState().openaiModel).toBe('')
   })
 
   it('migrates a v0 persisted blob (no provider/localBaseUrl/localModel) to v1 defaults without losing other fields', async () => {
@@ -191,35 +200,89 @@ describe('multi-provider settings', () => {
     expect(state.maxOutputTokens).toBe(8192)
     expect(state.journalPath).toBe('/tmp/journal')
     expect(state.theme).toBe('dark')
-    // New fields filled in with safe defaults.
+    // v0→v1 fields filled in with safe defaults.
     expect(state.provider).toBe('anthropic')
     expect(state.localBaseUrl).toBe('http://localhost:1234/v1')
     expect(state.localModel).toBe('')
+    // v1→v2 fields filled in too — a single load from a v0 blob walks both
+    // migration steps so the user lands on a fully-shaped v2 state.
+    expect(state.openaiApiKey).toBe('')
+    expect(state.openaiModel).toBe('')
   })
 
-  it('selectLlmConfig returns only the four LLM-routing fields', () => {
+  it('migrates a v1 persisted blob (no openai fields) to v2 defaults without losing other fields', async () => {
     /**
-     * The dispatcher in services/llm.ts only needs provider + apiKey +
-     * localBaseUrl + localModel. Keeping the selector narrow means call
-     * sites re-render only when LLM-relevant settings change, and the
-     * dispatcher's test surface stays tiny.
+     * Users who already adopted the multi-provider release have a v1 blob
+     * containing provider/localBaseUrl/localModel but no openaiApiKey/
+     * openaiModel. The v1→v2 step adds those two fields with empty defaults
+     * so the OpenAI tab renders a clean "enter your key" state without
+     * destroying the user's existing Anthropic key or local-model selection.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: {
+          apiKey: 'sk-existing',
+          preferredModel: 'claude-opus-4-5',
+          maxOutputTokens: 4096,
+          contextBudget: 500000,
+          onboardingComplete: true,
+          sidebarCollapsed: false,
+          sessionPanelCollapsed: false,
+          journalPath: '/tmp/journal',
+          theme: 'dark',
+          therapyType: DEFAULTS.therapyType,
+          provider: 'local',
+          localBaseUrl: 'http://localhost:11434/v1',
+          localModel: 'gemma',
+        },
+        version: 1,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    // v1 fields preserved untouched.
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.provider).toBe('local')
+    expect(state.localBaseUrl).toBe('http://localhost:11434/v1')
+    expect(state.localModel).toBe('gemma')
+    // v2 fields filled in with safe defaults.
+    expect(state.openaiApiKey).toBe('')
+    expect(state.openaiModel).toBe('')
+  })
+
+  it('selectLlmConfig returns only the LLM-routing fields', () => {
+    /**
+     * The dispatcher in services/llm.ts needs provider + apiKey +
+     * localBaseUrl + localModel + openaiApiKey + openaiModel. Keeping the
+     * selector narrow means call sites re-render only when LLM-relevant
+     * settings change, and the dispatcher's test surface stays tiny.
      */
     useSettingsStore.setState({
       apiKey: 'sk-x',
       preferredModel: 'claude-haiku-4-5',
-      provider: 'local',
+      provider: 'openai',
       localBaseUrl: 'http://localhost:11434/v1',
       localModel: 'gemma',
+      openaiApiKey: 'sk-openai-x',
+      openaiModel: 'gpt-4o-mini',
       theme: 'dark', // not in the slice
     })
 
     const config = selectLlmConfig(useSettingsStore.getState())
     expect(config).toEqual({
-      provider: 'local',
+      provider: 'openai',
       apiKey: 'sk-x',
       localBaseUrl: 'http://localhost:11434/v1',
       localModel: 'gemma',
+      openaiApiKey: 'sk-openai-x',
+      openaiModel: 'gpt-4o-mini',
     })
-    expect(Object.keys(config).sort()).toEqual(['apiKey', 'localBaseUrl', 'localModel', 'provider'])
+    expect(Object.keys(config).sort()).toEqual([
+      'apiKey', 'localBaseUrl', 'localModel', 'openaiApiKey', 'openaiModel', 'provider',
+    ])
   })
 })

@@ -20,9 +20,13 @@ export function ProfileView() {
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
-  // Same readiness gate as IndexView / MaintenanceSection. In Anthropic mode
-  // we need an apiKey; in Local mode we need a localModel name.
-  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+  // Same readiness gate as IndexView / MaintenanceSection. Anthropic needs
+  // apiKey; OpenAI needs both openaiApiKey + openaiModel; Local needs a
+  // localModel name.
+  const ready =
+    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
+      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
+        : !!llmConfig.localModel
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)

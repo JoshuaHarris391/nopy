@@ -14,7 +14,10 @@ export function MaintenanceSection() {
   // mode that means an API key; in local mode that means a model name.
   // The dispatcher would throw NO_MODEL_CONFIGURED otherwise — friendlier
   // to hide the button than show one that's guaranteed to fail.
-  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+  const ready =
+    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
+      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
+        : !!llmConfig.localModel
   if (!ready) return null
 
   const handleForceUpdate = () => {

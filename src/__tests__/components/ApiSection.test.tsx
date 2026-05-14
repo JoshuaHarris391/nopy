@@ -12,13 +12,17 @@ import { render, fireEvent, screen, cleanup, within, waitFor } from '@testing-li
  * vi.hoisted is required because vi.mock factories run before regular
  * top-level consts are initialized.
  */
-const { useAnthropicModelsMock, probeMock, openUrlMock } = vi.hoisted(() => ({
+const { useAnthropicModelsMock, useOpenaiModelsMock, probeMock, openUrlMock } = vi.hoisted(() => ({
   useAnthropicModelsMock: vi.fn(),
+  useOpenaiModelsMock: vi.fn(),
   probeMock: vi.fn(),
   openUrlMock: vi.fn(async () => {}),
 }))
 vi.mock('../../hooks/useAnthropicModels', () => ({
   useAnthropicModels: useAnthropicModelsMock,
+}))
+vi.mock('../../hooks/useOpenaiModels', () => ({
+  useOpenaiModels: useOpenaiModelsMock,
 }))
 vi.mock('../../services/localServer', async () => {
   const actual = await vi.importActual<typeof import('../../services/localServer')>('../../services/localServer')
@@ -39,11 +43,14 @@ const DEFAULT_SETTINGS = {
   provider: 'anthropic' as const,
   localBaseUrl: 'http://localhost:1234/v1',
   localModel: '',
+  openaiApiKey: '',
+  openaiModel: '',
 }
 
 beforeEach(() => {
   useSettingsStore.setState(DEFAULT_SETTINGS)
   useAnthropicModelsMock.mockReturnValue({ models: [], loading: false, error: null })
+  useOpenaiModelsMock.mockReturnValue({ models: [], loading: false, error: null })
   probeMock.mockResolvedValue({ ok: false, reason: 'connection-refused' })
   openUrlMock.mockClear()
   // Pretend we're in the Tauri webview so LocalOnboardingCard takes the
@@ -385,5 +392,102 @@ describe('ApiSection — Provider toggle and Local mode', () => {
     const downloadBtn = await screen.findByRole('button', { name: /download lm studio/i })
     fireEvent.click(downloadBtn)
     await waitFor(() => expect(openUrlMock).toHaveBeenCalledWith('https://lmstudio.ai/'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// OpenAI mode
+// ---------------------------------------------------------------------------
+
+describe('ApiSection — OpenAI mode', () => {
+  it('toggling to OpenAI mounts OpenaiBlock and unmounts the Anthropic input without losing the Anthropic key', () => {
+    /**
+     * Toggling providers must swap the rendered block but never clobber the
+     * other provider's saved state — a user mid-experiment with both keys
+     * should be able to flip back and forth freely. This test pins both
+     * properties: OpenaiBlock's `sk-...` placeholder appears, the
+     * Anthropic-specific `sk-ant-...` placeholder disappears, and the
+     * Anthropic apiKey in the store is untouched.
+     */
+    useSettingsStore.setState({ apiKey: 'sk-ant-saved' })
+    render(<ApiSection />)
+    expect(screen.getByPlaceholderText('sk-ant-...')).toBeInTheDocument()
+
+    const openaiToggle = screen.getByRole('radio', { name: /openai/i })
+    fireEvent.click(openaiToggle)
+
+    expect(useSettingsStore.getState().provider).toBe('openai')
+    expect(useSettingsStore.getState().apiKey).toBe('sk-ant-saved')
+    expect(screen.queryByPlaceholderText('sk-ant-...')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('sk-...')).toBeInTheDocument()
+  })
+
+  it('OpenAI API key input is masked, toggles to text on the eye button, and writes trimmed value on blur', () => {
+    /**
+     * Same security and ergonomic guarantees as the Anthropic key: password
+     * input by default, eye button reveals it, blur trims whitespace from
+     * paste. The trim matters because OpenAI's dashboard frequently leaves
+     * a trailing newline when copying via "Copy key" on certain browsers.
+     */
+    useSettingsStore.setState({ provider: 'openai' })
+    render(<ApiSection />)
+
+    const input = screen.getByPlaceholderText('sk-...') as HTMLInputElement
+    expect(input.type).toBe('password')
+
+    const toggleButton = input.parentElement!.querySelector('button')!
+    fireEvent.click(toggleButton)
+    expect(input.type).toBe('text')
+
+    fireEvent.change(input, { target: { value: '  sk-openai-trimmed  ' } })
+    fireEvent.blur(input)
+    expect(useSettingsStore.getState().openaiApiKey).toBe('sk-openai-trimmed')
+  })
+
+  it('model dropdown reflects the four hook states (disabled-empty, loading, error, populated) and writes selection through to setOpenaiModel', () => {
+    /**
+     * Mirror of the Anthropic dropdown contract: each hook state renders
+     * coherent UI, and choosing a model persists via the controlled
+     * onChange. Bundled into one test because each state is one assertion
+     * — splitting would just duplicate setup.
+     */
+    useSettingsStore.setState({ provider: 'openai' })
+    const { rerender } = render(<ApiSection />)
+    // No key yet: dropdown disabled, prompts for key.
+    let modelSelect = document.querySelectorAll('select')[0] as HTMLSelectElement
+    expect(modelSelect).toBeDisabled()
+    expect(within(modelSelect).getByText('Enter API key to load models')).toBeInTheDocument()
+
+    // Loading state.
+    useSettingsStore.setState({ provider: 'openai', openaiApiKey: 'sk-x' })
+    useOpenaiModelsMock.mockReturnValue({ models: [], loading: true, error: null })
+    rerender(<ApiSection />)
+    modelSelect = document.querySelectorAll('select')[0] as HTMLSelectElement
+    expect(modelSelect).toBeDisabled()
+    expect(within(modelSelect).getByText('Loading models…')).toBeInTheDocument()
+
+    // Error state.
+    useOpenaiModelsMock.mockReturnValue({ models: [], loading: false, error: 'Failed to load models' })
+    rerender(<ApiSection />)
+    modelSelect = document.querySelectorAll('select')[0] as HTMLSelectElement
+    expect(within(modelSelect).getByText('Failed to load models')).toBeInTheDocument()
+
+    // Populated state — selecting a model writes through.
+    useSettingsStore.setState({ provider: 'openai', openaiApiKey: 'sk-x', openaiModel: 'gpt-4o-mini' })
+    useOpenaiModelsMock.mockReturnValue({
+      models: [
+        { id: 'gpt-4o', displayName: 'gpt-4o' },
+        { id: 'gpt-4o-mini', displayName: 'gpt-4o-mini' },
+      ],
+      loading: false,
+      error: null,
+    })
+    rerender(<ApiSection />)
+    modelSelect = document.querySelectorAll('select')[0] as HTMLSelectElement
+    expect(modelSelect).not.toBeDisabled()
+    expect(within(modelSelect).getByText('gpt-4o')).toBeInTheDocument()
+
+    fireEvent.change(modelSelect, { target: { value: 'gpt-4o' } })
+    expect(useSettingsStore.getState().openaiModel).toBe('gpt-4o')
   })
 })

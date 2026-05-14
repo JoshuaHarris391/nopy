@@ -24,7 +24,10 @@ export function IndexView() {
 
   // Same readiness gate as MaintenanceSection — hide the Update button until
   // the active provider is configured, otherwise the dispatcher would throw.
-  const ready = llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey : !!llmConfig.localModel
+  const ready =
+    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
+      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
+        : !!llmConfig.localModel
 
   const handleUpdateIndex = () => {
     if (!ready) return

@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../../stores/settingsStore'
 import { ProviderToggle } from './api/ProviderToggle'
 import { AnthropicBlock } from './api/AnthropicBlock'
 import { LocalBlock } from './api/LocalBlock'
+import { OpenaiBlock } from './api/OpenaiBlock'
 
 const selectStyle: React.CSSProperties = {
   fontFamily: 'var(--font-ui)', fontSize: 13, padding: '6px 12px',
@@ -13,10 +14,10 @@ const selectStyle: React.CSSProperties = {
 }
 
 /**
- * Top-level API/AI settings. The provider toggle determines whether the
- * Anthropic API config or the local LM Studio config is shown beneath it.
- * Max output tokens and context budget apply to whichever provider is
- * active and live below the per-provider block.
+ * Top-level API/AI settings. The provider toggle determines which of the
+ * three provider blocks (Local LM Studio, OpenAI, Anthropic) is shown
+ * beneath it. Max output tokens and context budget apply to whichever
+ * provider is active and live below the per-provider block.
  */
 export function ApiSection() {
   const provider = useSettingsStore((s) => s.provider)
@@ -31,7 +32,9 @@ export function ApiSection() {
         <ProviderToggle />
       </div>
 
-      {provider === 'anthropic' ? <AnthropicBlock /> : <LocalBlock />}
+      {provider === 'anthropic' ? <AnthropicBlock />
+        : provider === 'openai' ? <OpenaiBlock />
+        : <LocalBlock />}
 
       <SettingsRow label="Max Output Tokens" description="Maximum length of each AI response (default: 4,096)">
         <select value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(Number(e.target.value))} style={selectStyle}>

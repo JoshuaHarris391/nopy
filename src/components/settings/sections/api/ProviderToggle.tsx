@@ -1,9 +1,10 @@
-import { Cloud, HardDrive } from 'lucide-react'
+import { Cloud, HardDrive, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../../../../stores/settingsStore'
 import type { LlmProvider } from '../../../../types/settings'
 
 const OPTIONS: { value: LlmProvider; label: string; Icon: typeof Cloud }[] = [
   { value: 'local', label: 'Local (LM Studio)', Icon: HardDrive },
+  { value: 'openai', label: 'OpenAI API', Icon: Sparkles },
   { value: 'anthropic', label: 'Anthropic API', Icon: Cloud },
 ]
 
