@@ -1,4 +1,10 @@
-export const ACT_SYSTEM_PROMPT = `# ACT Therapy Agent — System Prompt & Architecture Guide
+import { VOICE_PREAMBLE } from '../voice'
+
+export const ACT_SYSTEM_PROMPT = `${VOICE_PREAMBLE}
+
+---
+
+# ACT Therapy Agent — System Prompt & Architecture Guide
 
 ## Overview
 
