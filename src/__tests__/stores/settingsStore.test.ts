@@ -10,6 +10,7 @@ import { DEFAULT_THERAPY } from '../../services/prompts/therapists'
 const DEFAULTS = {
   apiKey: '',
   preferredModel: 'claude-sonnet-4-5-20250514',
+  anthropicLightweightModel: 'claude-haiku-4-5-20251001',
   maxOutputTokens: 4096,
   contextBudget: 500000,
   onboardingComplete: false,
@@ -21,8 +22,10 @@ const DEFAULTS = {
   provider: 'anthropic' as const,
   localBaseUrl: 'http://localhost:1234/v1',
   localModel: '',
+  localLightweightModel: '',
   openaiApiKey: '',
   openaiModel: '',
+  openaiLightweightModel: '',
 }
 
 beforeEach(() => {
@@ -54,13 +57,14 @@ describe('useSettingsStore', () => {
   it('every setter writes through and only mutates its own slice', () => {
     /**
      * One per setter, parameterized. The "only mutates its own slice"
-     * guarantee matters because the upcoming `provider` field will share
-     * actions with `apiKey` etc. — if `setProvider` accidentally clears
+     * guarantee matters because each provider toggle and model setter
+     * shares an action surface — if `setProvider` accidentally clears
      * `apiKey`, that's exactly the regression this test catches.
      */
     const cases: { call: () => void; expectField: keyof typeof DEFAULTS; expectValue: unknown }[] = [
       { call: () => useSettingsStore.getState().setApiKey('sk-x'), expectField: 'apiKey', expectValue: 'sk-x' },
       { call: () => useSettingsStore.getState().setPreferredModel('claude-haiku-4-5'), expectField: 'preferredModel', expectValue: 'claude-haiku-4-5' },
+      { call: () => useSettingsStore.getState().setAnthropicLightweightModel('claude-haiku-new'), expectField: 'anthropicLightweightModel', expectValue: 'claude-haiku-new' },
       { call: () => useSettingsStore.getState().setMaxOutputTokens(8192), expectField: 'maxOutputTokens', expectValue: 8192 },
       { call: () => useSettingsStore.getState().setContextBudget(60000), expectField: 'contextBudget', expectValue: 60000 },
       { call: () => useSettingsStore.getState().setSidebarCollapsed(true), expectField: 'sidebarCollapsed', expectValue: true },
@@ -70,8 +74,10 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setProvider('local'), expectField: 'provider', expectValue: 'local' },
       { call: () => useSettingsStore.getState().setLocalBaseUrl('http://localhost:11434/v1'), expectField: 'localBaseUrl', expectValue: 'http://localhost:11434/v1' },
       { call: () => useSettingsStore.getState().setLocalModel('google/gemma-4-e4b'), expectField: 'localModel', expectValue: 'google/gemma-4-e4b' },
+      { call: () => useSettingsStore.getState().setLocalLightweightModel('mini-local'), expectField: 'localLightweightModel', expectValue: 'mini-local' },
       { call: () => useSettingsStore.getState().setOpenaiApiKey('sk-openai-x'), expectField: 'openaiApiKey', expectValue: 'sk-openai-x' },
       { call: () => useSettingsStore.getState().setOpenaiModel('gpt-4o-mini'), expectField: 'openaiModel', expectValue: 'gpt-4o-mini' },
+      { call: () => useSettingsStore.getState().setOpenaiLightweightModel('gpt-4o-mini'), expectField: 'openaiLightweightModel', expectValue: 'gpt-4o-mini' },
     ]
 
     for (const { call, expectField, expectValue } of cases) {
@@ -135,7 +141,7 @@ describe('useSettingsStore', () => {
       'nopy-settings',
       JSON.stringify({
         state: { ...DEFAULTS, apiKey: 'sk-rehydrated', preferredModel: 'claude-haiku-4-5' },
-        version: 0,
+        version: 3,
       }),
     )
 
@@ -163,13 +169,14 @@ describe('multi-provider settings', () => {
     expect(useSettingsStore.getState().openaiModel).toBe('')
   })
 
-  it('migrates a v0 persisted blob (no provider/localBaseUrl/localModel) to v1 defaults without losing other fields', async () => {
+  it('migrates a v0 persisted blob (no provider/localBaseUrl/localModel) through v1, v2, and v3 in one step', async () => {
     /**
-     * Existing installs have a `nopy-settings` blob in localStorage that
-     * predates the multi-provider refactor — no `provider`, no
-     * `localBaseUrl`, no `localModel`. The persist middleware's `migrate`
-     * function must add those fields with safe defaults (anthropic mode)
-     * while preserving everything the user already configured.
+     * Existing installs may have a v0 `nopy-settings` blob that predates the
+     * multi-provider refactor — no provider/localBaseUrl/localModel, no
+     * openaiApiKey/openaiModel, no per-provider lightweight slots. The persist
+     * middleware's `migrate` runs every step in sequence, so loading a v0
+     * blob should land the user on a fully-shaped v3 state with all the new
+     * fields filled in safely.
      */
     localStorage.setItem(
       'nopy-settings',
@@ -204,19 +211,23 @@ describe('multi-provider settings', () => {
     expect(state.provider).toBe('anthropic')
     expect(state.localBaseUrl).toBe('http://localhost:1234/v1')
     expect(state.localModel).toBe('')
-    // v1→v2 fields filled in too — a single load from a v0 blob walks both
-    // migration steps so the user lands on a fully-shaped v2 state.
+    // v1→v2 fields filled in too.
     expect(state.openaiApiKey).toBe('')
     expect(state.openaiModel).toBe('')
+    // v2→v3 fields filled in. Anthropic seeds to Haiku so the lightweight
+    // slot has a working default; openai/local stay blank so the dispatcher
+    // falls back to the main model.
+    expect(state.anthropicLightweightModel).toBe('claude-haiku-4-5-20251001')
+    expect(state.localLightweightModel).toBe('')
+    expect(state.openaiLightweightModel).toBe('')
   })
 
-  it('migrates a v1 persisted blob (no openai fields) to v2 defaults without losing other fields', async () => {
+  it('migrates a v1 persisted blob (no openai/lightweight fields) to v3 defaults without losing other fields', async () => {
     /**
-     * Users who already adopted the multi-provider release have a v1 blob
-     * containing provider/localBaseUrl/localModel but no openaiApiKey/
-     * openaiModel. The v1→v2 step adds those two fields with empty defaults
-     * so the OpenAI tab renders a clean "enter your key" state without
-     * destroying the user's existing Anthropic key or local-model selection.
+     * Users who adopted the local-LLM release have a v1 blob with provider/
+     * localBaseUrl/localModel but no openai* or *lightweight fields. The
+     * v1→v2 step adds the OpenAI fields, then v2→v3 adds the per-provider
+     * lightweight slots, all in one rehydration pass.
      */
     localStorage.setItem(
       'nopy-settings',
@@ -252,23 +263,73 @@ describe('multi-provider settings', () => {
     // v2 fields filled in with safe defaults.
     expect(state.openaiApiKey).toBe('')
     expect(state.openaiModel).toBe('')
+    // v3 lightweight slots seeded.
+    expect(state.anthropicLightweightModel).toBe('claude-haiku-4-5-20251001')
+    expect(state.localLightweightModel).toBe('')
+    expect(state.openaiLightweightModel).toBe('')
   })
 
-  it('selectLlmConfig returns only the LLM-routing fields', () => {
+  it('migrates a v2 persisted blob (no lightweight fields) to v3 defaults', async () => {
     /**
-     * The dispatcher in services/llm.ts needs provider + apiKey +
-     * localBaseUrl + localModel + openaiApiKey + openaiModel. Keeping the
-     * selector narrow means call sites re-render only when LLM-relevant
-     * settings change, and the dispatcher's test surface stays tiny.
+     * Users on the most recent shipped version have a v2 blob that includes
+     * every existing field including OpenAI. The v2→v3 step adds the three
+     * lightweight slots without touching anything else. This is the
+     * migration path most users will actually traverse.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: {
+          apiKey: 'sk-existing',
+          preferredModel: 'claude-sonnet-4-5',
+          maxOutputTokens: 4096,
+          contextBudget: 500000,
+          onboardingComplete: true,
+          sidebarCollapsed: false,
+          sessionPanelCollapsed: false,
+          journalPath: '/tmp/journal',
+          theme: 'dark',
+          therapyType: DEFAULTS.therapyType,
+          provider: 'anthropic',
+          localBaseUrl: 'http://localhost:1234/v1',
+          localModel: '',
+          openaiApiKey: 'sk-openai',
+          openaiModel: 'gpt-4o',
+        },
+        version: 2,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.preferredModel).toBe('claude-sonnet-4-5')
+    expect(state.openaiApiKey).toBe('sk-openai')
+    expect(state.openaiModel).toBe('gpt-4o')
+    expect(state.anthropicLightweightModel).toBe('claude-haiku-4-5-20251001')
+    expect(state.localLightweightModel).toBe('')
+    expect(state.openaiLightweightModel).toBe('')
+  })
+
+  it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {
+    /**
+     * The dispatcher in services/llm.ts needs provider + all six per-provider
+     * model slots + the two API keys + the local baseUrl. The persisted key
+     * `preferredModel` is renamed to `anthropicMainModel` in the selector so
+     * dispatcher code can address every provider's main slot symmetrically.
      */
     useSettingsStore.setState({
       apiKey: 'sk-x',
-      preferredModel: 'claude-haiku-4-5',
+      preferredModel: 'claude-sonnet',
+      anthropicLightweightModel: 'claude-haiku',
       provider: 'openai',
       localBaseUrl: 'http://localhost:11434/v1',
       localModel: 'gemma',
+      localLightweightModel: 'gemma-mini',
       openaiApiKey: 'sk-openai-x',
-      openaiModel: 'gpt-4o-mini',
+      openaiModel: 'gpt-4o',
+      openaiLightweightModel: 'gpt-4o-mini',
       theme: 'dark', // not in the slice
     })
 
@@ -276,13 +337,19 @@ describe('multi-provider settings', () => {
     expect(config).toEqual({
       provider: 'openai',
       apiKey: 'sk-x',
+      anthropicMainModel: 'claude-sonnet',
+      anthropicLightweightModel: 'claude-haiku',
       localBaseUrl: 'http://localhost:11434/v1',
       localModel: 'gemma',
+      localLightweightModel: 'gemma-mini',
       openaiApiKey: 'sk-openai-x',
-      openaiModel: 'gpt-4o-mini',
+      openaiModel: 'gpt-4o',
+      openaiLightweightModel: 'gpt-4o-mini',
     })
     expect(Object.keys(config).sort()).toEqual([
-      'apiKey', 'localBaseUrl', 'localModel', 'openaiApiKey', 'openaiModel', 'provider',
+      'anthropicLightweightModel', 'anthropicMainModel', 'apiKey',
+      'localBaseUrl', 'localLightweightModel', 'localModel',
+      'openaiApiKey', 'openaiLightweightModel', 'openaiModel', 'provider',
     ])
   })
 })

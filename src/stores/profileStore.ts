@@ -8,6 +8,7 @@ import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { useJournalStore } from './journalStore'
 import { useNotificationStore } from './notificationStore'
+import { fetchModels, resolveModel } from '../services/llm'
 import type { LlmConfig } from '../types/settings'
 
 interface ProfileState {
@@ -86,6 +87,35 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
     console.log('[profileStore] generateProfile: starting | total entries', entries.length)
 
+    // Resolve display names for the lightweight + main roles so phase
+    // strings show what the user picked in Settings (e.g. "Claude Haiku
+    // 4.5" or "gpt-4o-mini") rather than a hardcoded model name. One
+    // fetchModels() call covers both labels; on any failure we fall back
+    // to the raw model ids — phase strings must never block.
+    let lightweightLabel: string
+    let mainLabel: string
+    try {
+      const lightweightId = resolveModel(config, 'lightweight')
+      const mainId = resolveModel(config, 'main')
+      lightweightLabel = lightweightId
+      mainLabel = mainId
+      try {
+        const models = await fetchModels(config)
+        const map = new Map(models.map((m) => [m.id, m.displayName]))
+        lightweightLabel = map.get(lightweightId) ?? lightweightId
+        mainLabel = map.get(mainId) ?? mainId
+      } catch {
+        // Network/auth error — keep the raw ids as labels.
+      }
+    } catch {
+      // resolveModel only throws when a slot is blank with no fallback.
+      // The phase strings below still need *something*; fall through with
+      // generic placeholders rather than crash the whole pipeline. The
+      // actual provider call further down will surface the real error.
+      lightweightLabel = 'lightweight model'
+      mainLabel = 'main model'
+    }
+
     // Build dynamic step list based on what actually needs to happen
     const unindexed = entries.filter((e) => !e.indexed)
     const steps: string[] = []
@@ -95,7 +125,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const stepNum = (id: string) => steps.indexOf(id) + 1
 
     try {
-    // Index unprocessed entries via Haiku
+    // Index unprocessed entries via the lightweight model
     if (unindexed.length > 0) {
       const s = stepNum('index')
       setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
@@ -118,9 +148,9 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Generate summary profile via Haiku (streaming)
+    // Generate summary profile via the lightweight model (streaming)
     const sSummary = stepNum('summary')
-    setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (Haiku)...`)
+    setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (${lightweightLabel})...`)
     setProgress(0, 0, 'Waiting for response...')
     const narrative = await generateProfileFromEntries(
       entries, config,
@@ -131,9 +161,9 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Generate full psychological profile via Opus (streaming)
+    // Generate full psychological profile via the main model (streaming)
     const sFull = stepNum('full')
-    setPhase(`Step ${sFull}/${totalSteps} — Writing full psychological profile (Opus)...`)
+    setPhase(`Step ${sFull}/${totalSteps} — Writing full psychological profile (${mainLabel})...`)
     setProgress(0, 0, 'Waiting for response...')
     let fullProfile: string | null = null
     try {

@@ -142,6 +142,7 @@ describe('Journal entry → first chat message', () => {
       apiKey: 'test-key',
       journalPath: '/test/journal',
       preferredModel: 'claude-sonnet-4-5',
+      anthropicLightweightModel: 'claude-haiku-4-5',
       maxOutputTokens: 4096,
       contextBudget: 30000,
     })

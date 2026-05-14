@@ -7,7 +7,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
 import { useNotificationStore } from '../../stores/notificationStore'
-import { HAIKU_MODEL, TOKEN_LIMITS } from '../../services/models'
+import { TOKEN_LIMITS } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { hydrateEntryContext } from '../../services/chatPersistence'
 import { getTherapyPrompt } from '../../services/prompts/therapists'
@@ -29,7 +29,6 @@ export function ChatView() {
     llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
       : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
         : !!llmConfig.localModel
-  const preferredModel = useSettingsStore((s) => s.preferredModel)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
   const therapyType = useSettingsStore((s) => s.therapyType)
@@ -238,7 +237,7 @@ export function ChatView() {
     try {
       await streamChatResponse(
         llmConfig,
-        preferredModel,
+        'main',
         system,
         filteredMessages,
         maxOutputTokens,
@@ -262,7 +261,7 @@ export function ChatView() {
               const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
               const title = await sendMessage(
                 llmConfig,
-                HAIKU_MODEL,
+                'lightweight',
                 'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
                 [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
                 TOKEN_LIMITS.titleGeneration,
@@ -302,7 +301,7 @@ export function ChatView() {
       updateStreamingMessage(msg)
       await finalizeStreamingMessage()
     }
-  }, [llmConfig, ready, preferredModel, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
+  }, [llmConfig, ready, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
 
 
   // Handle "Explore with nopy" entry context from router state

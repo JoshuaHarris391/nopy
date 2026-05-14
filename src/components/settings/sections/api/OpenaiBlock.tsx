@@ -21,6 +21,8 @@ export function OpenaiBlock() {
   const setOpenaiApiKey = useSettingsStore((s) => s.setOpenaiApiKey)
   const openaiModel = useSettingsStore((s) => s.openaiModel)
   const setOpenaiModel = useSettingsStore((s) => s.setOpenaiModel)
+  const lightweightModel = useSettingsStore((s) => s.openaiLightweightModel)
+  const setLightweightModel = useSettingsStore((s) => s.setOpenaiLightweightModel)
 
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(openaiApiKey)
@@ -61,7 +63,7 @@ export function OpenaiBlock() {
         </div>
       </div>
 
-      <SettingsRow label="Model" description="Used for chat conversations">
+      <SettingsRow label="Main model" description="Used for chat replies and full-profile generation">
         <select
           value={openaiModel}
           onChange={(e) => setOpenaiModel(e.target.value)}
@@ -85,6 +87,30 @@ export function OpenaiBlock() {
           {!modelsLoading && !modelsError && openaiApiKey && models.length === 0 && (
             <option value="">No models found</option>
           )}
+        </select>
+      </SettingsRow>
+
+      <SettingsRow label="Lightweight model" description="Used for entry indexing, summary profiles, and chat titles. Leave blank to reuse the main model.">
+        <select
+          value={lightweightModel}
+          onChange={(e) => setLightweightModel(e.target.value)}
+          disabled={modelsLoading || !openaiApiKey}
+          style={{
+            ...selectStyle,
+            color: modelsLoading || !openaiApiKey ? 'var(--sage)' : 'var(--ink)',
+            cursor: modelsLoading || !openaiApiKey ? 'not-allowed' : 'pointer',
+            minWidth: 200,
+          }}
+        >
+          {modelsLoading && <option value="">Loading models…</option>}
+          {modelsError && <option value="">{modelsError}</option>}
+          {!openaiApiKey && <option value="">Enter API key to load models</option>}
+          {openaiApiKey && !modelsLoading && !modelsError && (
+            <option value="">Use main model</option>
+          )}
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>{m.displayName}</option>
+          ))}
         </select>
       </SettingsRow>
     </>

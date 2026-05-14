@@ -1,6 +1,6 @@
 import { sendMessage, sendMessageStreaming } from './llm'
 import { parseLLMJson } from './parseLLMJson'
-import { HAIKU_MODEL, OPUS_MODEL, TOKEN_LIMITS } from './models'
+import { TOKEN_LIMITS } from './models'
 import { ENTRY_METADATA_SYSTEM } from './prompts/entryMetadata'
 import { PROFILE_NARRATIVE_SYSTEM } from './prompts/profileNarrative'
 import { FULL_PROFILE_SYSTEM } from './prompts/fullProfile'
@@ -22,7 +22,7 @@ export async function processEntry(entry: JournalEntry, config: LlmConfig, signa
   console.log('[entryProcessor] processEntry: input', inputChars, 'chars')
   const response = await sendMessage(
     config,
-    HAIKU_MODEL,
+    'lightweight',
     ENTRY_METADATA_SYSTEM,
     [{ role: 'user', content: `Title: ${entry.title}\n\n${entry.content}` }],
     TOKEN_LIMITS.entryMetadata,
@@ -77,10 +77,10 @@ export async function generateProfileFromEntries(
     .map((e) => `[${e.createdAt.slice(0, 10)}] ${e.title}: ${e.summary} (mood: ${e.mood?.value ?? 'n/a'}/10, tags: ${e.tags.join(', ')})`)
     .join('\n')
 
-  console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummaries.length, 'chars to Haiku')
+  console.log('[entryProcessor] generateProfileFromEntries: sending', entrySummaries.length, 'chars to lightweight model')
   const response = await sendMessageStreaming(
     config,
-    HAIKU_MODEL,
+    'lightweight',
     PROFILE_NARRATIVE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entry summaries:\n\n${entrySummaries}` }],
     TOKEN_LIMITS.profileNarrative,
@@ -113,10 +113,10 @@ export async function generateFullProfile(
     })
     .join('\n\n')
 
-  console.log('[entryProcessor] generateFullProfile: sending', entryContent.length, 'chars to Opus')
+  console.log('[entryProcessor] generateFullProfile: sending', entryContent.length, 'chars to main model')
   const response = await sendMessageStreaming(
     config,
-    OPUS_MODEL,
+    'main',
     FULL_PROFILE_SYSTEM,
     [{ role: 'user', content: `Here are ${indexed.length} journal entries for psychological analysis:\n\n${entryContent}` }],
     TOKEN_LIMITS.fullProfile,
