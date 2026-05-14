@@ -23,6 +23,7 @@ const selectStyle: React.CSSProperties = {
 }
 
 const CUSTOM_VALUE = '__nopy_custom__'
+const USE_MAIN_VALUE = ''
 
 /**
  * Local-mode settings block: status indicator + (conditional) onboarding
@@ -35,14 +36,18 @@ export function LocalBlock() {
   const setLocalBaseUrl = useSettingsStore((s) => s.setLocalBaseUrl)
   const localModel = useSettingsStore((s) => s.localModel)
   const setLocalModel = useSettingsStore((s) => s.setLocalModel)
+  const lightweightModel = useSettingsStore((s) => s.localLightweightModel)
+  const setLightweightModel = useSettingsStore((s) => s.setLocalLightweightModel)
 
   // Local input state so users can type without committing on every keystroke.
   // Commit on blur (matches the Anthropic API key field pattern).
   const [baseUrlInput, setBaseUrlInput] = useState(localBaseUrl)
   const [modelInput, setModelInput] = useState(localModel)
+  const [lightweightInput, setLightweightInput] = useState(lightweightModel)
 
   useEffect(() => { setBaseUrlInput(localBaseUrl) }, [localBaseUrl])
   useEffect(() => { setModelInput(localModel) }, [localModel])
+  useEffect(() => { setLightweightInput(lightweightModel) }, [lightweightModel])
 
   const { models, loading, error, refresh } = useLocalModels(localBaseUrl)
 
@@ -67,6 +72,13 @@ export function LocalBlock() {
   useEffect(() => { if (isCustom) setCustomMode(true) }, [isCustom])
 
   const showDropdown = models.length > 0 && !customMode
+
+  // Same custom-mode pattern for the lightweight slot. Empty is a valid
+  // value here (means "reuse the main model") so we treat it separately.
+  const lightweightIsCustom = lightweightModel !== '' && models.length > 0 && !models.some((m) => m.id === lightweightModel)
+  const [lightweightCustomMode, setLightweightCustomMode] = useState(lightweightIsCustom)
+  useEffect(() => { if (lightweightIsCustom) setLightweightCustomMode(true) }, [lightweightIsCustom])
+  const showLightweightDropdown = models.length > 0 && !lightweightCustomMode
 
   // Find the loaded context window for the currently picked model. Only
   // available when LM Studio's native /api/v1/models endpoint is reachable
@@ -134,10 +146,10 @@ export function LocalBlock() {
       <SettingsRow
         label={
           <span className="flex items-center">
-            Model
-            <HelpTooltip label="Help: model name">
-              Which model nopy chats with. Pick a loaded one, or type a
-              name with "Custom…".
+            Main model
+            <HelpTooltip label="Help: main model">
+              Used for chat replies and full-profile generation. Pick a
+              loaded one, or type a name with "Custom…".
             </HelpTooltip>
           </span>
         }
@@ -178,6 +190,50 @@ export function LocalBlock() {
             onChange={(e) => setModelInput(e.target.value)}
             onBlur={() => setLocalModel(modelInput.trim())}
             placeholder="google/gemma-4-e4b"
+            style={{ ...inputStyle, width: 280 }}
+          />
+        )}
+      </SettingsRow>
+
+      <SettingsRow
+        label={
+          <span className="flex items-center">
+            Lightweight model
+            <HelpTooltip label="Help: lightweight model">
+              Used for entry indexing, summary profiles, and chat titles.
+              Most local setups leave this on "Use main model" because
+              LM Studio only loads one model at a time.
+            </HelpTooltip>
+          </span>
+        }
+        description="Leave on 'Use main model' unless you switch models in LM Studio between tasks."
+      >
+        {showLightweightDropdown ? (
+          <select
+            value={lightweightModel}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === CUSTOM_VALUE) {
+                setLightweightCustomMode(true)
+                return
+              }
+              setLightweightModel(v)
+            }}
+            style={selectStyle}
+          >
+            <option value={USE_MAIN_VALUE}>Use main model</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.id}</option>
+            ))}
+            <option value={CUSTOM_VALUE}>Custom…</option>
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={lightweightInput}
+            onChange={(e) => setLightweightInput(e.target.value)}
+            onBlur={() => setLightweightModel(lightweightInput.trim())}
+            placeholder="Leave blank to reuse the main model"
             style={{ ...inputStyle, width: 280 }}
           />
         )}

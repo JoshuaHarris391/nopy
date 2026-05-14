@@ -26,7 +26,7 @@ function dateString(daysAgo: number): string {
 describe('processEntries mood preservation', () => {
   it('keeps the existing mood when one is already set', () => {
     /**
-     * When an entry is indexed, the AI (Haiku) returns a mood score. However,
+     * When an entry is indexed, the lightweight model returns a mood score. However,
      * the user may have set a manual mood score before indexing. The merge rule
      * is: use the existing entry mood if present, otherwise fall back to the
      * AI mood. This mirrors the `e.mood ?? meta.mood` expression in journalStore.

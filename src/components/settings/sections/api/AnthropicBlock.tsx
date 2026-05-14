@@ -21,6 +21,8 @@ export function AnthropicBlock() {
   const setApiKey = useSettingsStore((s) => s.setApiKey)
   const preferredModel = useSettingsStore((s) => s.preferredModel)
   const setPreferredModel = useSettingsStore((s) => s.setPreferredModel)
+  const lightweightModel = useSettingsStore((s) => s.anthropicLightweightModel)
+  const setLightweightModel = useSettingsStore((s) => s.setAnthropicLightweightModel)
 
   const [showKey, setShowKey] = useState(false)
   const [keyInput, setKeyInput] = useState(apiKey)
@@ -61,10 +63,34 @@ export function AnthropicBlock() {
         </div>
       </div>
 
-      <SettingsRow label="Model" description="Used for chat conversations">
+      <SettingsRow label="Main model" description="Used for chat replies and full-profile generation">
         <select
           value={preferredModel}
           onChange={(e) => setPreferredModel(e.target.value)}
+          disabled={modelsLoading || !apiKey}
+          style={{
+            ...selectStyle,
+            color: modelsLoading || !apiKey ? 'var(--sage)' : 'var(--ink)',
+            cursor: modelsLoading || !apiKey ? 'not-allowed' : 'pointer',
+            minWidth: 200,
+          }}
+        >
+          {modelsLoading && <option value="">Loading models…</option>}
+          {modelsError && <option value="">{modelsError}</option>}
+          {!apiKey && <option value="">Enter API key to load models</option>}
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>{m.displayName}</option>
+          ))}
+          {!modelsLoading && !modelsError && apiKey && models.length === 0 && (
+            <option value="">No models found</option>
+          )}
+        </select>
+      </SettingsRow>
+
+      <SettingsRow label="Lightweight model" description="Used for entry indexing, summary profiles, and chat titles — pick a smaller/cheaper model">
+        <select
+          value={lightweightModel}
+          onChange={(e) => setLightweightModel(e.target.value)}
           disabled={modelsLoading || !apiKey}
           style={{
             ...selectStyle,

@@ -38,13 +38,16 @@ import { useSettingsStore } from '../../stores/settingsStore'
 const DEFAULT_SETTINGS = {
   apiKey: '',
   preferredModel: 'claude-sonnet-4-5-20250514',
+  anthropicLightweightModel: 'claude-haiku-4-5-20251001',
   maxOutputTokens: 4096,
   contextBudget: 500000,
   provider: 'anthropic' as const,
   localBaseUrl: 'http://localhost:1234/v1',
   localModel: '',
+  localLightweightModel: '',
   openaiApiKey: '',
   openaiModel: '',
+  openaiLightweightModel: '',
 }
 
 beforeEach(() => {
@@ -65,17 +68,23 @@ afterEach(() => {
 
 /**
  * Order of <select>s in the DOM depends on which provider block is mounted:
- *   Anthropic mode: [0] Model, [1] Max Tokens, [2] Context Budget
- *   Local mode:     [0] Max Tokens, [1] Context Budget
- *     (Local mode uses <input>s for base URL + model, not selects.)
+ *   Anthropic mode: [0] Main model, [1] Lightweight model, [-2] Max Tokens, [-1] Context Budget
+ *   OpenAI mode:    [0] Main model, [1] Lightweight model, [-2] Max Tokens, [-1] Context Budget
+ *   Local mode (models loaded): [0] Main model, [1] Lightweight model, [-2] Max Tokens, [-1] Context Budget
+ *   Local mode (empty list):    [-2] Max Tokens, [-1] Context Budget
+ *     (Local mode uses <input>s for base URL + model when /v1/models is empty.)
+ *
+ * The two shared rows are always the LAST two selects in DOM order, so we
+ * index from the tail to stay stable across provider-block changes.
  */
 function getSelects() {
-  const selects = document.querySelectorAll('select')
+  const selects = Array.from(document.querySelectorAll('select')) as HTMLSelectElement[]
   return {
-    all: Array.from(selects) as HTMLSelectElement[],
-    model: selects[0] as HTMLSelectElement,
-    maxTokens: selects[1] as HTMLSelectElement,
-    contextBudget: selects[2] as HTMLSelectElement,
+    all: selects,
+    model: selects[0],
+    lightweightModel: selects[1],
+    maxTokens: selects[selects.length - 2],
+    contextBudget: selects[selects.length - 1],
   }
 }
 
@@ -193,6 +202,40 @@ describe('ApiSection — Anthropic mode', () => {
     fireEvent.change(select, { target: { value: '8192' } })
     expect(useSettingsStore.getState().maxOutputTokens).toBe(8192)
     expect(typeof useSettingsStore.getState().maxOutputTokens).toBe('number')
+  })
+
+  it('renders a separate Lightweight model dropdown that writes to setAnthropicLightweightModel', () => {
+    /**
+     * Each provider has TWO model slots after the per-provider-roles refactor:
+     * a main model (chat replies, full profile) and a lightweight model
+     * (entry indexing, summary profile, chat title). Both dropdowns share
+     * the same provider's model list — the only thing distinguishing them
+     * is which store setter is wired up. This test pins that wiring so a
+     * refactor can't accidentally have the lightweight dropdown write to
+     * setPreferredModel (which would silently overwrite the main slot
+     * every time the user picked a lightweight model).
+     *
+     * Setup uses distinct main and lightweight values, then writes to the
+     * lightweight dropdown; the main slot must remain untouched.
+     */
+    useSettingsStore.setState({ apiKey: 'sk-x', preferredModel: 'claude-sonnet-4-5', anthropicLightweightModel: 'claude-haiku-4-5' })
+    useAnthropicModelsMock.mockReturnValue({
+      models: [
+        { id: 'claude-haiku-4-5', displayName: 'Haiku 4.5' },
+        { id: 'claude-opus-4-6', displayName: 'Opus 4.6' },
+        { id: 'claude-sonnet-4-5', displayName: 'Sonnet 4.5' },
+      ],
+      loading: false,
+      error: null,
+    })
+    render(<ApiSection />)
+
+    const lightweight = getSelects().lightweightModel
+    expect(lightweight.value).toBe('claude-haiku-4-5')
+    fireEvent.change(lightweight, { target: { value: 'claude-opus-4-6' } })
+    expect(useSettingsStore.getState().anthropicLightweightModel).toBe('claude-opus-4-6')
+    // Main slot untouched — proves the two dropdowns write to independent setters.
+    expect(useSettingsStore.getState().preferredModel).toBe('claude-sonnet-4-5')
   })
 
   it('Context Budget select renders the documented range and writes through as a number', () => {

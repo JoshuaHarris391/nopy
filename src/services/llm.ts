@@ -1,9 +1,9 @@
 import * as anthropic from './anthropic'
 import * as localServer from './localServer'
 import * as openai from './openai'
-import type { LlmConfig } from '../types/settings'
+import type { LlmConfig, LlmModelRole } from '../types/settings'
 
-export type { LlmConfig } from '../types/settings'
+export type { LlmConfig, LlmModelRole } from '../types/settings'
 
 /**
  * Every error raised inside the LLM dispatcher boundary is an `LlmError`
@@ -66,33 +66,54 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
 type Message = { role: 'user' | 'assistant'; content: string }
 
 /**
- * In local mode, the dispatcher ignores the caller's `requestedModel` and
- * uses `config.localModel` instead. LM Studio loads one model at a time —
- * asking it for `claude-haiku-4-5` returns 404. OpenAI mode uses the same
- * override pattern with `config.openaiModel` because Anthropic-shaped model
- * IDs (`claude-...`) aren't valid OpenAI models. In Anthropic mode the
- * caller's `requestedModel` is honored so callers can still pick Haiku for
- * cheap one-shots and Opus for high-quality tasks.
+ * Maps `(provider, role)` to the configured model id. For local/openai a
+ * blank lightweight slot transparently falls back to the main slot — this
+ * is the "I only run one model" escape hatch, important for LM Studio users
+ * since LM Studio loads one model at a time. Anthropic's lightweight slot
+ * is migration-seeded with Haiku so it's never blank in practice.
+ *
+ * Throws `NO_MODEL_CONFIGURED` only when the *main* slot is empty and there
+ * is therefore no fallback either.
  */
-function resolveModel(config: LlmConfig, requestedModel: string): string {
+export function resolveModel(config: LlmConfig, role: LlmModelRole): string {
   if (config.provider === 'local') {
-    if (!config.localModel) {
-      throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
-    }
-    return config.localModel
+    const m = role === 'main' ? config.localModel : (config.localLightweightModel || config.localModel)
+    if (!m) throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
+    return m
   }
   if (config.provider === 'openai') {
-    if (!config.openaiModel) {
-      throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
-    }
-    return config.openaiModel
+    const m = role === 'main' ? config.openaiModel : (config.openaiLightweightModel || config.openaiModel)
+    if (!m) throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
+    return m
   }
-  return requestedModel
+  const m = role === 'main' ? config.anthropicMainModel : config.anthropicLightweightModel
+  if (!m) throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
+  return m
+}
+
+/**
+ * Best-effort display name lookup for a resolved model id. Calls the
+ * provider's models endpoint and returns the display name from the live
+ * list; falls back to the raw model id on any failure (network, auth, etc).
+ *
+ * Used by phase-string UI (`profileStore`) so users see the model they
+ * picked in Settings rather than a hardcoded "Haiku" / "Opus" label.
+ * Phase strings must never block on this lookup — hence the try/catch.
+ */
+export async function getResolvedModelLabel(config: LlmConfig, role: LlmModelRole): Promise<string> {
+  const id = resolveModel(config, role)
+  try {
+    const models = await fetchModels(config)
+    const match = models.find((m) => m.id === id)
+    return match?.displayName ?? id
+  } catch {
+    return id
+  }
 }
 
 export async function streamChatResponse(
   config: LlmConfig,
-  requestedModel: string,
+  role: LlmModelRole,
   system: string,
   messages: Message[],
   maxTokens: number,
@@ -102,7 +123,7 @@ export async function streamChatResponse(
 ): Promise<void> {
   let model: string
   try {
-    model = resolveModel(config, requestedModel)
+    model = resolveModel(config, role)
   } catch (e) {
     onError(e as Error)
     return
@@ -127,13 +148,13 @@ export async function streamChatResponse(
 
 export async function sendMessage(
   config: LlmConfig,
-  requestedModel: string,
+  role: LlmModelRole,
   system: string,
   messages: Message[],
   maxTokens: number = 500,
   signal?: AbortSignal,
 ): Promise<string> {
-  const model = resolveModel(config, requestedModel)
+  const model = resolveModel(config, role)
   if (config.provider === 'local') {
     return localServer.sendMessage(config.localBaseUrl, model, system, messages, maxTokens, signal)
   }
@@ -145,14 +166,14 @@ export async function sendMessage(
 
 export async function sendMessageStreaming(
   config: LlmConfig,
-  requestedModel: string,
+  role: LlmModelRole,
   system: string,
   messages: Message[],
   maxTokens: number,
   onProgress: (charsReceived: number) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const model = resolveModel(config, requestedModel)
+  const model = resolveModel(config, role)
   if (config.provider === 'local') {
     return localServer.sendMessageStreaming(config.localBaseUrl, model, system, messages, maxTokens, onProgress, signal)
   }

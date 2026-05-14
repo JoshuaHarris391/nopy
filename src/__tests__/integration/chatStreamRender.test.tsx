@@ -99,6 +99,7 @@ beforeEach(() => {
     apiKey: 'test-key',
     journalPath: '',
     preferredModel: 'claude-sonnet-4-5',
+    anthropicLightweightModel: 'claude-haiku-4-5',
     maxOutputTokens: 4096,
     contextBudget: 30000,
     provider: 'anthropic',
