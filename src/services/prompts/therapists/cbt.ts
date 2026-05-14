@@ -1,4 +1,10 @@
-export const CBT_SYSTEM_PROMPT = `# CBT Therapy Agent — System Prompt & Architecture Guide
+import { VOICE_PREAMBLE } from '../voice'
+
+export const CBT_SYSTEM_PROMPT = `${VOICE_PREAMBLE}
+
+---
+
+# CBT Therapy Agent — System Prompt & Architecture Guide
 
 ## Overview
 
