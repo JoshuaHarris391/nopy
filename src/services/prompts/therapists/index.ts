@@ -1,7 +1,8 @@
 import { CBT_SYSTEM_PROMPT } from './cbt'
 import { ACT_SYSTEM_PROMPT } from './act'
+import { BREAKUP_SYSTEM_PROMPT } from './breakup'
 
-export type TherapyType = 'cbt' | 'act'
+export type TherapyType = 'cbt' | 'act' | 'breakup'
 
 export interface TherapyAgent {
   id: TherapyType
@@ -30,6 +31,14 @@ export const THERAPIES: Record<TherapyType, TherapyAgent> = {
       'Builds psychological flexibility through defusion, acceptance, and values-driven action; never challenges thought content.',
     systemPrompt: ACT_SYSTEM_PROMPT,
   },
+  breakup: {
+    id: 'breakup',
+    label: 'Breakup Therapy',
+    shortLabel: 'BUT',
+    description:
+      'To help users through break ups',
+    systemPrompt: BREAKUP_SYSTEM_PROMPT,
+  }
 }
 
 export function getTherapyPrompt(type: TherapyType | undefined): string {
