@@ -33,10 +33,10 @@ export const THERAPIES: Record<TherapyType, TherapyAgent> = {
   },
   breakup: {
     id: 'breakup',
-    label: 'Breakup Therapy',
+    label: 'BT - Theraputic support during a breakup',
     shortLabel: 'BUT',
     description:
-      'To help users through break ups',
+      'To help users through breakups, loss, and grief',
     systemPrompt: BREAKUP_SYSTEM_PROMPT,
   }
 }
