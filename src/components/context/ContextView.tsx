@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  pointerWithin,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  MeasuringStrategy,
+  type CollisionDetection,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useShallow } from 'zustand/react/shallow'
 import { MainHeader } from '../ui/MainHeader'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ContextBudgetBar } from './ContextBudgetBar'
-import { ContextShelf } from './ContextShelf'
-import { ContextCard } from './ContextCard'
+import { ContextShelf, ShelfCardView } from './ContextShelf'
+import { ContextGrid } from './ContextGrid'
+import { GridCardView } from './ContextCard'
 import { ContextNoteEditor } from './ContextNoteEditor'
 import { useContextStore } from '../../stores/contextStore'
 import { useProfileStore } from '../../stores/profileStore'
@@ -16,11 +32,24 @@ import { resolveContextItems } from '../../services/contextResolver'
 import { getModelContextWindow } from '../../services/models'
 import { getTherapyPrompt } from '../../services/prompts/therapists'
 import { estimateTokens } from '../../utils/tokenEstimator'
-import type { ContextNote } from '../../types/context'
+import type { ContextNote, ResolvedContextItem } from '../../types/context'
 
 const sectionLabelStyle: React.CSSProperties = {
   fontFamily: 'var(--font-ui)', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em',
   textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 10,
+}
+
+type Containers = { shelf: string[]; grid: string[] }
+
+/**
+ * Pointer-first collision detection: the drop target is whatever the cursor is
+ * over, so dragging a card between the shelf and the grid follows the pointer
+ * in both directions. Falls back to closestCorners for the keyboard sensor
+ * (which has no pointer coordinates).
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args)
+  return pointer.length > 0 ? pointer : closestCorners(args)
 }
 
 export function ContextView() {
@@ -32,7 +61,7 @@ export function ContextView() {
   const updateNote = useContextStore((s) => s.updateNote)
   const deleteNote = useContextStore((s) => s.deleteNote)
   const setInjected = useContextStore((s) => s.setInjected)
-  const moveInjected = useContextStore((s) => s.moveInjected)
+  const applyShelf = useContextStore((s) => s.applyShelf)
 
   const profile = useProfileStore((s) => s.profile)
   const profileLoaded = useProfileStore((s) => s.loaded)
@@ -63,15 +92,86 @@ export function ContextView() {
   const injectedItems = useMemo(() => resolved.filter((r) => r.injected), [resolved])
   const availableItems = useMemo(() => resolved.filter((r) => !r.injected), [resolved])
 
+  const byId = useMemo(() => new Map(resolved.map((r) => [r.id, r])), [resolved])
+  const derived = useMemo<Containers>(() => ({
+    shelf: injectedItems.map((i) => i.id),
+    grid: availableItems.filter((i) => i.available).map((i) => i.id),
+  }), [injectedItems, availableItems])
+  const staticItems = useMemo(() => availableItems.filter((i) => !i.available), [availableItems])
+
+  // Live container state during a drag (so the shelf opens a gap); null when idle.
+  const [override, setOverride] = useState<Containers | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeOrigin, setActiveOrigin] = useState<'shelf' | 'grid' | null>(null)
+  const containers = override ?? derived
+
   const window = useMemo(
     () => getModelContextWindow(llmConfig, localModels, windowOverride),
     [llmConfig, localModels, windowOverride],
   )
   const baseTokens = useMemo(() => estimateTokens(getTherapyPrompt(therapyType)), [therapyType])
-  const injectedTokens = useMemo(
-    () => injectedItems.reduce((sum, i) => sum + i.tokenEstimate, 0),
-    [injectedItems],
+  const injectedTokens = useMemo(() => injectedItems.reduce((sum, i) => sum + i.tokenEstimate, 0), [injectedItems])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  const findContainer = (id: string): keyof Containers | null =>
+    id === 'shelf' || id === 'grid' ? (id as keyof Containers)
+      : containers.shelf.includes(id) ? 'shelf'
+        : containers.grid.includes(id) ? 'grid'
+          : null
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id)
+    setActiveId(id)
+    setActiveOrigin(findContainer(id))
+    setOverride(derived)
+  }
+
+  const handleDragOver = (e: DragOverEvent) => {
+    const { active, over } = e
+    if (!over) return
+    const a = String(active.id)
+    const o = String(over.id)
+    const ac = findContainer(a)
+    const oc = findContainer(o)
+    if (!ac || !oc || ac === oc) return
+    setOverride((prev) => {
+      const base = prev ?? derived
+      const overItems = base[oc]
+      const idx = overItems.indexOf(o)
+      const insertAt = idx >= 0 ? idx : overItems.length
+      return {
+        ...base,
+        [ac]: base[ac].filter((x) => x !== a),
+        [oc]: [...overItems.slice(0, insertAt), a, ...overItems.slice(insertAt)],
+      }
+    })
+  }
+
+  const reset = () => { setOverride(null); setActiveId(null); setActiveOrigin(null) }
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    const a = String(active.id)
+    const ac = findContainer(a)
+    if (!over || !ac) { reset(); return }
+    const o = String(over.id)
+    const oc = findContainer(o)
+    const base = override ?? derived
+    let nextShelf = base.shelf
+    if (oc) {
+      const overItems = base[oc]
+      const ai = overItems.indexOf(a)
+      const oi = overItems.indexOf(o)
+      const next = ai !== -1 && oi !== -1 && ai !== oi ? { ...base, [oc]: arrayMove(overItems, ai, oi) } : base
+      nextShelf = next.shelf
+    }
+    applyShelf(nextShelf)
+    reset()
+  }
 
   const openNew = () => { setEditingNote(null); setEditorOpen(true) }
   const openEdit = (note: ContextNote) => { setEditingNote(note); setEditorOpen(true) }
@@ -86,6 +186,8 @@ export function ContextView() {
     setEditorOpen(false)
     setEditingNote(null)
   }
+
+  const activeItem = activeId ? byId.get(activeId) : null
 
   return (
     <>
@@ -105,29 +207,44 @@ export function ContextView() {
             outputReserve={maxOutputTokens}
           />
 
-          <div style={{ marginTop: 24 }}>
-            <div style={sectionLabelStyle}>Shelf — injected, in order</div>
-            <ContextShelf items={injectedItems} onMove={moveInjected} onRemove={(id) => setInjected(id, false)} />
-          </div>
-
-          <div style={{ marginTop: 28 }}>
-            <div style={sectionLabelStyle}>Available</div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-              <NewNoteTile onClick={openNew} />
-              {availableItems.map((item) => (
-                <ContextCard
-                  key={item.id}
-                  item={item}
-                  onAdd={() => setInjected(item.id, true)}
-                  onEdit={item.editable ? () => {
-                    const n = notes.find((x) => x.id === item.id)
-                    if (n) openEdit(n)
-                  } : undefined}
-                  onDelete={item.editable ? () => setDeleteId(item.id) : undefined}
-                />
-              ))}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={reset}
+          >
+            <div style={{ marginTop: 24 }}>
+              <div style={sectionLabelStyle}>Shelf — injected, in order</div>
+              <ContextShelf ids={containers.shelf} byId={byId} onRemove={(id) => setInjected(id, false)} />
             </div>
-          </div>
+
+            <div style={{ marginTop: 28 }}>
+              <div style={sectionLabelStyle}>Available</div>
+              <ContextGrid
+                draggable={containers.grid.map((id) => byId.get(id)).filter((x): x is ResolvedContextItem => !!x)}
+                staticItems={staticItems}
+                onNewNote={openNew}
+                onAdd={(id) => setInjected(id, true)}
+                onEdit={(id) => { const n = notes.find((x) => x.id === id); if (n) openEdit(n) }}
+                onDelete={(id) => setDeleteId(id)}
+              />
+            </div>
+
+            <DragOverlay>
+              {activeItem && activeOrigin === 'shelf' ? (
+                <div style={{ width: 168, cursor: 'grabbing' }}>
+                  <ShelfCardView item={activeItem} order={containers.shelf.indexOf(activeItem.id) + 1} dragging />
+                </div>
+              ) : activeItem ? (
+                <div style={{ width: 180, cursor: 'grabbing' }}>
+                  <GridCardView item={activeItem} dragging />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       </div>
 
@@ -149,27 +266,5 @@ export function ContextView() {
         onCancel={() => setDeleteId(null)}
       />
     </>
-  )
-}
-
-function NewNoteTile({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center justify-center aspect-square cursor-pointer"
-      style={{
-        gap: 8,
-        background: 'transparent',
-        border: '1.5px dashed var(--stone)',
-        borderRadius: 'var(--radius-md)',
-        color: 'var(--sage)',
-        transition: 'all var(--transition-gentle)',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--forest)'; e.currentTarget.style.color = 'var(--forest)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--stone)'; e.currentTarget.style.color = 'var(--sage)' }}
-    >
-      <Plus size={22} strokeWidth={1.8} />
-      <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500 }}>New note</span>
-    </button>
   )
 }

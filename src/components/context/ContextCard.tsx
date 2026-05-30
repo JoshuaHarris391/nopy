@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Target, List, FileText, Plus, Trash2 } from 'lucide-react'
 import type { ResolvedContextItem, ContextItemKind } from '../../types/context'
 
@@ -20,18 +22,26 @@ function previewText(item: ResolvedContextItem): string {
     : 'Index your journal entries (Index tab) to use them as context.'
 }
 
-interface ContextCardProps {
+interface GridCardViewProps {
   item: ResolvedContextItem
-  onAdd: () => void
+  onAdd?: () => void
   onEdit?: () => void
   onDelete?: () => void
+  /** True when rendered inside the DragOverlay — gives the lifted shadow. */
+  dragging?: boolean
 }
 
-/** A square tile in the Available grid. */
-export function ContextCard({ item, onAdd, onEdit, onDelete }: ContextCardProps) {
+/** Presentational square tile for the Available grid (and the drag overlay). */
+export function GridCardView({ item, onAdd, onEdit, onDelete, dragging = false }: GridCardViewProps) {
   const Icon = KIND_ICON[item.kind]
   const [hovered, setHovered] = useState(false)
   const disabled = !item.available
+
+  const boxShadow = dragging
+    ? '0 14px 30px var(--shadow-warm-deep)'
+    : hovered && !disabled
+      ? '0 6px 22px var(--shadow-warm-hover)'
+      : '0 2px 8px var(--shadow-warm)'
 
   return (
     <div
@@ -46,18 +56,18 @@ export function ContextCard({ item, onAdd, onEdit, onDelete }: ContextCardProps)
         padding: 16,
         cursor: item.editable ? 'pointer' : 'default',
         opacity: disabled ? 0.55 : 1,
-        boxShadow: hovered && !disabled ? '0 6px 22px var(--shadow-warm-hover)' : '0 2px 8px var(--shadow-warm)',
-        transform: hovered && !disabled ? 'translateY(-2px)' : 'translateY(0)',
+        boxShadow,
+        transform: !dragging && hovered && !disabled ? 'translateY(-2px)' : 'translateY(0)',
         borderColor: hovered && !disabled ? 'var(--sage)' : 'var(--stone)',
-        transition: 'all var(--transition-gentle)',
+        transition: 'box-shadow var(--transition-gentle), transform var(--transition-gentle), border-color var(--transition-gentle)',
       }}
     >
-      {/* Header: icon + delete (notes) */}
       <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <Icon size={18} strokeWidth={1.6} style={{ color: 'var(--forest)', flexShrink: 0 }} />
         {item.editable && onDelete && (
           <button
             aria-label="Delete note"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onDelete() }}
             className="flex items-center justify-center cursor-pointer"
             style={{
@@ -73,7 +83,6 @@ export function ContextCard({ item, onAdd, onEdit, onDelete }: ContextCardProps)
         )}
       </div>
 
-      {/* Title */}
       <div
         style={{
           fontFamily: 'var(--font-heading)', fontSize: 14.5, fontWeight: 500,
@@ -84,7 +93,6 @@ export function ContextCard({ item, onAdd, onEdit, onDelete }: ContextCardProps)
         {item.title}
       </div>
 
-      {/* Preview */}
       <div
         className="flex-1"
         style={{
@@ -96,26 +104,56 @@ export function ContextCard({ item, onAdd, onEdit, onDelete }: ContextCardProps)
         {previewText(item)}
       </div>
 
-      {/* Footer: tokens + add */}
       <div className="flex items-center justify-between" style={{ marginTop: 10 }}>
         <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--sage)' }}>
           ~{item.tokenEstimate.toLocaleString()} tok
         </span>
-        <button
-          disabled={disabled}
-          onClick={(e) => { e.stopPropagation(); if (!disabled) onAdd() }}
-          className="flex items-center cursor-pointer"
-          style={{
-            gap: 4, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontWeight: 500,
-            padding: '4px 10px', borderRadius: 'var(--radius-sm)',
-            background: disabled ? 'transparent' : 'var(--warm-cream)',
-            border: '1px solid var(--stone)', color: disabled ? 'var(--sage)' : 'var(--forest)',
-            cursor: disabled ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <Plus size={12} strokeWidth={2} /> Add
-        </button>
+        {onAdd && (
+          <button
+            disabled={disabled}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); if (!disabled) onAdd() }}
+            className="flex items-center"
+            style={{
+              gap: 4, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontWeight: 500,
+              padding: '4px 10px', borderRadius: 'var(--radius-sm)',
+              background: disabled ? 'transparent' : 'var(--warm-cream)',
+              border: '1px solid var(--stone)', color: disabled ? 'var(--sage)' : 'var(--forest)',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <Plus size={12} strokeWidth={2} /> Add
+          </button>
+        )}
       </div>
+    </div>
+  )
+}
+
+interface SortableGridCardProps {
+  item: ResolvedContextItem
+  onAdd: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+}
+
+/** Draggable wrapper: drag a tile onto the shelf to inject it. */
+export function SortableGridCard({ item, onAdd, onEdit, onDelete }: SortableGridCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        touchAction: 'none',
+        cursor: 'grab',
+      }}
+    >
+      <GridCardView item={item} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
     </div>
   )
 }

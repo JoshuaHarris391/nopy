@@ -57,7 +57,7 @@ interface ContextState {
   updateNote: (id: string, updates: Partial<ContextNote>) => Promise<void>
   deleteNote: (id: string) => Promise<void>
   setInjected: (id: string, injected: boolean) => Promise<void>
-  moveInjected: (id: string, direction: 'left' | 'right') => Promise<void>
+  applyShelf: (orderedIds: string[]) => Promise<void>
   clear: () => Promise<void>
 }
 
@@ -176,23 +176,22 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
     await saveManifestToDisk(Object.values(injection), getJournalPath())
   },
 
-  moveInjected: async (id, direction) => {
+  applyShelf: async (orderedIds) => {
+    // The single commit for a drag: `orderedIds` is the exact set + order of
+    // items on the shelf afterwards. Mark those injected with sequential order;
+    // mark anything that *was* injected but isn't on the shelf as no longer
+    // injected (dragged off). Handles add, remove, and reorder in one pass.
     const current = getState().injection
-    const ordered = Object.values(current)
-      .filter((i) => i.injected)
-      .sort((a, b) => a.order - b.order)
-    const idx = ordered.findIndex((i) => i.id === id)
-    if (idx === -1) return
-    const swapWith = direction === 'left' ? idx - 1 : idx + 1
-    if (swapWith < 0 || swapWith >= ordered.length) return
-
-    const reordered = [...ordered]
-    ;[reordered[idx], reordered[swapWith]] = [reordered[swapWith], reordered[idx]]
-
     const injection = { ...current }
-    reordered.forEach((item, i) => {
-      injection[item.id] = { ...item, order: i }
+    const shelf = new Set(orderedIds)
+    orderedIds.forEach((id, i) => {
+      injection[id] = { id, injected: true, order: i }
     })
+    for (const inj of Object.values(current)) {
+      if (inj.injected && !shelf.has(inj.id)) {
+        injection[inj.id] = { ...inj, injected: false }
+      }
+    }
     setState({ injection })
     await set(INJECTION_KEY, Object.values(injection))
     await saveManifestToDisk(Object.values(injection), getJournalPath())

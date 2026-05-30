@@ -411,13 +411,14 @@ in `src/index.css`). Reuse the existing patterns rather than inventing new ones:
 
 ## Dependencies
 
-- None required for the MVP: grid tiles carry an **"Add to context"** button and shelf cards
-  carry **◀/▶ + Remove** buttons — zero new deps.
-- **Recommended for the full experience**: `@dnd-kit/core` + `@dnd-kit/sortable` (small,
-  React 19 compatible). The shelf↔grid metaphor is naturally drag-driven — drag a square tile
-  up onto the shelf to inject, drag within the shelf to reorder, drag off to remove. No DnD
-  library exists in the project today (`package.json`), so this is a deliberate add — install
-  via `npm install` and confirm before pulling it in.
+- **`@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities`** (React 19 compatible) —
+  a single `DndContext` over both the shelf and the grid gives the unified iOS-style
+  interaction: drag a grid tile onto the shelf to inject it (the shelf opens a **live gap**
+  via `horizontalListSortingStrategy`), reorder within the shelf, and drag a card off the
+  shelf to remove it. A `DragOverlay` renders the lifted clone (scale/shadow). Built-in
+  `KeyboardSensor` + `sortableKeyboardCoordinates` give keyboard reordering for free. Chosen
+  over `motion`'s `Reorder` because that is single-group and can't do cross-zone drag.
+  Grid tiles keep an **"Add to context"** button as a click shortcut.
 
 ## Migration & backwards compatibility
 
@@ -462,9 +463,9 @@ scratch**. Verified counts: `contextAssembler.test.ts` = 14, `settingsStore.test
 
 ## Open questions / decisions
 
-1. **Reorder UX**: ship the no-dep buttons (grid "Add to context" + shelf ◀/▶/Remove) for v1,
-   or add `@dnd-kit` now for drag-a-tile-onto-the-shelf? (Recommendation: buttons first, drag
-   shortly after — the shelf/grid layout is designed for drag.)
+1. **Reorder UX** — _resolved_: unified `@dnd-kit` drag across shelf + grid — drag a tile
+   onto the shelf to inject (live gap), reorder within the shelf, drag off to remove, plus
+   keyboard reorder. Grid "Add to context" remains as a click shortcut.
 2. **`conversationReserve`**: derived `clamp(0.2*W, 2k, 50k)` for v1, or expose as a setting?
 3. **Mobile nav**: 6th `BottomNav` item vs. desktop-only Context entry.
 4. **Index granularity**: keep `JOURNAL_INDEX_LIMIT = 30`, or make the injected index's entry

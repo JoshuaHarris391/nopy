@@ -83,18 +83,35 @@ describe('useContextStore', () => {
     expect(inj[SYSTEM_INDEX_ID]).toEqual({ id: SYSTEM_INDEX_ID, injected: false, order: 1 })
   })
 
-  it('reorders injected items when moved along the shelf', async () => {
+  it('applyShelf reorders the shelf, renumbering by array position', async () => {
     /**
-     * Moving the profile to the right swaps it with the index, and the orders
-     * are renumbered sequentially from 0.
-     * Input: default seed (profile 0, index 1), move profile right
+     * A drag commits the full new shelf order via applyShelf. Reordering the
+     * default seed to [index, profile] must renumber them 0,1.
+     * Input: default seed (profile 0, index 1), applyShelf([index, profile])
      * Expected output: index order 0, profile order 1
      */
     await useContextStore.getState().loadContext()
-    await useContextStore.getState().moveInjected(SYSTEM_PROFILE_ID, 'right')
+    await useContextStore.getState().applyShelf([SYSTEM_INDEX_ID, SYSTEM_PROFILE_ID])
     const inj = useContextStore.getState().injection
     expect(inj[SYSTEM_INDEX_ID].order).toBe(0)
     expect(inj[SYSTEM_PROFILE_ID].order).toBe(1)
+  })
+
+  it('applyShelf injects items dragged in and un-injects items dragged off', async () => {
+    /**
+     * The whole point of cross-zone drag: a note dragged onto the shelf becomes
+     * injected at its dropped position, and a system item dragged off the shelf
+     * becomes available again — both expressed as the new shelf array. Here a
+     * note is added at the front and the index is dropped from the shelf.
+     * Input: default seed (profile, index), applyShelf([note, profile])
+     * Expected output: note injected order 0, profile order 1, index injected=false
+     */
+    await useContextStore.getState().loadContext()
+    await useContextStore.getState().applyShelf(['note-x', SYSTEM_PROFILE_ID])
+    const inj = useContextStore.getState().injection
+    expect(inj['note-x']).toEqual({ id: 'note-x', injected: true, order: 0 })
+    expect(inj[SYSTEM_PROFILE_ID].order).toBe(1)
+    expect(inj[SYSTEM_INDEX_ID].injected).toBe(false)
   })
 
   it('removes a note and its injection entry on delete', async () => {
