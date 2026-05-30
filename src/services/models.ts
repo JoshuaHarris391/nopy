@@ -50,15 +50,19 @@ export interface LocalModelWindow {
 
 /**
  * Resolve the active model's context window (in tokens) for the budget bar and
- * the window-aware message budget. A non-null `override` always wins, so the
- * user can correct a missing/wrong detection. For local mode we read the loaded
- * window LM Studio reports; for hosted modes we look up the static map and fall
- * back to a safe default.
+ * the window-aware message budget. Priority:
+ *   1. `override` — the user's manual value always wins.
+ *   2. local mode — the loaded window LM Studio reports.
+ *   3. `catalogWindow` — the real window from the LiteLLM dataset (see
+ *      `modelCatalogStore`), resolved by the caller for the active hosted model.
+ *   4. the static `MODEL_CONTEXT_WINDOWS` map — offline / pre-fetch fallback.
+ *   5. a safe provider default.
  */
 export function getModelContextWindow(
   config: LlmConfig,
   localModels?: LocalModelWindow[],
   override?: number | null,
+  catalogWindow?: number,
 ): { tokens: number; source: 'detected' | 'default' | 'manual' } {
   if (override && override > 0) return { tokens: override, source: 'manual' }
 
@@ -67,6 +71,8 @@ export function getModelContextWindow(
     const t = m?.loadedContextLength ?? m?.maxContextLength
     return t ? { tokens: t, source: 'detected' } : { tokens: DEFAULT_CONTEXT_WINDOW.local, source: 'default' }
   }
+
+  if (catalogWindow && catalogWindow > 0) return { tokens: catalogWindow, source: 'detected' }
 
   const id = config.provider === 'openai' ? config.openaiModel : config.anthropicMainModel
   const t = MODEL_CONTEXT_WINDOWS[id]

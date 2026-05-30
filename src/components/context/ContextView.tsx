@@ -24,6 +24,7 @@ import { ContextGrid } from './ContextGrid'
 import { GridCardView } from './ContextCard'
 import { ContextNoteEditor } from './ContextNoteEditor'
 import { useContextStore } from '../../stores/contextStore'
+import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
@@ -76,6 +77,8 @@ export function ContextView() {
   const windowOverride = useSettingsStore((s) => s.modelContextWindowOverride)
   const localBaseUrl = useSettingsStore((s) => s.localBaseUrl)
   const { models: localModels } = useLocalModels(llmConfig.provider === 'local' ? localBaseUrl : '')
+  const ensureCatalog = useModelCatalogStore((s) => s.ensure)
+  const catalogWindows = useModelCatalogStore((s) => s.windows)
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<ContextNote | null>(null)
@@ -84,6 +87,7 @@ export function ContextView() {
   useEffect(() => { if (!loaded) loadContext() }, [loaded, loadContext])
   useEffect(() => { if (!profileLoaded) loadProfile() }, [profileLoaded, loadProfile])
   useEffect(() => { if (!journalLoaded) loadEntries() }, [journalLoaded, loadEntries])
+  useEffect(() => { ensureCatalog() }, [ensureCatalog])
 
   const resolved = useMemo(
     () => resolveContextItems(notes, injection, profile, entries),
@@ -105,9 +109,17 @@ export function ContextView() {
   const [activeOrigin, setActiveOrigin] = useState<'shelf' | 'grid' | null>(null)
   const containers = override ?? derived
 
+  // Real context window for the active hosted model, from the LiteLLM catalog
+  // (undefined for local, which uses its own native ping).
+  const catalogWindow = useMemo(() => {
+    if (llmConfig.provider === 'local') return undefined
+    const id = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
+    return catalogWindows[id] ?? catalogWindows[id.replace(/-\d{8}$/, '')]
+  }, [llmConfig, catalogWindows])
+
   const window = useMemo(
-    () => getModelContextWindow(llmConfig, localModels, windowOverride),
-    [llmConfig, localModels, windowOverride],
+    () => getModelContextWindow(llmConfig, localModels, windowOverride, catalogWindow),
+    [llmConfig, localModels, windowOverride, catalogWindow],
   )
   const baseTokens = useMemo(() => estimateTokens(getTherapyPrompt(therapyType)), [therapyType])
   const injectedTokens = useMemo(() => injectedItems.reduce((sum, i) => sum + i.tokenEstimate, 0), [injectedItems])

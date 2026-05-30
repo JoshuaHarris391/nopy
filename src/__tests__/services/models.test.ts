@@ -79,4 +79,47 @@ describe('getModelContextWindow', () => {
     expect(getModelContextWindow(cfg({ provider: 'anthropic', anthropicMainModel: 'claude-sonnet-4-5-20250514' }), undefined, 32_000))
       .toEqual({ tokens: 32_000, source: 'manual' })
   })
+
+  it('prefers the LiteLLM catalog window over the static map for hosted models', () => {
+    /**
+     * Once the LiteLLM dataset has resolved the active model's real window, it
+     * takes precedence over the hand-maintained static map — that's the whole
+     * point of fetching it. Here the model is also in the static map (200k) but
+     * the catalog says 1M, and the catalog must win.
+     * Input: anthropic model in the static map + catalogWindow of 1,000,000
+     * Expected output: { tokens: 1000000, source: 'detected' }
+     */
+    expect(getModelContextWindow(
+      cfg({ provider: 'anthropic', anthropicMainModel: 'claude-sonnet-4-5-20250514' }),
+      undefined,
+      null,
+      1_000_000,
+    )).toEqual({ tokens: 1_000_000, source: 'detected' })
+  })
+
+  it('falls back to the static map when the catalog has no window yet (offline / pre-fetch)', () => {
+    /**
+     * Before the dataset loads (or when offline) catalogWindow is undefined and
+     * the bar must still show a sensible number from the built-in map.
+     * Input: a mapped OpenAI model + catalogWindow undefined
+     * Expected output: { tokens: 128000, source: 'detected' } (from the map)
+     */
+    expect(getModelContextWindow(cfg({ provider: 'openai', openaiModel: 'gpt-4o' }), undefined, null, undefined))
+      .toEqual({ tokens: 128_000, source: 'detected' })
+  })
+
+  it('ignores the catalog window for local mode (native ping is authoritative)', () => {
+    /**
+     * Local (LM Studio) reports the actually-loaded window, which can be smaller
+     * than the model's theoretical max. A catalog value must never override it.
+     * Input: local model with loadedContextLength 4096 + a catalogWindow of 1M
+     * Expected output: { tokens: 4096, source: 'detected' } (the loaded window)
+     */
+    expect(getModelContextWindow(
+      cfg({ provider: 'local', localModel: 'm' }),
+      [{ id: 'm', loadedContextLength: 4096, maxContextLength: 8192 }],
+      null,
+      1_000_000,
+    )).toEqual({ tokens: 4096, source: 'detected' })
+  })
 })
