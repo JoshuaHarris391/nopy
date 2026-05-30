@@ -15,6 +15,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
+import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { MainHeader } from '../ui/MainHeader'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -23,6 +24,7 @@ import { ContextShelf, ShelfCardView } from './ContextShelf'
 import { ContextGrid } from './ContextGrid'
 import { GridCardView } from './ContextCard'
 import { ContextNoteEditor } from './ContextNoteEditor'
+import { ContextItemViewer } from './ContextItemViewer'
 import { useContextStore } from '../../stores/contextStore'
 import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { useProfileStore } from '../../stores/profileStore'
@@ -30,6 +32,7 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useLocalModels } from '../../hooks/useLocalModels'
 import { resolveContextItems } from '../../services/contextResolver'
+import { renderProfileBlock, renderIndexBlock } from '../../services/contextAssembler'
 import { getModelContextWindow } from '../../services/models'
 import { getTherapyPrompt } from '../../services/prompts/therapists'
 import { estimateTokens } from '../../utils/tokenEstimator'
@@ -54,6 +57,7 @@ const collisionDetection: CollisionDetection = (args) => {
 }
 
 export function ContextView() {
+  const navigate = useNavigate()
   const notes = useContextStore((s) => s.notes)
   const injection = useContextStore((s) => s.injection)
   const loaded = useContextStore((s) => s.loaded)
@@ -82,6 +86,7 @@ export function ContextView() {
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<ContextNote | null>(null)
+  const [viewingItem, setViewingItem] = useState<ResolvedContextItem | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   useEffect(() => { if (!loaded) loadContext() }, [loaded, loadContext])
@@ -241,6 +246,7 @@ export function ContextView() {
                 onNewNote={openNew}
                 onAdd={(id) => setInjected(id, true)}
                 onEdit={(id) => { const n = notes.find((x) => x.id === id); if (n) openEdit(n) }}
+                onView={(id) => { const it = byId.get(id); if (it) setViewingItem(it) }}
                 onDelete={(id) => setDeleteId(id)}
               />
             </div>
@@ -266,6 +272,16 @@ export function ContextView() {
           note={editingNote}
           onSave={handleSave}
           onClose={() => { setEditorOpen(false); setEditingNote(null) }}
+        />
+      )}
+
+      {viewingItem && (
+        <ContextItemViewer
+          title={viewingItem.title}
+          markdown={viewingItem.kind === 'profile' ? renderProfileBlock(profile) : renderIndexBlock(entries)}
+          fullPageLabel={viewingItem.kind === 'profile' ? 'Open Profile page' : 'Open Index page'}
+          onOpenFull={() => navigate(viewingItem.kind === 'profile' ? '/profile' : '/index')}
+          onClose={() => setViewingItem(null)}
         />
       )}
 

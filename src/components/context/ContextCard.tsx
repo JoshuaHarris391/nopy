@@ -25,17 +25,24 @@ function previewText(item: ResolvedContextItem): string {
 interface GridCardViewProps {
   item: ResolvedContextItem
   onAdd?: () => void
+  /** Open a note in the editor (notes only). */
   onEdit?: () => void
+  /** Open a system card (profile/index) in the read-only viewer. */
+  onView?: () => void
   onDelete?: () => void
   /** True when rendered inside the DragOverlay — gives the lifted shadow. */
   dragging?: boolean
 }
 
 /** Presentational square tile for the Available grid (and the drag overlay). */
-export function GridCardView({ item, onAdd, onEdit, onDelete, dragging = false }: GridCardViewProps) {
+export function GridCardView({ item, onAdd, onEdit, onView, onDelete, dragging = false }: GridCardViewProps) {
   const Icon = KIND_ICON[item.kind]
   const [hovered, setHovered] = useState(false)
   const disabled = !item.available
+  // Notes open the editor; system cards open the read-only viewer. Either way
+  // the tile is clickable only when a handler is supplied (not in the drag
+  // overlay or for dimmed, data-less cards).
+  const onOpen = item.editable ? onEdit : onView
 
   const boxShadow = dragging
     ? '0 14px 30px var(--shadow-warm-deep)'
@@ -48,13 +55,13 @@ export function GridCardView({ item, onAdd, onEdit, onDelete, dragging = false }
       className="relative flex flex-col aspect-square overflow-hidden"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => { if (item.editable && onEdit) onEdit() }}
+      onClick={() => onOpen?.()}
       style={{
         background: 'var(--parchment)',
         border: '1px solid var(--stone)',
         borderRadius: 'var(--radius-md)',
         padding: 16,
-        cursor: item.editable ? 'pointer' : 'default',
+        cursor: onOpen ? 'pointer' : 'default',
         opacity: disabled ? 0.55 : 1,
         boxShadow,
         transform: !dragging && hovered && !disabled ? 'translateY(-2px)' : 'translateY(0)',
@@ -134,11 +141,12 @@ interface SortableGridCardProps {
   item: ResolvedContextItem
   onAdd: () => void
   onEdit?: () => void
+  onView?: () => void
   onDelete?: () => void
 }
 
 /** Draggable wrapper: drag a tile onto the shelf to inject it. */
-export function SortableGridCard({ item, onAdd, onEdit, onDelete }: SortableGridCardProps) {
+export function SortableGridCard({ item, onAdd, onEdit, onView, onDelete }: SortableGridCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   return (
     <div
@@ -153,7 +161,7 @@ export function SortableGridCard({ item, onAdd, onEdit, onDelete }: SortableGrid
         cursor: 'grab',
       }}
     >
-      <GridCardView item={item} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+      <GridCardView item={item} onAdd={onAdd} onEdit={onEdit} onView={onView} onDelete={onDelete} />
     </div>
   )
 }

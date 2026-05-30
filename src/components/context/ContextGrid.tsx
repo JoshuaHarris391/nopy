@@ -12,6 +12,7 @@ interface ContextGridProps {
   onNewNote: () => void
   onAdd: (id: string) => void
   onEdit: (id: string) => void
+  onView: (id: string) => void
   onDelete: (id: string) => void
 }
 
@@ -20,7 +21,7 @@ interface ContextGridProps {
  * tile out of here and onto the shelf injects it; dragging a shelf card back
  * here removes it. Rendered inside ContextView's DndContext.
  */
-export function ContextGrid({ draggable, staticItems, onNewNote, onAdd, onEdit, onDelete }: ContextGridProps) {
+export function ContextGrid({ draggable, staticItems, onNewNote, onAdd, onEdit, onView, onDelete }: ContextGridProps) {
   const { setNodeRef, isOver } = useDroppable({ id: 'grid' })
 
   return (
@@ -42,6 +43,7 @@ export function ContextGrid({ draggable, staticItems, onNewNote, onAdd, onEdit, 
             item={item}
             onAdd={() => onAdd(item.id)}
             onEdit={item.editable ? () => onEdit(item.id) : undefined}
+            onView={item.editable ? undefined : () => onView(item.id)}
             onDelete={item.editable ? () => onDelete(item.id) : undefined}
           />
         ))}
