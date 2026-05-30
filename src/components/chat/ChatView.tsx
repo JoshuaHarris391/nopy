@@ -6,6 +6,7 @@ import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useContextStore } from '../../stores/contextStore'
+import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { TOKEN_LIMITS, getModelContextWindow } from '../../services/models'
@@ -88,6 +89,10 @@ export function ChatView() {
   useEffect(() => {
     if (!contextLoaded) loadContext()
   }, [contextLoaded, loadContext])
+
+  // Warm the LiteLLM context-window catalog so the first send sizes the budget
+  // to the model's real window.
+  useEffect(() => { useModelCatalogStore.getState().ensure() }, [])
 
   // Auto-collapse session panel below 1024px
   useEffect(() => {
@@ -243,10 +248,13 @@ export function ChatView() {
     const ctx = useContextStore.getState()
     const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries)
     const injectedItems = toInjectedItems(resolved)
+    const hostedId = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
+    const catalogWindow = llmConfig.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
     const { tokens: window } = getModelContextWindow(
       llmConfig,
       localModelsRef.current,
       useSettingsStore.getState().modelContextWindowOverride,
+      catalogWindow,
     )
 
     const { system, messages } = assembleContext(
