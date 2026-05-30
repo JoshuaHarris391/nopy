@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { BookOpen, MessageCircle, Target, List, Settings } from 'lucide-react'
+import { BookOpen, MessageCircle, Layers, Target, List, Settings } from 'lucide-react'
 
 const items = [
   { to: '/', icon: BookOpen, label: 'Journal' },
   { to: '/chat', icon: MessageCircle, label: 'Chat' },
+  { to: '/context', icon: Layers, label: 'Context' },
   { to: '/profile', icon: Target, label: 'Profile' },
   { to: '/index', icon: List, label: 'Index' },
   { to: '/settings', icon: Settings, label: 'Settings' },

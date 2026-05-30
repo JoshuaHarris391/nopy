@@ -42,6 +42,12 @@ export interface UserSettings {
   anthropicLightweightModel: string
   maxOutputTokens: number
   contextBudget: number
+  /**
+   * Manual override (in tokens) for the model's context window, used as the
+   * denominator of the Context Workspace budget bar. `null` = auto-detect
+   * (LM Studio's reported window, or the static map for hosted models).
+   */
+  modelContextWindowOverride: number | null
   onboardingComplete: boolean
   sidebarCollapsed: boolean
   sessionPanelCollapsed: boolean

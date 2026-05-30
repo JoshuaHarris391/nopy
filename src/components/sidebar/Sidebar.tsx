@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BookOpen, MessageCircle, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { BookOpen, MessageCircle, Layers, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
 import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
@@ -8,6 +8,7 @@ import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
 const navItems = [
   { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
   { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Understand' },
+  { to: '/context', icon: Layers, label: 'Context', section: 'Understand' },
   { to: '/profile', icon: Target, label: 'Profile', section: 'Understand' },
   { to: '/index', icon: List, label: 'Index', section: 'Understand' },
 ]
