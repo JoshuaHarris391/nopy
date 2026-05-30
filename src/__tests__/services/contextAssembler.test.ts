@@ -311,3 +311,99 @@ describe('assembleContext', () => {
     expect(messages.every((m) => !m.content.includes('Continuing a previous conversation'))).toBe(true)
   })
 })
+
+describe('assembleContext — injection-driven (Context Workspace)', () => {
+  it('injects the provided items in the given order', () => {
+    /**
+     * The Context Workspace shelf is ordered: the leftmost card is injected
+     * first (earliest in the prompt). The assembler must honour that order so
+     * the user's framing intent reaches the model. Here a note is ordered
+     * before the profile, so the note text must appear earlier in the system
+     * string than the profile text.
+     * Input: injectedItems = [note "First", profile], profile.fullProfile = "PROFILEDATA"
+     * Expected output: index of "First" < index of "PROFILEDATA"
+     */
+    const profile = makeProfile({ fullProfile: 'PROFILEDATA' })
+    const session = makeSession()
+    const injectedItems = [
+      { kind: 'note' as const, id: 'n1', title: 'First Note', content: 'AAA' },
+      { kind: 'profile' as const, id: 'system:profile', title: 'Profile', content: '' },
+    ]
+    const { system } = assembleContext(session, profile, [], 'System.', 30000, undefined, { injectedItems })
+    expect(system.indexOf('First Note')).toBeGreaterThanOrEqual(0)
+    expect(system.indexOf('First Note')).toBeLessThan(system.indexOf('PROFILEDATA'))
+  })
+
+  it('injects nothing when given an empty injection list', () => {
+    /**
+     * An empty array is the "turn everything off" case — distinct from
+     * `undefined` (the back-compat default). With the shelf empty, neither the
+     * profile nor the journal index may appear, even though both have data.
+     * Input: injectedItems = [], a profile with fullProfile, one indexed entry
+     * Expected output: system contains neither the profile nor the index header
+     */
+    const profile = makeProfile({ fullProfile: 'PROFILEDATA' })
+    const entry = makeEntry()
+    const session = makeSession()
+    const { system } = assembleContext(session, profile, [entry], 'System.', 30000, undefined, { injectedItems: [] })
+    expect(system).not.toContain('PROFILEDATA')
+    expect(system).not.toContain('Journal Entry Index')
+  })
+
+  it('renders a note as a titled markdown block', () => {
+    /**
+     * A note injects as `## <title>` followed by its body, so the model reads
+     * it as a labelled section. This is the whole point of user notes — free
+     * text the companion treats as known background.
+     * Input: injectedItems = [note "My Childhood" / "I grew up by the sea."]
+     * Expected output: system contains the heading and the body
+     */
+    const session = makeSession()
+    const injectedItems = [{ kind: 'note' as const, id: 'n1', title: 'My Childhood', content: 'I grew up by the sea.' }]
+    const { system } = assembleContext(session, null, [], 'System.', 30000, undefined, { injectedItems })
+    expect(system).toContain('## My Childhood')
+    expect(system).toContain('I grew up by the sea.')
+  })
+
+  it('shrinks the message budget to fit the model window even when contextBudget is huge', () => {
+    /**
+     * The core small-model fix: the whole prompt must fit `window − output`.
+     * With a giant contextBudget (1M) but a tiny window (2,000), the message
+     * history must still be truncated rather than overflowing the model.
+     * Input: 100 long messages, contextBudget 1,000,000, window 2,000, output 500
+     * Expected output: fewer than 100 messages survive
+     */
+    const longContent = 'word '.repeat(50) // ~200 chars ≈ 50 tokens
+    const manyMessages = Array.from({ length: 100 }, (_, i) =>
+      makeMessage(i % 2 === 0 ? 'user' : 'assistant', longContent),
+    )
+    const session = makeSession({ messages: manyMessages })
+    const { messages } = assembleContext(
+      session, null, [], 'System.', 1_000_000, undefined,
+      { injectedItems: [], window: 2_000, maxOutputTokens: 500 },
+    )
+    expect(messages.length).toBeLessThan(100)
+  })
+
+  it('skips an injected item that would overflow a tiny window, keeping smaller ones', () => {
+    /**
+     * When the window is small, the assembler stops adding context items that
+     * would crowd out the conversation — and logs the skip rather than silently
+     * truncating. A huge note is dropped while a tiny one that still fits is
+     * kept.
+     * Input: injectedItems = [huge note, small note], window 8,192, output 1,000
+     * Expected output: the small note's heading is present, the huge note's is not
+     */
+    const session = makeSession()
+    const injectedItems = [
+      { kind: 'note' as const, id: 'big', title: 'Big', content: 'x'.repeat(100_000) }, // ≈ 25k tokens
+      { kind: 'note' as const, id: 'small', title: 'Small', content: 'hello' },
+    ]
+    const { system } = assembleContext(
+      session, null, [], 'System.', 1_000_000, undefined,
+      { injectedItems, window: 8_192, maxOutputTokens: 1_000 },
+    )
+    expect(system).toContain('## Small')
+    expect(system).not.toContain('## Big')
+  })
+})

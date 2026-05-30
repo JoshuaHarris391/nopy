@@ -13,6 +13,7 @@ const DEFAULTS = {
   anthropicLightweightModel: 'claude-haiku-4-5-20251001',
   maxOutputTokens: 4096,
   contextBudget: 500000,
+  modelContextWindowOverride: null,
   onboardingComplete: false,
   sidebarCollapsed: false,
   sessionPanelCollapsed: false,
@@ -67,6 +68,7 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setAnthropicLightweightModel('claude-haiku-new'), expectField: 'anthropicLightweightModel', expectValue: 'claude-haiku-new' },
       { call: () => useSettingsStore.getState().setMaxOutputTokens(8192), expectField: 'maxOutputTokens', expectValue: 8192 },
       { call: () => useSettingsStore.getState().setContextBudget(60000), expectField: 'contextBudget', expectValue: 60000 },
+      { call: () => useSettingsStore.getState().setModelContextWindowOverride(32000), expectField: 'modelContextWindowOverride', expectValue: 32000 },
       { call: () => useSettingsStore.getState().setSidebarCollapsed(true), expectField: 'sidebarCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setSessionPanelCollapsed(true), expectField: 'sessionPanelCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setJournalPath('/tmp/j'), expectField: 'journalPath', expectValue: '/tmp/j' },
@@ -310,6 +312,40 @@ describe('multi-provider settings', () => {
     expect(state.anthropicLightweightModel).toBe('claude-haiku-4-5-20251001')
     expect(state.localLightweightModel).toBe('')
     expect(state.openaiLightweightModel).toBe('')
+  })
+
+  it('migrates a v3 persisted blob (no modelContextWindowOverride) to v4 default of null', async () => {
+    /**
+     * The Context Workspace added `modelContextWindowOverride` (the manual
+     * context-window value for the budget bar). Users on the previous release
+     * have a v3 blob without it; the v3→v4 step must fill it with `null`
+     * (auto-detect) and leave every other field untouched. A wrong default
+     * here would make the budget bar show the wrong window on first launch.
+     */
+    // Omit modelContextWindowOverride so we exercise the genuine "absent" case.
+    const { modelContextWindowOverride: _omit, ...v3Defaults } = DEFAULTS
+    void _omit
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: {
+          ...v3Defaults,
+          apiKey: 'sk-existing',
+          contextBudget: 200000,
+        },
+        version: 3,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    // New v4 field seeded to null (auto-detect).
+    expect(state.modelContextWindowOverride).toBeNull()
+    // Pre-existing fields preserved.
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.contextBudget).toBe(200000)
   })
 
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {

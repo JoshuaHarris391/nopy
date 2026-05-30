@@ -5,10 +5,13 @@ import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
+import { useContextStore } from '../../stores/contextStore'
 import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
 import { useNotificationStore } from '../../stores/notificationStore'
-import { TOKEN_LIMITS } from '../../services/models'
+import { TOKEN_LIMITS, getModelContextWindow } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
+import { resolveContextItems, toInjectedItems } from '../../services/contextResolver'
+import { useLocalModels } from '../../hooks/useLocalModels'
 import { hydrateEntryContext } from '../../services/chatPersistence'
 import { getTherapyPrompt } from '../../services/prompts/therapists'
 import { MainHeader } from '../ui/MainHeader'
@@ -49,6 +52,14 @@ export function ChatView() {
   const deleteSession = useChatStore((s) => s.deleteSession)
   const profileLoaded = useProfileStore((s) => s.loaded)
   const loadProfile = useProfileStore((s) => s.loadProfile)
+  const contextLoaded = useContextStore((s) => s.loaded)
+  const loadContext = useContextStore((s) => s.loadContext)
+  const localBaseUrl = useSettingsStore((s) => s.localBaseUrl)
+  // Probe LM Studio only in local mode so we can size the budget to the loaded
+  // window; in hosted modes we pass no models and fall back to the static map.
+  const { models: localModels } = useLocalModels(llmConfig.provider === 'local' ? localBaseUrl : '')
+  const localModelsRef = useRef(localModels)
+  useEffect(() => { localModelsRef.current = localModels }, [localModels])
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -71,6 +82,12 @@ export function ChatView() {
   useEffect(() => {
     if (!profileLoaded) loadProfile()
   }, [profileLoaded, loadProfile])
+
+  // Load the Context Workspace selection so the first send injects the right
+  // material. Without it, the send-time hydration below still covers it.
+  useEffect(() => {
+    if (!contextLoaded) loadContext()
+  }, [contextLoaded, loadContext])
 
   // Auto-collapse session panel below 1024px
   useEffect(() => {
@@ -216,7 +233,31 @@ export function ChatView() {
     }
     const profile = useProfileStore.getState().profile
     const entries = useJournalStore.getState().entries
-    const { system, messages } = assembleContext(session, profile, entries, getTherapyPrompt(therapyType), contextBudget, session.entryContext ?? undefined)
+
+    // Resolve the Context Workspace selection (notes + profile/index, in the
+    // user's chosen order). If the store hasn't hydrated yet, do it now so we
+    // never fall back to the un-curated default mid-session.
+    if (!useContextStore.getState().loaded) {
+      await useContextStore.getState().loadContext()
+    }
+    const ctx = useContextStore.getState()
+    const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries)
+    const injectedItems = toInjectedItems(resolved)
+    const { tokens: window } = getModelContextWindow(
+      llmConfig,
+      localModelsRef.current,
+      useSettingsStore.getState().modelContextWindowOverride,
+    )
+
+    const { system, messages } = assembleContext(
+      session,
+      profile,
+      entries,
+      getTherapyPrompt(therapyType),
+      contextBudget,
+      session.entryContext ?? undefined,
+      { injectedItems, window, maxOutputTokens },
+    )
     const filteredMessages = messages.filter((m) => !!m.content)
 
     if (filteredMessages.length === 0) {

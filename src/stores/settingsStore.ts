@@ -15,6 +15,7 @@ interface SettingsState extends UserSettings {
   setSessionPanelCollapsed: (collapsed: boolean) => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
+  setModelContextWindowOverride: (tokens: number | null) => void
   setJournalPath: (path: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   setTherapyType: (type: TherapyType) => void
@@ -37,6 +38,7 @@ export const useSettingsStore = create<SettingsState>()(
       anthropicLightweightModel: DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL,
       maxOutputTokens: 4096,
       contextBudget: 500000,
+      modelContextWindowOverride: null,
       onboardingComplete: false,
       sidebarCollapsed: false,
       sessionPanelCollapsed: false,
@@ -56,6 +58,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAnthropicLightweightModel: (model) => set({ anthropicLightweightModel: model }),
       setMaxOutputTokens: (tokens) => set({ maxOutputTokens: tokens }),
       setContextBudget: (tokens) => set({ contextBudget: tokens }),
+      setModelContextWindowOverride: (tokens) => set({ modelContextWindowOverride: tokens }),
       completeOnboarding: () => set({ onboardingComplete: true }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -74,13 +77,15 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 3,
+      version: 4,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
       // to Haiku (sensible default); OpenAI/local seed blank — the dispatcher
       // falls back to the main slot when blank so users with single-model
       // setups (e.g. LM Studio) get a working zero-config experience.
+      // v3 → v4 added the Context Workspace's modelContextWindowOverride
+      // (null = auto-detect the model's window).
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -105,6 +110,12 @@ export const useSettingsStore = create<SettingsState>()(
             anthropicLightweightModel: next.anthropicLightweightModel ?? DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL,
             localLightweightModel: next.localLightweightModel ?? '',
             openaiLightweightModel: next.openaiLightweightModel ?? '',
+          }
+        }
+        if (version < 4) {
+          next = {
+            ...next,
+            modelContextWindowOverride: next.modelContextWindowOverride ?? null,
           }
         }
         return next

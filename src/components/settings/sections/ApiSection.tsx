@@ -47,7 +47,7 @@ export function ApiSection() {
         </select>
       </SettingsRow>
 
-      <SettingsRow label="Context Budget" description="How much conversation history to send with each message (default: 500,000)">
+      <SettingsRow label="Max Conversation History" description="Upper bound on chat history sent per message. The Context tab caps the total to the model's window (default: 500,000).">
         <select value={contextBudget} onChange={(e) => setContextBudget(Number(e.target.value))} style={selectStyle}>
           <option value={8000}>8,000</option>
           <option value={30000}>30,000</option>
