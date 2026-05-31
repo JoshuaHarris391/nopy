@@ -2,11 +2,11 @@
 
 <p align="center">
   <strong>A quiet, local-first journal that thinks with you.</strong><br/>
-  <sub>Your words live on your machine as plain Markdown. The AI features run through your own Anthropic key — nothing in between, no accounts, no servers of ours.</sub>
+  <sub>Your words live on your machine as plain Markdown. The AI features run through your own API key from the provider you choose — Anthropic, OpenAI, or a local model — nothing in between, no accounts, no servers of ours.</sub>
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/version-0.3.0-863bff?style=for-the-badge" alt="Version"></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-0.5.0-863bff?style=for-the-badge" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/JoshuaHarris391/nopy?style=for-the-badge&color=89b4fa" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-a6e3a1?style=for-the-badge" alt="Platforms"></a>
   <a href="#"><img src="https://img.shields.io/badge/built_with-Tauri_%7C_React_19-47bfff?style=for-the-badge" alt="Stack"></a>
@@ -20,7 +20,7 @@
 
 Nopy is a journal you keep on your own machine. Entries are plain Markdown files in a folder you choose — readable in any editor, grep-able, backup-able, yours. When you want to go deeper, a gentle AI companion — grounded in CBT and ACT — can sit with the page alongside you, notice patterns over time, and ask better questions than a blank screen ever will.
 
-There is no nopy server. There is no account. There is no telemetry. The only thing that ever leaves your laptop is the text you explicitly send to the AI — and only then, straight to Anthropic's API through your own key.
+There is no nopy server. There is no account. There is no telemetry. The only thing that ever leaves your laptop is the text you explicitly send to the AI — and only then, straight to your chosen provider's API through your own key. Point it at a local model instead and nothing leaves your machine at all.
 
 ## Prerequisites
 
@@ -63,6 +63,19 @@ npm run tauri dev
 
 Opens a native window with full file system access. Set your journal location in **Settings > Data & Privacy** to save entries as Markdown files on disk.
 
+#### macOS: "nopy is damaged and can't be opened"
+
+The macOS binary isn't code-signed yet, so Gatekeeper may quarantine it and show
+**"nopy" is damaged and can't be opened. You should move it to the Bin.** The app is
+fine — this is just the unsigned-binary warning. Clear the quarantine attribute, then
+reopen it:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/nopy.app
+```
+
+Adjust the path if you keep the app somewhere other than `/Applications`.
+
 ### Run in the browser (no file system access)
 
 ```bash
@@ -89,14 +102,14 @@ Nopy separates cleanly into two layers, and we'd rather be upfront about both th
 
 - Your journal entries — stored as `.md` files in the folder you pick (desktop app) or in browser IndexedDB (web).
 - Your psychological profile and entry index — stored as JSON on disk, never synced anywhere.
-- Your Anthropic API key — saved locally, used only to make calls directly from your machine to Anthropic.
+- Your AI provider API key (Anthropic or OpenAI) or local server URL — saved locally, used only to make calls directly from your machine to the provider you picked.
 - App state, preferences, session history — all on-device.
 
-**What gets sent to Anthropic, and only then**
+**What gets sent to your AI provider, and only then**
 
-When you use the AI chat, generate a profile, or index an entry, nopy sends the relevant text (the entries or message in scope) to Anthropic's API using your key. Nothing is sent otherwise — not when you type, not when you save, not in the background. You can use nopy as a plain Markdown journal and never send a single byte anywhere.
+When you use the AI chat, generate a profile, or index an entry, nopy sends the relevant text (the entries or message in scope) to your chosen provider's API using your key. Nothing is sent otherwise — not when you type, not when you save, not in the background. You can use nopy as a plain Markdown journal and never send a single byte anywhere.
 
-Because those calls go through Anthropic, Anthropic's own data policies apply to that slice of traffic:
+You pick the provider: **Anthropic**, **OpenAI**, or a **local model via LM Studio** — and a local model makes no network calls at all, so your text never leaves the machine. For the cloud providers, each one's own data policies apply to that slice of traffic. The notes below cover Anthropic, the default; if you use OpenAI, see [OpenAI's policies](https://openai.com/policies/) instead.
 
 - **Not used for training.** Under Anthropic's Commercial Terms, API inputs and outputs are not used to train their models. ([Commercial Terms](https://www.anthropic.com/legal/commercial-terms))
 - **Short retention by default.** Anthropic retains API inputs and outputs for up to **30 days**, after which they are deleted, unless flagged by their automated trust & safety systems (in which case retention may extend up to 2 years for safety review). ([Privacy Policy](https://www.anthropic.com/legal/privacy))
@@ -113,12 +126,15 @@ If any of this ever changes upstream, the source of truth is Anthropic's policy 
 - **Tailwind CSS** — utility-first styling
 - **Tauri** — lightweight desktop shell (Rust) for native file system access
 - **Zustand** — state management with IndexedDB + filesystem persistence
-- **Anthropic SDK** — AI chat (Claude Opus 4.6) and entry indexing (Claude Haiku 4.5)
+- **AI providers** — bring your own: Anthropic (defaults to Claude Sonnet 4.5 for chat, Claude Haiku 4.5 for indexing), OpenAI, or a local model via LM Studio. Uses the `@anthropic-ai/sdk` and `openai` SDKs.
 
 ## Features
 
 - **Structured journaling** — simple markdown editor with manual save
-- **AI psychologist chat** — CBT/ACT-grounded conversational agent with streaming responses and session continuity
+- **AI psychologist chat** — conversational agent with streaming responses and session continuity, in selectable therapy modes (CBT, ACT, or breakup support)
+- **Multiple AI providers** — use Anthropic, OpenAI, or a local model via LM Studio — or none at all
+- **Context Workspace** — curate exactly what gets injected into the AI prompt (profile, index, and custom notes) with a live context-window budget
+- **Journal Launcher** — open a recent journal or create a new one on every app start
 - **Psychological profile** — auto-generated insights from your journal entries
 - **Entry indexing** — mood tracking, theme extraction, and a searchable index
 - **Local-first storage** — entries saved as `.md` files to a directory you choose; profile and index as JSON
@@ -137,7 +153,7 @@ If any of this ever changes upstream, the source of truth is Anthropic's policy 
 
 ## Testing
 
-The test suite uses [Vitest](https://vitest.dev/) and covers the core pure-logic layer — schemas, utility functions, and service helpers. Tests are focused on behaviour (inputs → expected outputs) rather than coverage metrics.
+The test suite uses [Vitest](https://vitest.dev/) and covers schemas, utilities, service helpers, stores, hooks, and a few end-to-end integration flows. Tests are focused on behaviour (inputs → expected outputs) rather than coverage metrics.
 
 ### Running tests
 
@@ -158,18 +174,25 @@ Tests live in `src/__tests__/`, mirroring the source tree:
 | `schemas/journal.test.ts` | Zod validation + AI output coercion for mood, tags, summary |
 | `schemas/profile.test.ts` | Profile schema validation and framework catch defaults |
 | `schemas/frontmatter.test.ts` | Frontmatter parsing with optional field defaults |
-| `utils/tokenEstimator.test.ts` | Token estimation formula |
+| `services/fs.test.ts` | `slugify`, `entryToMarkdown`, `parseMarkdown`, `extractDateFromFilename` |
 | `services/entryProcessor.test.ts` | `computeLocalStats` — mood averaging, streak, reflection depth |
 | `services/contextAssembler.test.ts` | Context assembly — token budgeting, message truncation, profile injection |
-| `services/fs.test.ts` | `slugify`, `entryToMarkdown`, `parseMarkdown`, `extractDateFromFilename` |
+| `services/llm.test.ts` | Provider-agnostic LLM request dispatch |
+| `services/localServer.test.ts` | LM Studio local server client |
+| `services/chatPersistence.test.ts` | Chat history persistence (NDJSON) |
+| `services/therapyRegistry.test.ts` | Therapy agent registry (CBT / ACT / breakup) |
+| `stores/settingsStore.test.ts` | Settings store and per-provider model selection |
+| `hooks/useLocalModels.test.ts` | Fetching the available local model list |
+| `integration/journalToChat.test.tsx` | End-to-end journal entry → chat flow |
+| `integration/chatStreamRender.test.tsx` | Streaming chat rendering |
 
-API-dependent functions (`processEntry`, `generateProfileFromEntries`, etc.) and React components are intentionally excluded from the test suite during the rapid-development phase — they are better validated through manual testing and integration review.
+(The table above is representative, not exhaustive — see `src/__tests__/` for the full set.) Live calls to external AI providers are mocked rather than hit directly. The suite favours functional flow tests over exhaustive edge-case matrices.
 
 ## Configuration
 
 On first launch, go to **Settings** and configure:
 
-1. **Anthropic API Key** — required for AI chat and entry indexing. Your key stays local.
+1. **AI provider** — choose Anthropic, OpenAI, or Local (LM Studio), then enter the API key (Anthropic/OpenAI) or local server URL (LM Studio needs only a URL — no key). Required for AI chat and entry indexing; your key stays local.
 2. **Journal location** — choose where to save your entries as Markdown files (desktop app only).
 
 ## Documentation
