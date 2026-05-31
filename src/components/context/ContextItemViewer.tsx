@@ -10,6 +10,8 @@ interface ContextItemViewerProps {
   markdown: string
   /** Label for the button that opens the card's full page (e.g. "Open Profile page"). */
   fullPageLabel: string
+  /** Optional control rendered in the header beside the title (e.g. the index entry-count picker). */
+  control?: React.ReactNode
   onOpenFull: () => void
   onClose: () => void
 }
@@ -21,7 +23,7 @@ interface ContextItemViewerProps {
  * content is system-generated so it cannot be edited here — instead a button
  * jumps to the card's full page (Profile / Index), which owns generation.
  */
-export function ContextItemViewer({ title, markdown, fullPageLabel, onOpenFull, onClose }: ContextItemViewerProps) {
+export function ContextItemViewer({ title, markdown, fullPageLabel, control, onOpenFull, onClose }: ContextItemViewerProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
   // Focus the close button on open so Escape/Enter work without a click first.
@@ -63,9 +65,12 @@ export function ContextItemViewer({ title, markdown, fullPageLabel, onOpenFull, 
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
-          {title}
-        </h3>
+        <div className="flex items-center justify-between" style={{ gap: 16 }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
+            {title}
+          </h3>
+          {control}
+        </div>
 
         <div
           className="context-markdown flex-1 overflow-y-auto"

@@ -43,6 +43,11 @@ export interface UserSettings {
   maxOutputTokens: number
   contextBudget: number
   /**
+   * How many recent indexed journal entries to include in the Journal Index
+   * context card / system prompt. `0` means "all" (no cap). Default 30.
+   */
+  journalIndexLimit: number
+  /**
    * Manual override (in tokens) for the model's context window, used as the
    * denominator of the Context Workspace budget bar. `null` = auto-detect
    * (LM Studio's reported window, or the static map for hosted models).

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assembleContext } from '../../services/contextAssembler'
+import { assembleContext, renderIndexBlock } from '../../services/contextAssembler'
 import type { ChatSession, ChatMessage } from '../../types/chat'
 import type { PsychologicalProfile } from '../../types/profile'
 import type { JournalEntry } from '../../types/journal'
@@ -191,6 +191,23 @@ describe('assembleContext', () => {
     const session = makeSession()
     const { system } = assembleContext(session, null, entries, 'System.')
     expect(system).toContain('30 most recent')
+  })
+
+  it('honours a custom journalIndexLimit when assembling the prompt', () => {
+    /**
+     * The 30-entry cap is now a configurable setting (`journalIndexLimit`), so a
+     * user with a tight context budget can shrink the index. assembleContext must
+     * pass the chosen limit through to the rendered index table.
+     * Input: 40 indexed entries, journalIndexLimit: 5
+     * Expected output: the index header reads "5 most recent" (only 5 rows kept)
+     */
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      makeEntry({ title: `Entry ${i}`, createdAt: new Date(Date.now() - i * 86400000).toISOString() }),
+    )
+    const session = makeSession()
+    const { system } = assembleContext(session, null, entries, 'System.', 30000, undefined, { journalIndexLimit: 5 })
+    expect(system).toContain('5 most recent')
+    expect(system).not.toContain('30 most recent')
   })
 
   it('injects focused entry context at the end of the system prompt', () => {
@@ -405,5 +422,41 @@ describe('assembleContext — injection-driven (Context Workspace)', () => {
     )
     expect(system).toContain('## Small')
     expect(system).not.toContain('## Big')
+  })
+})
+
+describe('renderIndexBlock', () => {
+  it('caps the table at the given limit', () => {
+    /**
+     * `renderIndexBlock`'s limit parameter decides how many of the most recent
+     * indexed entries appear. A limit of 3 over 10 entries must render exactly 3
+     * data rows so the index honours the user's configured entry count.
+     * Input: 10 indexed entries, limit 3
+     * Expected output: header says "3 most recent"; exactly 3 dated data rows
+     */
+    const entries = Array.from({ length: 10 }, (_, i) =>
+      makeEntry({ title: `Entry ${i}`, createdAt: new Date(Date.now() - i * 86400000).toISOString() }),
+    )
+    const block = renderIndexBlock(entries, 3)
+    expect(block).toContain('3 most recent')
+    const dataRows = block.split('\n').filter((l) => /^\| \d{4}-\d{2}-\d{2} /.test(l))
+    expect(dataRows).toHaveLength(3)
+  })
+
+  it('includes every indexed entry when the limit is 0 (All)', () => {
+    /**
+     * A limit of 0 means "all" — the user opted out of capping, so the full
+     * journal index is injected. All 12 entries must render, none dropped.
+     * Input: 12 indexed entries, limit 0
+     * Expected output: header reports 12 entries; all 12 titles present
+     */
+    const entries = Array.from({ length: 12 }, (_, i) =>
+      makeEntry({ title: `Entry-${i}`, createdAt: new Date(Date.now() - i * 86400000).toISOString() }),
+    )
+    const block = renderIndexBlock(entries, 0)
+    expect(block).toContain('12 most recent')
+    for (let i = 0; i < 12; i++) {
+      expect(block).toContain(`Entry-${i}`)
+    }
   })
 })

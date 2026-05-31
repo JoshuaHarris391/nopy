@@ -246,7 +246,8 @@ export function ChatView() {
       await useContextStore.getState().loadContext()
     }
     const ctx = useContextStore.getState()
-    const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries)
+    const journalIndexLimit = useSettingsStore.getState().journalIndexLimit
+    const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries, journalIndexLimit)
     const injectedItems = toInjectedItems(resolved)
     const hostedId = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
     const catalogWindow = llmConfig.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
@@ -264,7 +265,7 @@ export function ChatView() {
       getTherapyPrompt(therapyType),
       contextBudget,
       session.entryContext ?? undefined,
-      { injectedItems, window, maxOutputTokens },
+      { injectedItems, window, maxOutputTokens, journalIndexLimit },
     )
     const filteredMessages = messages.filter((m) => !!m.content)
 

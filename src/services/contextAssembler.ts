@@ -22,9 +22,12 @@ interface AssembleOptions {
   window?: number
   /** Output reserve (max_tokens) kept free for the model's reply. */
   maxOutputTokens?: number
+  /** How many recent indexed entries to include in the journal index (0 = all). */
+  journalIndexLimit?: number
 }
 
-const JOURNAL_INDEX_LIMIT = 30
+/** Default cap on entries shown in the journal index table. `0` means "all". */
+export const DEFAULT_JOURNAL_INDEX_LIMIT = 30
 
 // --- Shared per-kind renderers -------------------------------------------------
 // These are the single source of truth for how each context item becomes prompt
@@ -47,13 +50,16 @@ export function renderProfileBlock(profile: PsychologicalProfile | null): string
   return s
 }
 
-/** Journal index block: a markdown table of the most recent indexed entries. */
-export function renderIndexBlock(entries: JournalEntry[]): string {
+/**
+ * Journal index block: a markdown table of the most recent indexed entries.
+ * `limit` caps how many are shown; `0` (or any value <= 0) means no cap — all
+ * indexed entries are included.
+ */
+export function renderIndexBlock(entries: JournalEntry[], limit: number = DEFAULT_JOURNAL_INDEX_LIMIT): string {
   const indexed = entries.filter((e) => e.indexed && e.summary)
   if (indexed.length === 0) return ''
-  const sortedEntries = indexed
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, JOURNAL_INDEX_LIMIT)
+  const sorted = indexed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const sortedEntries = limit > 0 ? sorted.slice(0, limit) : sorted
   const table = sortedEntries
     .map((e) => {
       const date = e.createdAt.slice(0, 10)
@@ -75,12 +81,13 @@ export function renderInjectedItem(
   item: InjectedContextItem,
   profile: PsychologicalProfile | null,
   entries: JournalEntry[],
+  journalIndexLimit: number = DEFAULT_JOURNAL_INDEX_LIMIT,
 ): string {
   switch (item.kind) {
     case 'profile':
       return renderProfileBlock(profile)
     case 'index':
-      return renderIndexBlock(entries)
+      return renderIndexBlock(entries, journalIndexLimit)
     case 'note':
       return renderNoteBlock(item.title, item.content)
     default:
@@ -102,7 +109,7 @@ export function assembleContext(
   entryContext?: ChatEntryContext,
   options: AssembleOptions = {},
 ): AssembledContext {
-  const { injectedItems, window, maxOutputTokens = 0 } = options
+  const { injectedItems, window, maxOutputTokens = 0, journalIndexLimit = DEFAULT_JOURNAL_INDEX_LIMIT } = options
 
   console.log('[contextAssembler] ========== ASSEMBLING CONTEXT ==========')
   console.log('[contextAssembler] Session:', session.id, '| messages:', session.messages.length)
@@ -115,7 +122,7 @@ export function assembleContext(
   if (injectedItems === undefined) {
     // Back-compat: no workspace selection supplied — inject profile + index.
     system += renderProfileBlock(profile)
-    system += renderIndexBlock(entries)
+    system += renderIndexBlock(entries, journalIndexLimit)
   } else {
     // Injection-driven: render the chosen items in order, stopping if the
     // running total would crowd out the live conversation (only when we know
@@ -123,7 +130,7 @@ export function assembleContext(
     const ceiling = window ? window - maxOutputTokens - conversationReserve(window) : Infinity
     let injectedTokens = estimateTokens(system)
     for (const item of injectedItems) {
-      const block = renderInjectedItem(item, profile, entries)
+      const block = renderInjectedItem(item, profile, entries, journalIndexLimit)
       if (!block) continue
       const blockTokens = estimateTokens(block)
       if (window && injectedTokens + blockTokens > ceiling) {

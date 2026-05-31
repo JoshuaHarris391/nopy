@@ -25,6 +25,7 @@ import { ContextGrid } from './ContextGrid'
 import { GridCardView } from './ContextCard'
 import { ContextNoteEditor } from './ContextNoteEditor'
 import { ContextItemViewer } from './ContextItemViewer'
+import { IndexLimitInput } from '../ui/IndexLimitInput'
 import { useContextStore } from '../../stores/contextStore'
 import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { useProfileStore } from '../../stores/profileStore'
@@ -78,6 +79,8 @@ export function ContextView() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const therapyType = useSettingsStore((s) => s.therapyType)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
+  const journalIndexLimit = useSettingsStore((s) => s.journalIndexLimit)
+  const setJournalIndexLimit = useSettingsStore((s) => s.setJournalIndexLimit)
   const windowOverride = useSettingsStore((s) => s.modelContextWindowOverride)
   const localBaseUrl = useSettingsStore((s) => s.localBaseUrl)
   const { models: localModels } = useLocalModels(llmConfig.provider === 'local' ? localBaseUrl : '')
@@ -95,8 +98,8 @@ export function ContextView() {
   useEffect(() => { ensureCatalog() }, [ensureCatalog])
 
   const resolved = useMemo(
-    () => resolveContextItems(notes, injection, profile, entries),
-    [notes, injection, profile, entries],
+    () => resolveContextItems(notes, injection, profile, entries, journalIndexLimit),
+    [notes, injection, profile, entries, journalIndexLimit],
   )
   const injectedItems = useMemo(() => resolved.filter((r) => r.injected), [resolved])
   const availableItems = useMemo(() => resolved.filter((r) => !r.injected), [resolved])
@@ -275,15 +278,22 @@ export function ContextView() {
         />
       )}
 
-      {viewingItem && (
-        <ContextItemViewer
-          title={viewingItem.title}
-          markdown={viewingItem.kind === 'profile' ? renderProfileBlock(profile) : renderIndexBlock(entries)}
-          fullPageLabel={viewingItem.kind === 'profile' ? 'Open Profile page' : 'Open Index page'}
-          onOpenFull={() => navigate(viewingItem.kind === 'profile' ? '/profile' : '/index')}
-          onClose={() => setViewingItem(null)}
-        />
-      )}
+      {viewingItem && (() => {
+        // Re-read from the live resolved map so the heading's entry count stays
+        // in sync when the index limit changes from inside the modal.
+        const item = byId.get(viewingItem.id) ?? viewingItem
+        const isIndex = item.kind === 'index'
+        return (
+          <ContextItemViewer
+            title={item.title}
+            markdown={isIndex ? renderIndexBlock(entries, journalIndexLimit) : renderProfileBlock(profile)}
+            fullPageLabel={isIndex ? 'Open Index page' : 'Open Profile page'}
+            control={isIndex ? <IndexLimitInput value={journalIndexLimit} onChange={setJournalIndexLimit} /> : undefined}
+            onOpenFull={() => navigate(isIndex ? '/index' : '/profile')}
+            onClose={() => setViewingItem(null)}
+          />
+        )
+      })()}
 
       <ConfirmDialog
         open={deleteId !== null}

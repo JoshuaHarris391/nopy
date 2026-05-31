@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { UserSettings, LlmProvider, LlmConfig } from '../types/settings'
 import { DEFAULT_THERAPY, type TherapyType } from '../services/prompts/therapists'
 import { DEFAULT_ANTHROPIC_MAIN_MODEL, DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL } from '../services/models'
+import { DEFAULT_JOURNAL_INDEX_LIMIT } from '../services/contextAssembler'
 
 interface SettingsState extends UserSettings {
   setApiKey: (key: string) => void
@@ -15,6 +16,7 @@ interface SettingsState extends UserSettings {
   setSessionPanelCollapsed: (collapsed: boolean) => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
+  setJournalIndexLimit: (count: number) => void
   setModelContextWindowOverride: (tokens: number | null) => void
   setJournalPath: (path: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
@@ -38,6 +40,7 @@ export const useSettingsStore = create<SettingsState>()(
       anthropicLightweightModel: DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL,
       maxOutputTokens: 4096,
       contextBudget: 500000,
+      journalIndexLimit: DEFAULT_JOURNAL_INDEX_LIMIT,
       modelContextWindowOverride: null,
       onboardingComplete: false,
       sidebarCollapsed: false,
@@ -58,6 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAnthropicLightweightModel: (model) => set({ anthropicLightweightModel: model }),
       setMaxOutputTokens: (tokens) => set({ maxOutputTokens: tokens }),
       setContextBudget: (tokens) => set({ contextBudget: tokens }),
+      setJournalIndexLimit: (count) => set({ journalIndexLimit: count }),
       setModelContextWindowOverride: (tokens) => set({ modelContextWindowOverride: tokens }),
       completeOnboarding: () => set({ onboardingComplete: true }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -77,7 +81,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 4,
+      version: 5,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -86,6 +90,8 @@ export const useSettingsStore = create<SettingsState>()(
       // setups (e.g. LM Studio) get a working zero-config experience.
       // v3 → v4 added the Context Workspace's modelContextWindowOverride
       // (null = auto-detect the model's window).
+      // v4 → v5 added journalIndexLimit (how many entries the Journal Index
+      // card injects; 0 = all). Seeds to the previous hardcoded default of 30.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -116,6 +122,12 @@ export const useSettingsStore = create<SettingsState>()(
           next = {
             ...next,
             modelContextWindowOverride: next.modelContextWindowOverride ?? null,
+          }
+        }
+        if (version < 5) {
+          next = {
+            ...next,
+            journalIndexLimit: next.journalIndexLimit ?? DEFAULT_JOURNAL_INDEX_LIMIT,
           }
         }
         return next

@@ -1,5 +1,6 @@
 import { SettingsSection } from '../../ui/SettingsSection'
 import { SettingsRow } from '../../ui/SettingsRow'
+import { IndexLimitInput } from '../../ui/IndexLimitInput'
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { ProviderToggle } from './api/ProviderToggle'
 import { AnthropicBlock } from './api/AnthropicBlock'
@@ -25,6 +26,8 @@ export function ApiSection() {
   const setMaxOutputTokens = useSettingsStore((s) => s.setMaxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
   const setContextBudget = useSettingsStore((s) => s.setContextBudget)
+  const journalIndexLimit = useSettingsStore((s) => s.journalIndexLimit)
+  const setJournalIndexLimit = useSettingsStore((s) => s.setJournalIndexLimit)
 
   return (
     <SettingsSection title="AI Provider">
@@ -57,6 +60,10 @@ export function ApiSection() {
           <option value={500000}>500,000</option>
           <option value={1000000}>1,000,000</option>
         </select>
+      </SettingsRow>
+
+      <SettingsRow label="Journal Index Entries" description="How many recent journal entries the Journal Index card adds to the companion's context. Toggle All to include every indexed entry (default: 30).">
+        <IndexLimitInput value={journalIndexLimit} onChange={setJournalIndexLimit} />
       </SettingsRow>
     </SettingsSection>
   )

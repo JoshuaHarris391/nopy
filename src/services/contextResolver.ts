@@ -1,5 +1,5 @@
 import { estimateTokens } from '../utils/tokenEstimator'
-import { renderProfileBlock, renderIndexBlock, renderNoteBlock } from './contextAssembler'
+import { renderProfileBlock, renderIndexBlock, renderNoteBlock, DEFAULT_JOURNAL_INDEX_LIMIT } from './contextAssembler'
 import {
   SYSTEM_PROFILE_ID,
   SYSTEM_INDEX_ID,
@@ -11,19 +11,19 @@ import {
 import type { PsychologicalProfile } from '../types/profile'
 import type { JournalEntry } from '../types/journal'
 
-const INDEX_DISPLAY_CAP = 30
-
 /**
  * Merge notes + the two system items with the injection map into view-ready
  * `ResolvedContextItem`s. Token estimates come from the same renderers the
  * assembler uses, so the budget bar matches the real prompt. Sorted injected
- * first (by order), then available (by title).
+ * first (by order), then available (by title). `indexLimit` caps the journal
+ * index (0 = all) so the card title and estimate match the real prompt.
  */
 export function resolveContextItems(
   notes: ContextNote[],
   injection: Record<string, ContextInjection>,
   profile: PsychologicalProfile | null,
   entries: JournalEntry[],
+  indexLimit: number = DEFAULT_JOURNAL_INDEX_LIMIT,
 ): ResolvedContextItem[] {
   const inj = (id: string): ContextInjection => injection[id] ?? { id, injected: false, order: Number.MAX_SAFE_INTEGER }
 
@@ -46,13 +46,14 @@ export function resolveContextItems(
   })
 
   // System item: journal entry index.
-  const indexBlock = renderIndexBlock(entries)
+  const indexBlock = renderIndexBlock(entries, indexLimit)
   const indexedCount = entries.filter((e) => e.indexed && e.summary).length
+  const shownCount = indexLimit > 0 ? Math.min(indexedCount, indexLimit) : indexedCount
   const indexInj = inj(SYSTEM_INDEX_ID)
   items.push({
     id: SYSTEM_INDEX_ID,
     kind: 'index',
-    title: indexedCount > 0 ? `Journal Index (${Math.min(indexedCount, INDEX_DISPLAY_CAP)} entries)` : 'Journal Index',
+    title: indexedCount > 0 ? `Journal Index (${shownCount} entries)` : 'Journal Index',
     content: '',
     tags: [],
     injected: indexInj.injected,

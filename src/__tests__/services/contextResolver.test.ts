@@ -83,6 +83,33 @@ describe('resolveContextItems', () => {
     expect(r.tokenEstimate).toBeGreaterThan(0)
   })
 
+  it('caps the index card title at the configured limit', () => {
+    /**
+     * The Journal Index card title reports how many entries it will inject. When
+     * more entries exist than the limit, the title shows the limit (not the raw
+     * count) so it matches the capped table the model actually receives.
+     * Input: 5 indexed entries, indexLimit 2
+     * Expected output: index item title reads "Journal Index (2 entries)"
+     */
+    const entries = Array.from({ length: 5 }, () => makeEntry())
+    const items = resolveContextItems([], {}, null, entries, 2)
+    const index = items.find((i) => i.id === SYSTEM_INDEX_ID)!
+    expect(index.title).toBe('Journal Index (2 entries)')
+  })
+
+  it('shows the full indexed count in the title when the limit is 0 (All)', () => {
+    /**
+     * With the limit set to "All" (0), every indexed entry is injected, so the
+     * card title must reflect the true total rather than a cap.
+     * Input: 5 indexed entries, indexLimit 0
+     * Expected output: index item title reads "Journal Index (5 entries)"
+     */
+    const entries = Array.from({ length: 5 }, () => makeEntry())
+    const items = resolveContextItems([], {}, null, entries, 0)
+    const index = items.find((i) => i.id === SYSTEM_INDEX_ID)!
+    expect(index.title).toBe('Journal Index (5 entries)')
+  })
+
   it('sorts injected items first, in ascending order', () => {
     /**
      * The shelf shows injected items first, ordered by their `order` field. A
