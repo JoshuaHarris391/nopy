@@ -4,11 +4,8 @@ import { SettingsSection } from '../../ui/SettingsSection'
 import { SettingsRow } from '../../ui/SettingsRow'
 import { NewJournalDialog } from '../../ui/NewJournalDialog'
 import { useSettingsStore } from '../../../stores/settingsStore'
-import { useJournalStore } from '../../../stores/journalStore'
-import { useProfileStore } from '../../../stores/profileStore'
-import { useChatStore } from '../../../stores/chatStore'
 import { hasFileSystem, pickJournalDirectory, grantFsScope, slugify } from '../../../services/fs'
-import { flushChatSave } from '../../../services/chatPersistence'
+import { switchJournal as runJournalSwitch } from '../../../services/journalSwitch'
 
 const buttonStyle: React.CSSProperties = {
   fontFamily: 'var(--font-ui)', fontSize: 12, padding: '6px 12px',
@@ -19,7 +16,6 @@ const buttonStyle: React.CSSProperties = {
 
 export function DataPrivacySection() {
   const journalPath = useSettingsStore((s) => s.journalPath)
-  const setJournalPath = useSettingsStore((s) => s.setJournalPath)
   const canPickDirectory = hasFileSystem()
   const [status, setStatus] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -30,24 +26,13 @@ export function DataPrivacySection() {
   }, [])
 
   const switchJournal = useCallback(async (path: string, label = 'Journal switched') => {
-    await flushChatSave()
-
-    await useChatStore.getState().clear()
-    await useJournalStore.getState().clear()
-    await useProfileStore.getState().clear()
-
-    setJournalPath(path)
-    await grantFsScope(path)
-
-    await useJournalStore.getState().loadEntries()
-    const { added } = await useJournalStore.getState().syncFromDisk()
-    await useChatStore.getState().loadSessionList()
-    const profileLoaded = await useProfileStore.getState().loadProfileFromDisk()
+    const { added, profileLoaded, contextNotes } = await runJournalSwitch(path)
 
     const bits = [`${added} entries`]
+    if (contextNotes > 0) bits.push(`${contextNotes} context notes`)
     if (profileLoaded) bits.push('existing profile restored')
     flashStatus(`${label} — ${bits.join(', ')}`)
-  }, [setJournalPath, flashStatus])
+  }, [flashStatus])
 
   const handleSelectJournal = useCallback(async () => {
     const path = await pickJournalDirectory()
