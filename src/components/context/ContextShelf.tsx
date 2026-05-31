@@ -15,6 +15,10 @@ interface ContextShelfProps {
   ids: string[]
   byId: Map<string, ResolvedContextItem>
   onRemove: (id: string) => void
+  /** Open a note in the editor (notes only). */
+  onEdit?: (id: string) => void
+  /** Open a system card (profile/index) in the read-only viewer. */
+  onView?: (id: string) => void
 }
 
 /**
@@ -22,7 +26,7 @@ interface ContextShelfProps {
  * here (from the grid) to inject it; drag a card off to remove it; reorder by
  * dragging within. Rendered inside ContextView's DndContext.
  */
-export function ContextShelf({ ids, byId, onRemove }: ContextShelfProps) {
+export function ContextShelf({ ids, byId, onRemove, onEdit, onView }: ContextShelfProps) {
   const { setNodeRef, isOver } = useDroppable({ id: 'shelf' })
 
   return (
@@ -49,7 +53,7 @@ export function ContextShelf({ ids, byId, onRemove }: ContextShelfProps) {
           ) : (
             ids.map((id, i) => {
               const item = byId.get(id)
-              return item ? <SortableShelfCard key={id} item={item} order={i + 1} onRemove={onRemove} /> : null
+              return item ? <SortableShelfCard key={id} item={item} order={i + 1} onRemove={onRemove} onEdit={onEdit} onView={onView} /> : null
             })
           )}
         </SortableContext>
@@ -78,7 +82,7 @@ function ShelfPlaceholder({ isOver }: { isOver: boolean }) {
   )
 }
 
-function SortableShelfCard({ item, order, onRemove }: { item: ResolvedContextItem; order: number; onRemove: (id: string) => void }) {
+function SortableShelfCard({ item, order, onRemove, onEdit, onView }: { item: ResolvedContextItem; order: number; onRemove: (id: string) => void; onEdit?: (id: string) => void; onView?: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   return (
     <div
@@ -94,7 +98,7 @@ function SortableShelfCard({ item, order, onRemove }: { item: ResolvedContextIte
         flexShrink: 0,
       }}
     >
-      <ShelfCardView item={item} order={order} onRemove={onRemove} />
+      <ShelfCardView item={item} order={order} onRemove={onRemove} onEdit={onEdit} onView={onView} />
     </div>
   )
 }
@@ -103,16 +107,25 @@ interface ShelfCardViewProps {
   item: ResolvedContextItem
   order: number
   onRemove?: (id: string) => void
+  /** Open a note in the editor (notes only). */
+  onEdit?: (id: string) => void
+  /** Open a system card (profile/index) in the read-only viewer. */
+  onView?: (id: string) => void
   /** True in the DragOverlay — lifted shadow. */
   dragging?: boolean
 }
 
 /** Presentational shelf card (used in the row and the drag overlay). */
-export function ShelfCardView({ item, order, onRemove, dragging = false }: ShelfCardViewProps) {
+export function ShelfCardView({ item, order, onRemove, onEdit, onView, dragging = false }: ShelfCardViewProps) {
   const Icon = KIND_ICON[item.kind]
+  // Notes open the editor; system cards open the read-only viewer. Mirrors the
+  // grid tile so a shelf card is clickable wherever a handler is supplied (not
+  // in the drag overlay, which passes neither).
+  const onOpen = item.editable ? onEdit : onView
   return (
     <div
       className="relative flex flex-col overflow-hidden"
+      onClick={() => onOpen?.(item.id)}
       style={{
         width: 168,
         background: 'var(--parchment)',
@@ -120,6 +133,7 @@ export function ShelfCardView({ item, order, onRemove, dragging = false }: Shelf
         borderLeft: '3px solid var(--forest)',
         borderRadius: 'var(--radius-md)',
         padding: '12px 14px',
+        cursor: onOpen ? 'pointer' : 'default',
         boxShadow: dragging ? '0 12px 26px var(--shadow-warm-deep)' : '0 1px 4px var(--shadow-warm)',
       }}
     >
@@ -139,7 +153,7 @@ export function ShelfCardView({ item, order, onRemove, dragging = false }: Shelf
           <button
             aria-label="Remove from context"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => onRemove(item.id)}
+            onClick={(e) => { e.stopPropagation(); onRemove(item.id) }}
             className="flex items-center justify-center cursor-pointer"
             style={{ width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--icon-muted)', borderRadius: 'var(--radius-sm)' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--soft-coral)')}

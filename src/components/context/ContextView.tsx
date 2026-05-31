@@ -238,7 +238,13 @@ export function ContextView() {
           >
             <div style={{ marginTop: 24 }}>
               <div style={sectionLabelStyle}>Shelf — injected, in order</div>
-              <ContextShelf ids={containers.shelf} byId={byId} onRemove={(id) => setInjected(id, false)} />
+              <ContextShelf
+                ids={containers.shelf}
+                byId={byId}
+                onRemove={(id) => setInjected(id, false)}
+                onEdit={(id) => { const n = notes.find((x) => x.id === id); if (n) openEdit(n) }}
+                onView={(id) => { const it = byId.get(id); if (it) setViewingItem(it) }}
+              />
             </div>
 
             <div style={{ marginTop: 28 }}>
