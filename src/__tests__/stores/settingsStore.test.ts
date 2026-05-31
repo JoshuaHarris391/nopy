@@ -18,6 +18,7 @@ const DEFAULTS = {
   sidebarCollapsed: false,
   sessionPanelCollapsed: false,
   journalPath: '',
+  recentJournals: [],
   theme: 'system' as const,
   therapyType: DEFAULT_THERAPY,
   provider: 'anthropic' as const,
@@ -387,5 +388,78 @@ describe('multi-provider settings', () => {
       'localBaseUrl', 'localLightweightModel', 'localModel',
       'openaiApiKey', 'openaiLightweightModel', 'openaiModel', 'provider',
     ])
+  })
+})
+
+describe('recent journals', () => {
+  it('recording journals builds a most-recent-first list with no duplicates', () => {
+    /**
+     * The journal launcher offers previously-used journals as quick-pick
+     * suggestions. `recordJournal` is called every time a journal is opened or
+     * created, so it must (a) put the just-used journal at the front, (b) keep
+     * the folder's display name, and (c) never list the same path twice when a
+     * journal is re-opened — otherwise the launcher would accumulate duplicate
+     * rows for the user's daily journal.
+     */
+    const { recordJournal } = useSettingsStore.getState()
+    recordJournal('/home/me/work-journal')
+    recordJournal('/home/me/travel-log')
+    recordJournal('/home/me/work-journal') // re-open the first one
+
+    const list = useSettingsStore.getState().recentJournals
+    expect(list.map((j) => j.path)).toEqual(['/home/me/work-journal', '/home/me/travel-log'])
+    expect(list[0].name).toBe('work-journal')
+    expect(typeof list[0].lastOpenedAt).toBe('string')
+  })
+
+  it('removing a journal drops it from recents and leaves the rest intact', () => {
+    /**
+     * A journal folder can be moved or deleted on disk; the launcher lets the
+     * user clear such an entry. `removeRecentJournal` must remove only the
+     * targeted path and preserve the others' order.
+     */
+    const { recordJournal, removeRecentJournal } = useSettingsStore.getState()
+    recordJournal('/a/one')
+    recordJournal('/a/two')
+
+    removeRecentJournal('/a/one')
+
+    expect(useSettingsStore.getState().recentJournals.map((j) => j.path)).toEqual(['/a/two'])
+  })
+
+  it('upgrading an existing install seeds the current journal as a recent', async () => {
+    /**
+     * Existing users have a `journalPath` but no recents list (the field didn't
+     * exist before v6). The v5→v6 migration seeds the list from their current
+     * journal so it shows up as a suggestion in the new launcher on first
+     * launch — they aren't dumped into an empty "no journals" screen.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({ state: { journalPath: '/tmp/journal', theme: 'dark' }, version: 5 }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const list = fresh.useSettingsStore.getState().recentJournals
+
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ path: '/tmp/journal', name: 'journal' })
+  })
+
+  it('a fresh-ish upgrade with no journal seeds an empty recents list', async () => {
+    /**
+     * A user who never set a journal folder (e.g. browser-only usage) has a
+     * blank `journalPath`. The migration must leave recents empty rather than
+     * seed a bogus entry, so the launcher shows its welcome/create state.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({ state: { journalPath: '', theme: 'system' }, version: 5 }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    expect(fresh.useSettingsStore.getState().recentJournals).toEqual([])
   })
 })

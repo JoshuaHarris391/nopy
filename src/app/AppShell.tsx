@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { BottomNav } from '../components/sidebar/BottomNav'
 import { NotificationCard, type NotificationAccent } from '../components/ui/NotificationCard'
+import { JournalLauncher } from '../components/launcher/JournalLauncher'
+import { hasFileSystem } from '../services/fs'
 import { useIndexingStore } from '../stores/indexingStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useNotificationStore } from '../stores/notificationStore'
@@ -20,6 +23,12 @@ export function AppShell() {
   const profileProgress = useProfileStore((s) => s.progress)
   const notifications = useNotificationStore((s) => s.items)
   const dismissNotification = useNotificationStore((s) => s.dismiss)
+
+  // Non-persisted, so it resets on every app start (fresh JS heap): the journal
+  // launcher shows each launch until the user opens or creates a journal.
+  // Desktop-only — the web build has no native folders to choose.
+  const [journalChosen, setJournalChosen] = useState(false)
+  const showLauncher = hasFileSystem() && !journalChosen
 
   const showStack =
     indexingState === 'running' ||
@@ -69,6 +78,7 @@ export function AppShell() {
           ))}
         </div>
       )}
+      {showLauncher && <JournalLauncher onChosen={() => setJournalChosen(true)} />}
     </div>
   )
 }

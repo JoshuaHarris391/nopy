@@ -15,6 +15,19 @@ export type LlmProvider = 'anthropic' | 'local' | 'openai'
 export type LlmModelRole = 'main' | 'lightweight'
 
 /**
+ * One entry in the journal launcher's "recently used" list. `name` is the
+ * folder's display name (its basename, derived once when recorded) so the
+ * launcher can render the list without touching the filesystem; `path` is the
+ * absolute folder path used to switch into the journal; `lastOpenedAt` is an
+ * ISO timestamp used to order the list most-recent-first.
+ */
+export interface RecentJournal {
+  path: string
+  name: string
+  lastOpenedAt: string
+}
+
+/**
  * Slice consumed by the dispatcher in `services/llm.ts`. Kept narrow so
  * call sites re-render only when LLM-relevant settings change.
  *
@@ -57,6 +70,11 @@ export interface UserSettings {
   sidebarCollapsed: boolean
   sessionPanelCollapsed: boolean
   journalPath: string
+  /**
+   * Journals the user has created or opened, most-recent-first. Surfaced as
+   * quick-pick suggestions in the journal launcher shown on every app start.
+   */
+  recentJournals: RecentJournal[]
   theme: 'light' | 'dark' | 'system'
   therapyType: TherapyType
   provider: LlmProvider
