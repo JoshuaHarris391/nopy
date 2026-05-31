@@ -215,6 +215,27 @@ export async function grantFsScope(path: string): Promise<void> {
   }
 }
 
+/**
+ * Whether a path exists on disk. Returns false on the web build (no fs) or for
+ * an empty path. The journal launcher uses this to flag recents whose folder
+ * has been moved/deleted and to guard against creating over an existing folder.
+ */
+export async function journalPathExists(path: string): Promise<boolean> {
+  if (!hasFileSystem() || !path) return false
+  const { exists } = await import('@tauri-apps/plugin-fs')
+  return exists(path)
+}
+
+/**
+ * Create a journal folder (and any missing parent directories). No-op on the
+ * web build or for an empty path.
+ */
+export async function createJournalFolder(path: string): Promise<void> {
+  if (!hasFileSystem() || !path) return
+  const { mkdir } = await import('@tauri-apps/plugin-fs')
+  await mkdir(path, { recursive: true })
+}
+
 export async function pickJournalDirectory(): Promise<string | null> {
   if (!hasFileSystem()) return null
   const { open } = await import('@tauri-apps/plugin-dialog')

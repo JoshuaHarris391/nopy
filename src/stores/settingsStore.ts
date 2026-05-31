@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { UserSettings, LlmProvider, LlmConfig } from '../types/settings'
+import { recordJournalEntry } from './recentJournals'
 import { DEFAULT_THERAPY, type TherapyType } from '../services/prompts/therapists'
 import { DEFAULT_ANTHROPIC_MAIN_MODEL, DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL } from '../services/models'
 import { DEFAULT_JOURNAL_INDEX_LIMIT } from '../services/contextAssembler'
@@ -19,6 +20,8 @@ interface SettingsState extends UserSettings {
   setJournalIndexLimit: (count: number) => void
   setModelContextWindowOverride: (tokens: number | null) => void
   setJournalPath: (path: string) => void
+  recordJournal: (path: string) => void
+  removeRecentJournal: (path: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   setTherapyType: (type: TherapyType) => void
   setProvider: (provider: LlmProvider) => void
@@ -46,6 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarCollapsed: false,
       sessionPanelCollapsed: false,
       journalPath: '',
+      recentJournals: [],
       theme: 'system',
       therapyType: DEFAULT_THERAPY,
       provider: 'anthropic',
@@ -69,6 +73,8 @@ export const useSettingsStore = create<SettingsState>()(
       toggleSessionPanel: () => set((state) => ({ sessionPanelCollapsed: !state.sessionPanelCollapsed })),
       setSessionPanelCollapsed: (collapsed) => set({ sessionPanelCollapsed: collapsed }),
       setJournalPath: (path) => set({ journalPath: path }),
+      recordJournal: (path) => set((state) => ({ recentJournals: recordJournalEntry(state.recentJournals, path) })),
+      removeRecentJournal: (path) => set((state) => ({ recentJournals: state.recentJournals.filter((j) => j.path !== path) })),
       setTheme: (theme) => set({ theme }),
       setTherapyType: (type) => set({ therapyType: type }),
       setProvider: (provider) => set({ provider }),
@@ -81,7 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 5,
+      version: 6,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -92,6 +98,11 @@ export const useSettingsStore = create<SettingsState>()(
       // (null = auto-detect the model's window).
       // v4 → v5 added journalIndexLimit (how many entries the Journal Index
       // card injects; 0 = all). Seeds to the previous hardcoded default of 30.
+      // v5 → v6 added recentJournals (the journal launcher's quick-pick list).
+      // Existing users have a journalPath but no recents, so we seed the list
+      // with their current journal — it shows up as the highlighted suggestion
+      // on first launch into the new launcher. A fresh install has no persisted
+      // blob, so migrate() never runs and recentJournals stays the empty default.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -128,6 +139,13 @@ export const useSettingsStore = create<SettingsState>()(
           next = {
             ...next,
             journalIndexLimit: next.journalIndexLimit ?? DEFAULT_JOURNAL_INDEX_LIMIT,
+          }
+        }
+        if (version < 6) {
+          const jp = typeof next.journalPath === 'string' ? next.journalPath : ''
+          next = {
+            ...next,
+            recentJournals: jp ? recordJournalEntry([], jp) : [],
           }
         }
         return next
