@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut'
 import { useAutosave } from '../../hooks/useAutosave'
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea'
+import { useCancellableTask } from '../../hooks/useCancellableTask'
 import { format } from 'date-fns'
 import { Check, Trash2, Loader2 } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
+import { DateTimePicker } from '../ui/DateTimePicker'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Button } from '../ui/Button'
 import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { useJournalStore } from '../../stores/journalStore'
+import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
@@ -23,14 +27,23 @@ export function EntryEditor() {
   const addEntry = useJournalStore((s) => s.addEntry)
   const updateEntry = useJournalStore((s) => s.updateEntry)
   const deleteEntry = useJournalStore((s) => s.deleteEntry)
+  const reindexEntryFn = useJournalStore((s) => s.reindexEntry)
   const lastError = useJournalStore((s) => s.lastError)
   const clearLastError = useJournalStore((s) => s.clearLastError)
+  const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
+  const reindex = useCancellableTask<void>()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const reindexReady =
+    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
+      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
+        : !!llmConfig.localModel
 
   const isNew = !id || id === 'new'
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
   const [content, setContent] = useState('')
   const [moodValue, setMoodValue] = useState<number | null>(null)
+  const [createdAt, setCreatedAt] = useState<string>(() => new Date().toISOString())
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
   const [textSizeIndex, setTextSizeIndex] = useState(3)
@@ -50,6 +63,7 @@ export function EntryEditor() {
         setTitle(entry.title)
         setContent(entry.content)
         setMoodValue(entry.mood?.value ?? null)
+        setCreatedAt(entry.createdAt)
         entryIdRef.current = entry.id
         isNewRef.current = false
         autosave.markClean()
@@ -90,7 +104,7 @@ export function EntryEditor() {
       const mood: MoodScore | null = moodValue
         ? { value: moodValue, label: moodValueToLabel(moodValue) }
         : null
-      await updateEntry(entryId, { title, content, mood })
+      await updateEntry(entryId, { title, content, mood, createdAt })
       autosave.markClean()
       setJustSaved(true)
       setTimeout(() => setJustSaved(false), 2000)
@@ -100,9 +114,24 @@ export function EntryEditor() {
       setSaving(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, ensureEntry, updateEntry, title, content, moodValue])
+  }, [saving, ensureEntry, updateEntry, title, content, moodValue, createdAt])
 
-  const autosave = useAutosave(handleSave, [title, content, moodValue])
+  const autosave = useAutosave(handleSave, [title, content, moodValue, createdAt])
+
+  const handleReindex = useCallback(() => {
+    if (reindex.state === 'running') { reindex.abort(); return } // toggle = cancel
+    if (!reindexReady) return
+    reindex.run(async (_onProgress, signal) => {
+      // Flush local edits first so the LLM indexes current content and
+      // applyProcessedMetadata writes the up-to-date markdown to disk.
+      autosave.cancelPending()
+      await handleSave()
+      const entryId = entryIdRef.current
+      if (!entryId || signal.aborted) return
+      await reindexEntryFn(entryId, llmConfig, signal)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reindex, reindexReady, llmConfig, handleSave])
 
   useKeyboardShortcut('mod+s', () => {
     autosave.cancelPending()
@@ -125,9 +154,8 @@ export function EntryEditor() {
 
   const wordCount = content.split(/\s+/).filter(Boolean).length
   const readTime = Math.max(1, Math.ceil(wordCount / 200))
-  const entryDate = id && id !== 'new'
-    ? entries.find((e) => e.id === id)?.createdAt
-    : new Date().toISOString()
+  const indexed = entries.find((e) => e.id === entryIdRef.current)?.indexed ?? false
+  const canReindex = !isNewRef.current && !!entryIdRef.current && content.trim().length > 0
 
   return (
     <>
@@ -211,8 +239,11 @@ export function EntryEditor() {
             onChange={(v) => { setMoodValue(v); markFieldDirty() }}
           />
 
-          <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)', margin: '8px 0 28px' }}>
-            {entryDate && format(new Date(entryDate), "d MMMM yyyy · EEEE · h:mm a")}
+          <div style={{ margin: '8px 0 28px' }}>
+            <DateTimePicker
+              value={createdAt}
+              onChange={(iso) => { setCreatedAt(iso); markFieldDirty() }}
+            />
           </div>
 
           <textarea
@@ -254,7 +285,12 @@ export function EntryEditor() {
             readTime={readTime}
             textSizeIndex={textSizeIndex}
             onTextSizeChange={setTextSizeIndex}
-            onStartSession={() => navigate('/chat', { state: { entryTitle: title, entryContent: content, entryDate } })}
+            onStartSession={() => navigate('/chat', { state: { entryTitle: title, entryContent: content, entryDate: createdAt } })}
+            indexed={indexed}
+            reindexState={reindex.state}
+            canReindex={canReindex}
+            reindexReady={reindexReady}
+            onReindex={handleReindex}
           />
         </div>
       </div>
