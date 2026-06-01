@@ -3,7 +3,7 @@ import { get, set, del } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
 import type { MoodScore } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
-import { processAllEntries } from '../services/entryProcessor'
+import { processAllEntries, processEntry } from '../services/entryProcessor'
 import { useSettingsStore } from './settingsStore'
 import type { LlmConfig } from '../types/settings'
 
@@ -39,6 +39,7 @@ interface JournalState {
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
   applyProcessedMetadata: (results: Map<string, { mood: MoodScore | null; tags: string[]; summary: string }>) => Promise<void>
   processEntries: (config: LlmConfig, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
+  reindexEntry: (id: string, config: LlmConfig, signal?: AbortSignal) => Promise<void>
   startForceUpdate: (config: LlmConfig) => Promise<void>
   stopForceUpdate: () => void
   clear: () => Promise<void>
@@ -215,6 +216,18 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     if (results.size === 0) return 0
     await getState().applyProcessedMetadata(results)
     return results.size
+  },
+
+  reindexEntry: async (id, config, signal) => {
+    const entry = getState().entries.find((e) => e.id === id)
+    if (!entry) {
+      console.warn('[journalStore] reindexEntry: entry not found', id)
+      return
+    }
+    console.log('[journalStore] reindexEntry: id', id, '| content', entry.content.length, 'chars')
+    const meta = await processEntry(entry, config, signal)
+    if (signal?.aborted) return // don't write stale metadata after a cancel
+    await getState().applyProcessedMetadata(new Map([[id, meta]]))
   },
 
   startForceUpdate: async (config) => {
