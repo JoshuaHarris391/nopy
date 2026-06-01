@@ -164,6 +164,39 @@ export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof Local
   return { averageMood, journalingStreak, avgEntryLength, reflectionDepth }
 }
 
+/**
+ * Computes the mood/length/depth stats for entries falling within a single
+ * [start, end] window, so the Wellbeing cards can track the period shown in the
+ * Mood Over Time chart. Average mood is taken over entries with a mood value
+ * (matching the points the chart plots), not over `indexed` entries. Returns
+ * null fields for an empty window so the UI can show a '--' placeholder.
+ */
+export function computeWindowedStats(
+  entries: JournalEntry[],
+  start: Date,
+  end: Date,
+): { averageMood: number | null; avgEntryLength: number | null; reflectionDepth: 'Low' | 'Medium' | 'High' | null } {
+  const s = start.getTime()
+  const e = end.getTime()
+  const windowed = entries.filter((entry) => {
+    const t = new Date(entry.createdAt).getTime()
+    return t >= s && t <= e
+  })
+  if (windowed.length === 0) return { averageMood: null, avgEntryLength: null, reflectionDepth: null }
+
+  const moods = windowed.filter((entry) => entry.mood?.value != null)
+  const averageMood = moods.length > 0
+    ? Math.round((moods.reduce((sum, entry) => sum + (entry.mood?.value ?? 0), 0) / moods.length) * 10) / 10
+    : null
+
+  const totalWords = windowed.reduce((sum, entry) => sum + entry.content.split(/\s+/).filter(Boolean).length, 0)
+  const avgEntryLength = Math.round(totalWords / windowed.length)
+  const reflectionDepth: 'Low' | 'Medium' | 'High' =
+    avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
+
+  return { averageMood, avgEntryLength, reflectionDepth }
+}
+
 function getPreviousDay(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() - 1)

@@ -10,6 +10,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 import { moodLabelColors } from '../../utils/mood'
+import { computeWindowedStats } from '../../services/entryProcessor'
 
 export function ProfileView() {
   const profile = useProfileStore((s) => s.profile)
@@ -32,6 +33,11 @@ export function ProfileView() {
   const [profileHovered, setProfileHovered] = useState(false)
   const [moodRange, setMoodRange] = useState<Range>('month')
   const [moodOffset, setMoodOffset] = useState(0)
+
+  const windowedStats = useMemo(() => {
+    const { start, end } = getWindow(moodRange, moodOffset)
+    return computeWindowedStats(entries, start, end)
+  }, [entries, moodRange, moodOffset])
 
   const windowedDistribution = useMemo(() => {
     const { start, end } = getWindow(moodRange, moodOffset)
@@ -168,10 +174,10 @@ export function ProfileView() {
               {/* Wellbeing Metrics */}
               <ProfileSection title="Wellbeing Overview">
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))' }}>
-                  <MetricCard label="Average Mood" value={profile!.averageMood != null ? String(profile!.averageMood.toFixed(1)) : '--'} />
+                  <MetricCard label="Average Mood" value={windowedStats.averageMood != null ? windowedStats.averageMood.toFixed(1) : '--'} />
                   <MetricCard label="Journaling Streak" value={profile!.journalingStreak != null ? `${profile!.journalingStreak}d` : '--'} />
-                  <MetricCard label="Avg Entry Length" value={profile!.avgEntryLength != null ? `${profile!.avgEntryLength}w` : '--'} />
-                  <MetricCard label="Reflection Depth" value={profile!.reflectionDepth ?? '--'} />
+                  <MetricCard label="Avg Entry Length" value={windowedStats.avgEntryLength != null ? `${windowedStats.avgEntryLength}w` : '--'} />
+                  <MetricCard label="Reflection Depth" value={windowedStats.reflectionDepth ?? '--'} />
                 </div>
 
                 <MoodTimeline

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeLocalStats } from '../../services/entryProcessor'
+import { computeLocalStats, computeWindowedStats } from '../../services/entryProcessor'
 import type { JournalEntry } from '../../types/journal'
 
 function makeEntry(overrides: Partial<JournalEntry> = {}): JournalEntry {
@@ -269,5 +269,89 @@ describe('computeLocalStats', () => {
     ]
     const stats = computeLocalStats(entries)
     expect(stats.journalingStreak).toBe(2)
+  })
+})
+
+describe('computeWindowedStats', () => {
+  // A fixed January 2026 window so the tests never depend on "today". Entries
+  // are placed clearly inside or outside this range by their createdAt date.
+  const windowStart = new Date('2026-01-01T00:00:00.000Z')
+  const windowEnd = new Date('2026-01-31T23:59:59.999Z')
+
+  it('averages mood only over entries inside the selected window', () => {
+    /**
+     * This is the core behaviour the Wellbeing cards rely on: the Average Mood
+     * card must reflect the period currently shown in the Mood Over Time chart,
+     * not the all-time average. An out-of-window entry — even with an extreme
+     * mood — must not pull the windowed average. This is exactly the bug where a
+     * high all-time average (e.g. 10) leaked into the displayed week.
+     *
+     * Input: two in-window entries with moods 2 and 4, plus one entry dated
+     *        before the window with mood 10.
+     * Expected output: averageMood === 3.0 (only the in-window 2 and 4 count).
+     */
+    const entries = [
+      makeEntry({ createdAt: '2026-01-10T09:00:00.000Z', mood: { value: 2, label: 'low' } }),
+      makeEntry({ createdAt: '2026-01-20T09:00:00.000Z', mood: { value: 4, label: 'mixed' } }),
+      makeEntry({ createdAt: '2025-12-15T09:00:00.000Z', mood: { value: 10, label: 'great' } }),
+    ]
+    const stats = computeWindowedStats(entries, windowStart, windowEnd)
+    expect(stats.averageMood).toBe(3.0)
+  })
+
+  it('derives avgEntryLength and reflectionDepth from in-window entries only', () => {
+    /**
+     * Avg Entry Length and Reflection Depth must also track the selected window.
+     * A long entry outside the window should not inflate the windowed length or
+     * push reflection depth up. Here the only in-window entry is short (10
+     * words), so the windowed length is 10 and depth is "Low", even though a
+     * 400-word entry exists outside the window.
+     *
+     * Input: one in-window 10-word entry, one out-of-window 400-word entry.
+     * Expected output: avgEntryLength === 10, reflectionDepth === "Low".
+     */
+    const entries = [
+      makeEntry({ createdAt: '2026-01-12T09:00:00.000Z', content: Array(10).fill('word').join(' ') }),
+      makeEntry({ createdAt: '2025-11-01T09:00:00.000Z', content: Array(400).fill('word').join(' ') }),
+    ]
+    const stats = computeWindowedStats(entries, windowStart, windowEnd)
+    expect(stats.avgEntryLength).toBe(10)
+    expect(stats.reflectionDepth).toBe('Low')
+  })
+
+  it('returns null fields for a window containing no entries', () => {
+    /**
+     * When the user navigates to a period with no entries, the cards should show
+     * the '--' placeholder rather than a misleading 0. computeWindowedStats
+     * signals this by returning null for every field, which the ProfileView
+     * cards render as '--'.
+     *
+     * Input: a single entry dated outside the January window.
+     * Expected output: averageMood, avgEntryLength, and reflectionDepth all null.
+     */
+    const entries = [makeEntry({ createdAt: '2025-06-01T09:00:00.000Z', mood: { value: 5, label: 'neutral' } })]
+    const stats = computeWindowedStats(entries, windowStart, windowEnd)
+    expect(stats.averageMood).toBeNull()
+    expect(stats.avgEntryLength).toBeNull()
+    expect(stats.reflectionDepth).toBeNull()
+  })
+
+  it('reports length but null mood when in-window entries have no mood score', () => {
+    /**
+     * An entry can fall inside the window but carry no mood (e.g. not yet
+     * scored). Average mood is taken over entries that have a mood value
+     * (matching the points the chart plots), so with no scored entries the mood
+     * is null — but the entry still counts toward word length. This keeps the
+     * Average Mood card as '--' while Avg Entry Length stays meaningful.
+     *
+     * Input: one in-window entry with mood null and 5 words of content.
+     * Expected output: averageMood null, avgEntryLength 5.
+     */
+    const entries = [
+      makeEntry({ createdAt: '2026-01-15T09:00:00.000Z', mood: null, content: 'one two three four five' }),
+    ]
+    const stats = computeWindowedStats(entries, windowStart, windowEnd)
+    expect(stats.averageMood).toBeNull()
+    expect(stats.avgEntryLength).toBe(5)
   })
 })
