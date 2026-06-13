@@ -1,13 +1,27 @@
 name: Release
 
+# Normally invoked via workflow_call from release-please.yml after it
+# publishes a release (version bumps land in the release PR, so the tagged
+# commit always matches the binaries). The tag-push and manual-dispatch
+# triggers remain as escape hatches for rebuilding an existing tag.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v0.8.0)'
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v0.8.0); defaults to the current ref'
+        required: false
+        type: string
 
-# TODO: before tagging, bump `version` in both package.json and
-# src-tauri/tauri.conf.json so artifact filenames match the tag.
 # TODO: add a Windows target (windows-latest, x86_64-pc-windows-msvc) if/when
 # Windows support is desired — Tauri supports it, just add another matrix entry.
 # TODO: consider adding aarch64-unknown-linux-gnu for Linux ARM (e.g. RPi, ARM
@@ -40,6 +54,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -92,11 +108,12 @@ jobs:
           #   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'nopy ${{ github.ref_name }}'
-          # TODO: flip to `false` once the release flow is trusted to publish
-          # directly without manual review.
-          releaseDraft: true
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: 'nopy ${{ inputs.tag || github.ref_name }}'
+          # The release-please PR is the review gate; the release is published
+          # by release-please and tauri-action uploads assets to it. False
+          # also applies on the tag-push/dispatch escape-hatch paths.
+          releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.platform.target }}
           # TODO: to publish only specific bundle formats per platform, pass

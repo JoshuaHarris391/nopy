@@ -1,0 +1,48 @@
+name: Release Please
+
+# Automates the release cycle from Conventional Commits: maintains a release
+# PR on main that accumulates feat/fix commits into a version bump (across
+# package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml) and a
+# CHANGELOG entry. Merging that PR tags, publishes the GitHub release, and
+# chains straight into the Tauri build matrix below.
+#
+# The build is chained here (rather than relying on release.yml's tag-push
+# trigger) because tags created with the default GITHUB_TOKEN deliberately
+# do not trigger other workflows — GitHub's recursion guard.
+#
+# Known limitation (accepted): CI checks don't run on the bot's release PRs
+# for the same token reason. Those PRs only touch version files + changelog;
+# the underlying commits already passed CI on main.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release PR / tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    name: Build release binaries
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
