@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://nopy-site.vercel.app/"><img src="https://img.shields.io/badge/website-nopy--site.vercel.app-5b7f5e?style=for-the-badge" alt="Website"></a>
-  <a href="#"><img src="https://img.shields.io/badge/version-0.7.0-863bff?style=for-the-badge" alt="Version"></a>
+  <a href="https://github.com/JoshuaHarris391/nopy/releases/latest"><img src="https://img.shields.io/github/v/release/JoshuaHarris391/nopy?style=for-the-badge&color=863bff&label=version" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/JoshuaHarris391/nopy?style=for-the-badge&color=89b4fa" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-a6e3a1?style=for-the-badge" alt="Platforms"></a>
   <a href="#"><img src="https://img.shields.io/badge/built_with-Tauri_%7C_React_19-47bfff?style=for-the-badge" alt="Stack"></a>
