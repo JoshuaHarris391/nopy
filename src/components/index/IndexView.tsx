@@ -11,6 +11,7 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useIndexingStore } from '../../stores/indexingStore'
+import { isLlmConfigured } from '../../services/llm'
 
 export function IndexView() {
   const navigate = useNavigate()
@@ -22,12 +23,9 @@ export function IndexView() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const indexing = useIndexingStore()
 
-  // Same readiness gate as MaintenanceSection — hide the Update button until
-  // the active provider is configured, otherwise the dispatcher would throw.
-  const ready =
-    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
-      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
-        : !!llmConfig.localModel
+  // Hide the Update button until the active provider is configured,
+  // otherwise the dispatcher would throw.
+  const ready = isLlmConfigured(llmConfig)
 
   const handleUpdateIndex = () => {
     if (!ready) return

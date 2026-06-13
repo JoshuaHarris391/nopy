@@ -5,6 +5,7 @@ import type { MoodScore } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
 import { processAllEntries, processEntry } from '../services/entryProcessor'
 import { useSettingsStore } from './settingsStore'
+import { saveToDiskAndReconcileFilename } from './diskSync'
 import type { LlmConfig } from '../types/settings'
 
 function getJournalPath(): string {
@@ -67,20 +68,15 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const entries = [entry, ...getState().entries.filter((e) => e.id !== entry.id)]
     setState({ entries, lastError: null })
     await set('nopy-entries', entries)
-    try {
-      const filename = await saveEntryToDisk(entry, getJournalPath())
-      if (filename !== entry.sourceFilename) {
-        const updated = getState().entries.map((e) =>
-          e.id === entry.id ? { ...e, sourceFilename: filename } : e
-        )
-        setState({ entries: updated })
-        await set('nopy-entries', updated)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setState({ lastError: `Failed to save "${entry.title}" to disk: ${msg}` })
-      throw e
-    }
+    await saveToDiskAndReconcileFilename({
+      item: entry,
+      journalPath: getJournalPath(),
+      saveToDisk: saveEntryToDisk,
+      idbKey: 'nopy-entries',
+      getItems: () => getState().entries,
+      setItems: (items) => setState({ entries: items }),
+      setLastError: (message) => setState({ lastError: message }),
+    })
   },
 
   updateEntry: async (id, updates) => {
@@ -94,20 +90,16 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     await set('nopy-entries', entries)
     const updated = entries.find((e) => e.id === id)
     if (!updated) return
-    try {
-      const filename = await saveEntryToDisk(updated, getJournalPath(), oldSourceFilename)
-      if (filename !== updated.sourceFilename) {
-        const refreshed = getState().entries.map((e) =>
-          e.id === id ? { ...e, sourceFilename: filename } : e
-        )
-        setState({ entries: refreshed })
-        await set('nopy-entries', refreshed)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setState({ lastError: `Failed to save "${updated.title}" to disk: ${msg}` })
-      throw e
-    }
+    await saveToDiskAndReconcileFilename({
+      item: updated,
+      oldFilename: oldSourceFilename,
+      journalPath: getJournalPath(),
+      saveToDisk: saveEntryToDisk,
+      idbKey: 'nopy-entries',
+      getItems: () => getState().entries,
+      setItems: (items) => setState({ entries: items }),
+      setLastError: (message) => setState({ lastError: message }),
+    })
   },
 
   deleteEntry: async (id) => {

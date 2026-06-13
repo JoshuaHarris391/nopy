@@ -128,6 +128,23 @@ export async function generateFullProfile(
   return response
 }
 
+/** Mean mood (1 decimal) over entries that have a mood value; null if none do. */
+function computeAverageMood(entries: JournalEntry[]): number | null {
+  const moods = entries.filter((e) => e.mood?.value != null)
+  if (moods.length === 0) return null
+  return Math.round((moods.reduce((sum, e) => sum + (e.mood?.value ?? 0), 0) / moods.length) * 10) / 10
+}
+
+/** Mean word count per entry. Callers must pass a non-empty array. */
+function computeAvgEntryLength(entries: JournalEntry[]): number {
+  const totalWords = entries.reduce((sum, e) => sum + e.content.split(/\s+/).filter(Boolean).length, 0)
+  return Math.round(totalWords / entries.length)
+}
+
+function computeReflectionDepth(avgEntryLength: number): 'Low' | 'Medium' | 'High' {
+  return avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
+}
+
 export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof LocalStatsSchema> {
   console.log('[entryProcessor] computeLocalStats: entries', entries.length)
   const indexed = entries.filter((e) => e.indexed)
@@ -136,10 +153,7 @@ export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof Local
     return { averageMood: 0, journalingStreak: 0, avgEntryLength: 0, reflectionDepth: 'Low' }
   }
 
-  const moodsWithValues = indexed.filter((e) => e.mood?.value)
-  const averageMood = moodsWithValues.length > 0
-    ? Math.round((moodsWithValues.reduce((sum, e) => sum + (e.mood?.value ?? 0), 0) / moodsWithValues.length) * 10) / 10
-    : 0
+  const averageMood = computeAverageMood(indexed) ?? 0
 
   const dates = [...new Set(entries.map((e) => e.createdAt.slice(0, 10)))].sort().reverse()
   let journalingStreak = 0
@@ -154,11 +168,8 @@ export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof Local
     }
   }
 
-  const totalWords = entries.reduce((sum, e) => sum + e.content.split(/\s+/).filter(Boolean).length, 0)
-  const avgEntryLength = Math.round(totalWords / entries.length)
-
-  const reflectionDepth: 'Low' | 'Medium' | 'High' =
-    avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
+  const avgEntryLength = computeAvgEntryLength(entries)
+  const reflectionDepth = computeReflectionDepth(avgEntryLength)
 
   console.log('[entryProcessor] computeLocalStats: averageMood', averageMood, '| streak', journalingStreak, '| avgEntryLength', avgEntryLength, '| reflectionDepth', reflectionDepth)
   return { averageMood, journalingStreak, avgEntryLength, reflectionDepth }
@@ -184,15 +195,9 @@ export function computeWindowedStats(
   })
   if (windowed.length === 0) return { averageMood: null, avgEntryLength: null, reflectionDepth: null }
 
-  const moods = windowed.filter((entry) => entry.mood?.value != null)
-  const averageMood = moods.length > 0
-    ? Math.round((moods.reduce((sum, entry) => sum + (entry.mood?.value ?? 0), 0) / moods.length) * 10) / 10
-    : null
-
-  const totalWords = windowed.reduce((sum, entry) => sum + entry.content.split(/\s+/).filter(Boolean).length, 0)
-  const avgEntryLength = Math.round(totalWords / windowed.length)
-  const reflectionDepth: 'Low' | 'Medium' | 'High' =
-    avgEntryLength >= 300 ? 'High' : avgEntryLength >= 150 ? 'Medium' : 'Low'
+  const averageMood = computeAverageMood(windowed)
+  const avgEntryLength = computeAvgEntryLength(windowed)
+  const reflectionDepth = computeReflectionDepth(avgEntryLength)
 
   return { averageMood, avgEntryLength, reflectionDepth }
 }

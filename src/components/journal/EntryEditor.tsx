@@ -16,6 +16,7 @@ import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
+import { isLlmConfigured } from '../../services/llm'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
 export function EntryEditor() {
@@ -34,10 +35,7 @@ export function EntryEditor() {
   const reindex = useCancellableTask<void>()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  const reindexReady =
-    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
-      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
-        : !!llmConfig.localModel
+  const reindexReady = isLlmConfigured(llmConfig)
 
   const isNew = !id || id === 'new'
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')

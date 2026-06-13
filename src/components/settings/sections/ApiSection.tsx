@@ -6,13 +6,7 @@ import { ProviderToggle } from './api/ProviderToggle'
 import { AnthropicBlock } from './api/AnthropicBlock'
 import { LocalBlock } from './api/LocalBlock'
 import { OpenaiBlock } from './api/OpenaiBlock'
-
-const selectStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-ui)', fontSize: 13, padding: '6px 12px',
-  border: '1px solid var(--stone)', borderRadius: 'var(--radius-sm)',
-  background: 'var(--warm-cream)', color: 'var(--ink)',
-  outline: 'none', cursor: 'pointer',
-}
+import { selectStyle } from './styles'
 
 /**
  * Top-level API/AI settings. The provider toggle determines which of the

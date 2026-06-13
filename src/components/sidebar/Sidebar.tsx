@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Layers, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
 import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
 
@@ -21,39 +22,16 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const theme = useSettingsStore((s) => s.theme)
-  const [systemDark, setSystemDark] = useState(
-    () => window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
+  const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
   const isDark = theme === 'dark' || (theme === 'system' && systemDark)
-  const [reducedMotion, setReducedMotion] = useState(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 
+  // Auto-collapse below 1024px. One-way: going narrow collapses, going wide
+  // never auto-expands (the user may have collapsed it deliberately).
+  const isNarrow = useMediaQuery('(max-width: 1023px)')
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  // Respect prefers-reduced-motion
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  // Auto-collapse below 1024px
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 1023px)')
-    if (mq.matches) setSidebarCollapsed(true)
-    const handler = (e: MediaQueryListEvent) => {
-      if (e.matches) setSidebarCollapsed(true)
-    }
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [setSidebarCollapsed])
+    if (isNarrow) setSidebarCollapsed(true)
+  }, [isNarrow, setSidebarCollapsed])
 
   const transition = reducedMotion ? 'none' : 'width 300ms ease-in-out, min-width 300ms ease-in-out'
 

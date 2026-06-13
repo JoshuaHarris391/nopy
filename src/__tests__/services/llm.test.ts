@@ -35,7 +35,7 @@ vi.mock('../../services/anthropic', () => anthropicMocks)
 vi.mock('../../services/localServer', () => localMocks)
 vi.mock('../../services/openai', () => openaiMocks)
 
-import { streamChatResponse, sendMessage, sendMessageStreaming, fetchModels, resolveModel, LlmError } from '../../services/llm'
+import { streamChatResponse, sendMessage, sendMessageStreaming, fetchModels, resolveModel, isLlmConfigured, LlmError } from '../../services/llm'
 
 const ANTHROPIC: LlmConfig = {
   provider: 'anthropic',
@@ -280,5 +280,35 @@ describe('fetchModels routing', () => {
     const o = await fetchModels(OPENAI)
     expect(o).toEqual([{ id: 'gpt-4o', displayName: 'gpt-4o' }])
     expect(openaiMocks.fetchModels).toHaveBeenCalledWith('sk-openai-x')
+  })
+})
+
+describe('isLlmConfigured readiness gate', () => {
+  it('reports ready only when the active provider has what it needs to send', () => {
+    /**
+     * Every AI-using surface (ChatView, ProfileView, EntryEditor,
+     * IndexView, MaintenanceSection) hides its AI actions behind this
+     * single gate. Anthropic can send with just an API key (model slots
+     * are migration-seeded), OpenAI needs both a key and an explicitly
+     * picked model, and Local needs a model name. If this gate drifts,
+     * users see buttons that are guaranteed to throw NO_MODEL_CONFIGURED.
+     */
+    expect(isLlmConfigured(ANTHROPIC)).toBe(true)
+    expect(isLlmConfigured(OPENAI)).toBe(true)
+    expect(isLlmConfigured(LOCAL)).toBe(true)
+
+    expect(isLlmConfigured({ ...ANTHROPIC, apiKey: '' })).toBe(false)
+    expect(isLlmConfigured({ ...OPENAI, openaiApiKey: '' })).toBe(false)
+    expect(isLlmConfigured({ ...OPENAI, openaiModel: '' })).toBe(false)
+    expect(isLlmConfigured({ ...LOCAL, localModel: '' })).toBe(false)
+  })
+
+  it('ignores other providers\' missing config when judging the active one', () => {
+    /**
+     * A user who only sets up LM Studio should be "ready" even though the
+     * Anthropic and OpenAI fields are blank — the gate must judge only
+     * the provider that's actually selected.
+     */
+    expect(isLlmConfigured({ ...LOCAL, apiKey: '', openaiApiKey: '' })).toBe(true)
   })
 })

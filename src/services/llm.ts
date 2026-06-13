@@ -66,6 +66,19 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
 type Message = { role: 'user' | 'assistant'; content: string }
 
 /**
+ * Readiness gate shared by every AI-using surface (ChatView, ProfileView,
+ * EntryEditor, IndexView, MaintenanceSection). Anthropic needs an apiKey;
+ * OpenAI needs both openaiApiKey + openaiModel; Local needs a localModel
+ * name. UIs hide AI actions when this is false — friendlier than showing a
+ * button guaranteed to throw NO_MODEL_CONFIGURED.
+ */
+export function isLlmConfigured(config: LlmConfig): boolean {
+  if (config.provider === 'anthropic') return !!config.apiKey
+  if (config.provider === 'openai') return !!config.openaiApiKey && !!config.openaiModel
+  return !!config.localModel
+}
+
+/**
  * Maps `(provider, role)` to the configured model id. For local/openai a
  * blank lightweight slot transparently falls back to the main slot — this
  * is the "I only run one model" escape hatch, important for LM Studio users

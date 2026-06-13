@@ -5,20 +5,15 @@ import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../../stores/settingsStore'
 import { useJournalStore } from '../../../stores/journalStore'
 import { useIndexingStore } from '../../../stores/indexingStore'
+import { isLlmConfigured } from '../../../services/llm'
 
 export function MaintenanceSection() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const indexing = useIndexingStore()
 
-  // Hide the section until the active provider is configured. In Anthropic
-  // mode that means an API key; in local mode that means a model name.
-  // The dispatcher would throw NO_MODEL_CONFIGURED otherwise — friendlier
+  // Hide the section until the active provider is configured — friendlier
   // to hide the button than show one that's guaranteed to fail.
-  const ready =
-    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
-      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
-        : !!llmConfig.localModel
-  if (!ready) return null
+  if (!isLlmConfigured(llmConfig)) return null
 
   const handleForceUpdate = () => {
     indexing.run(async (onProgress, signal) => {

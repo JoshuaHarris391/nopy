@@ -359,3 +359,63 @@ describe('provider parity with localServer', () => {
     }
   })
 })
+
+describe('toLlmError mapping (provider error contract)', () => {
+  it('maps a 401 from the SDK to INVALID_API_KEY so the UI shows the curated copy', async () => {
+    /**
+     * The dispatcher contract: every provider (openai, localServer, and now
+     * anthropic) surfaces failures as LlmError with a stable `code` so the
+     * UI can look up friendly copy in LLM_ERROR_MESSAGES. Before this
+     * wrapper existed, a bad Anthropic key reached the chat UI as a raw SDK
+     * error and rendered the generic fallback instead of "Your API key
+     * isn't valid. Update it in Settings."
+     */
+    const apiError = Object.assign(new Error('401 authentication_error'), { status: 401 })
+    mockState.createImpl = vi.fn(async () => { throw apiError })
+
+    await expect(mod.sendMessage('bad-key', 'm', 's', [], 100)).rejects.toMatchObject({
+      name: 'LlmError',
+      code: 'INVALID_API_KEY',
+    })
+  })
+
+  it('maps a 429 to RATE_LIMITED and an unknown failure to UNKNOWN', async () => {
+    /**
+     * Rate limits are the other failure users actually hit with hosted
+     * Anthropic; everything unrecognized must still arrive as an LlmError
+     * (code UNKNOWN, original message preserved) so UI error handling never
+     * has to branch on provider-specific error shapes.
+     */
+    mockState.createImpl = vi.fn(async () => {
+      throw Object.assign(new Error('429 rate_limit_error'), { status: 429 })
+    })
+    await expect(mod.sendMessage('k', 'm', 's', [], 100)).rejects.toMatchObject({
+      name: 'LlmError',
+      code: 'RATE_LIMITED',
+    })
+
+    mockState.createImpl = vi.fn(async () => { throw new Error('socket hang up') })
+    await expect(mod.sendMessage('k', 'm', 's', [], 100)).rejects.toMatchObject({
+      name: 'LlmError',
+      code: 'UNKNOWN',
+      message: 'socket hang up',
+    })
+  })
+
+  it('delivers stream errors to onError as LlmError with a code', async () => {
+    /**
+     * ChatView's onError handler renders LLM_ERROR_MESSAGES[error.code]
+     * when the message is empty. Stream errors must carry a code like the
+     * non-streaming path does, otherwise mid-stream auth failures show the
+     * raw SDK message.
+     */
+    const fake = mockState.installFakeStream()
+    const onError = vi.fn()
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, () => {}, onError)
+
+    fake.emitError(Object.assign(new Error('overloaded'), { status: 429 }))
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0]).toMatchObject({ name: 'LlmError', code: 'RATE_LIMITED' })
+  })
+})

@@ -1,38 +1,23 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useProfileStore } from '../../stores/profileStore'
-import { useJournalStore } from '../../stores/journalStore'
 import { useContextStore } from '../../stores/contextStore'
 import { useModelCatalogStore } from '../../stores/modelCatalogStore'
-import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES } from '../../services/llm'
-import { useNotificationStore } from '../../stores/notificationStore'
-import { TOKEN_LIMITS, getModelContextWindow } from '../../services/models'
-import { assembleContext } from '../../services/contextAssembler'
-import { resolveContextItems, toInjectedItems } from '../../services/contextResolver'
-import { useLocalModels } from '../../hooks/useLocalModels'
-import { hydrateEntryContext } from '../../services/chatPersistence'
-import { getTherapyPrompt } from '../../services/prompts/therapists'
+import { isLlmConfigured } from '../../services/llm'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { MainHeader } from '../ui/MainHeader'
-import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
-import { ChatSessionList } from './ChatSessionList'
-import { MessageCircle, Leaf, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import type { ChatMessage as ChatMessageType } from '../../types/chat'
+import { ChatSessionPanel } from './ChatSessionPanel'
+import { ChatMessageList } from './ChatMessageList'
+import { useChatScroll } from './useChatScroll'
+import { useChatSend } from './useChatSend'
 
 export function ChatView() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
-  // Active-provider readiness: anthropic needs apiKey, openai needs both
-  // openaiApiKey and openaiModel (the model dropdown can't auto-fill like
-  // LM Studio's single-loaded-model heuristic), local needs localModel.
-  // Same gate every other AI-using component uses (IndexView, ProfileView,
-  // MaintenanceSection) so the chat composer is hidden in the same situations.
-  const ready =
-    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
-      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
-        : !!llmConfig.localModel
+  const ready = isLlmConfigured(llmConfig)
   const maxOutputTokens = useSettingsStore((s) => s.maxOutputTokens)
   const contextBudget = useSettingsStore((s) => s.contextBudget)
   const therapyType = useSettingsStore((s) => s.therapyType)
@@ -46,30 +31,15 @@ export function ChatView() {
   const loadSessionList = useChatStore((s) => s.loadSessionList)
   const createSession = useChatStore((s) => s.createSession)
   const loadSession = useChatStore((s) => s.loadSession)
-  const addMessage = useChatStore((s) => s.addMessage)
-  const updateStreamingMessage = useChatStore((s) => s.updateStreamingMessage)
-  const finalizeStreamingMessage = useChatStore((s) => s.finalizeStreamingMessage)
   const updateSessionTitle = useChatStore((s) => s.updateSessionTitle)
   const deleteSession = useChatStore((s) => s.deleteSession)
   const profileLoaded = useProfileStore((s) => s.loaded)
   const loadProfile = useProfileStore((s) => s.loadProfile)
   const contextLoaded = useContextStore((s) => s.loaded)
   const loadContext = useContextStore((s) => s.loadContext)
-  const localBaseUrl = useSettingsStore((s) => s.localBaseUrl)
-  // Probe LM Studio only in local mode so we can size the budget to the loaded
-  // window; in hosted modes we pass no models and fall back to the static map.
-  const { models: localModels } = useLocalModels(llmConfig.provider === 'local' ? localBaseUrl : '')
-  const localModelsRef = useRef(localModels)
-  useEffect(() => { localModelsRef.current = localModels }, [localModels])
 
   const location = useLocation()
   const navigate = useNavigate()
-  const [generatingTitleId, setGeneratingTitleId] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const isNearBottomRef = useRef(true)
-  const rafRef = useRef<number | null>(null)
-  const streamingRef = useRef(false)
   const entryContextHandled = useRef(false)
 
   useEffect(() => {
@@ -94,67 +64,22 @@ export function ChatView() {
   // to the model's real window.
   useEffect(() => { useModelCatalogStore.getState().ensure() }, [])
 
-  // Auto-collapse session panel below 1024px
+  // Auto-collapse session panel below 1024px. One-way: never auto-expands.
+  const isNarrow = useMediaQuery('(max-width: 1023px)')
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 1023px)')
-    if (mq.matches) setSessionPanelCollapsed(true)
-    const handler = (e: MediaQueryListEvent) => {
-      if (e.matches) setSessionPanelCollapsed(true)
-    }
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [setSessionPanelCollapsed])
+    if (isNarrow) setSessionPanelCollapsed(true)
+  }, [isNarrow, setSessionPanelCollapsed])
 
-  // Smooth momentum scroll toward bottom using lerp
-  const smoothScrollToBottom = useCallback(() => {
-    if (rafRef.current !== null) return // already running
-    const el = scrollContainerRef.current
-    if (!el) return
+  const { scrollContainerRef, messagesEndRef, handleScroll, snapToBottom } = useChatScroll(activeSession?.messages)
 
-    const tick = () => {
-      const target = el.scrollHeight - el.clientHeight
-      const current = el.scrollTop
-      const delta = target - current
-
-      if (Math.abs(delta) < 1) {
-        el.scrollTop = target
-        rafRef.current = null
-        return
-      }
-
-      // Lerp with dampening — 12% per frame feels smooth but responsive
-      el.scrollTop += delta * 0.12
-      rafRef.current = requestAnimationFrame(tick)
-    }
-
-    rafRef.current = requestAnimationFrame(tick)
-  }, [])
-
-  // Trigger smooth scroll on message updates if near bottom
-  useEffect(() => {
-    if (isNearBottomRef.current) {
-      smoothScrollToBottom()
-    }
-  }, [activeSession?.messages, smoothScrollToBottom])
-
-  // Cancel any in-flight scroll animation on unmount
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
-
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    isNearBottomRef.current = distFromBottom < 80
-    // If user scrolled up manually, cancel the momentum animation
-    if (distFromBottom > 80 && rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
-  }, [])
+  const { handleSend, generatingTitleId } = useChatSend({
+    llmConfig,
+    ready,
+    maxOutputTokens,
+    contextBudget,
+    therapyType,
+    snapToBottom,
+  })
 
   const handleNewSession = useCallback(async () => {
     await createSession()
@@ -163,196 +88,6 @@ export function ChatView() {
   const handleSelectSession = useCallback(async (id: string) => {
     await loadSession(id)
   }, [loadSession])
-
-  const handleSend = useCallback(async (content: string) => {
-    if (!ready || streamingRef.current) return
-
-    // Read activeSessionId from the store at call time, not from the
-    // useCallback closure. The entry-context useEffect awaits
-    // createSession(entryContext) and then setTimeout(() => handleSend(...)).
-    // Using the closure value here would see the stale activeSessionId from
-    // the render that captured handleSend (typically null on first navigation
-    // into /chat), causing this branch to create a SECOND, orphan session
-    // without entryContext — losing the journal entry from the LLM context.
-    let sessionId = useChatStore.getState().activeSessionId
-    if (!sessionId) {
-      sessionId = await createSession()
-    }
-
-    streamingRef.current = true
-
-    // Add user message
-    const userMsg: ChatMessageType = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      timestamp: new Date().toISOString(),
-    }
-    await addMessage(userMsg)
-
-    // Snap scroll to bottom when user sends a message
-    isNearBottomRef.current = true
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
-
-    // Add streaming placeholder
-    const assistantMsg: ChatMessageType = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      streaming: true,
-    }
-    await addMessage(assistantMsg)
-
-    // Snap to bottom after both messages are in the DOM
-    requestAnimationFrame(() => {
-      const el = scrollContainerRef.current
-      if (el) el.scrollTop = el.scrollHeight
-    })
-
-    // Assemble context and stream
-    let session = useChatStore.getState().activeSession
-    if (!session) return
-
-    // Lazy hydration: if restored from disk with entryContextRef but no entryContext, read the file
-    if (session.entryContextRef && !session.entryContext) {
-      const journalPath = useSettingsStore.getState().journalPath
-      if (journalPath) {
-        const ctx = await hydrateEntryContext(session.entryContextRef, journalPath)
-        if (ctx) {
-          await useChatStore.getState().updateEntryContext(session.id, ctx)
-          session = useChatStore.getState().activeSession!
-        }
-      }
-    }
-
-    // Belt-and-suspenders for the mount-time loadProfile() effect: if the
-    // user sends before that effect resolves (or it never ran because this
-    // is the first time anyone reads the profile) hydrate it now so the
-    // first message never goes out without personalisation.
-    if (!useProfileStore.getState().loaded) {
-      await useProfileStore.getState().loadProfile()
-    }
-    const profile = useProfileStore.getState().profile
-    const entries = useJournalStore.getState().entries
-
-    // Resolve the Context Workspace selection (notes + profile/index, in the
-    // user's chosen order). If the store hasn't hydrated yet, do it now so we
-    // never fall back to the un-curated default mid-session.
-    if (!useContextStore.getState().loaded) {
-      await useContextStore.getState().loadContext()
-    }
-    const ctx = useContextStore.getState()
-    const journalIndexLimit = useSettingsStore.getState().journalIndexLimit
-    const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries, journalIndexLimit)
-    const injectedItems = toInjectedItems(resolved)
-    const hostedId = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
-    const catalogWindow = llmConfig.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
-    const { tokens: window } = getModelContextWindow(
-      llmConfig,
-      localModelsRef.current,
-      useSettingsStore.getState().modelContextWindowOverride,
-      catalogWindow,
-    )
-
-    const { system, messages } = assembleContext(
-      session,
-      profile,
-      entries,
-      getTherapyPrompt(therapyType),
-      contextBudget,
-      session.entryContext ?? undefined,
-      { injectedItems, window, maxOutputTokens, journalIndexLimit },
-    )
-    const filteredMessages = messages.filter((m) => !!m.content)
-
-    if (filteredMessages.length === 0) {
-      streamingRef.current = false
-      return
-    }
-
-    // Translate dispatcher errors into the curated user-facing copy from
-    // LLM_ERROR_MESSAGES. For non-LlmError throws (rare — usually a code
-    // bug), fall back to the raw message.
-    const renderErrorMessage = (error: Error): string => {
-      if (error instanceof LlmError) {
-        return error.message || LLM_ERROR_MESSAGES[error.code]
-      }
-      return `I'm sorry, I encountered an error: ${error.message}`
-    }
-
-    try {
-      await streamChatResponse(
-        llmConfig,
-        'main',
-        system,
-        filteredMessages,
-        maxOutputTokens,
-        (fullText) => updateStreamingMessage(fullText),
-        async (fullText) => {
-          await finalizeStreamingMessage()
-          streamingRef.current = false
-
-          // Defensive guard: if a provider misbehaves and fires onComplete
-          // with empty text (the SSE-error-event bug we hit in production
-          // before the localServer parser was fixed), don't generate a
-          // title for an empty conversation. The error path runs onError
-          // separately — here we just bail.
-          if (!fullText.trim()) return
-
-          // Generate title after first exchange
-          const currentSession = useChatStore.getState().activeSession
-          if (currentSession && currentSession.title === 'New conversation' && currentSession.messages.length >= 2) {
-            try {
-              setGeneratingTitleId(currentSession.id)
-              const snippet = currentSession.messages.slice(0, 4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
-              const title = await sendMessage(
-                llmConfig,
-                'lightweight',
-                'You generate short titles for conversations. Respond with ONLY the title, nothing else.',
-                [{ role: 'user', content: `Generate a short title for this conversation. Format: "YYYY-MM-DD — topic" where the date is ${new Date().toISOString().slice(0, 10)} and topic is 2-4 words.\n\nConversation:\n${snippet}` }],
-                TOKEN_LIMITS.titleGeneration,
-              )
-              if (title.trim()) {
-                await updateSessionTitle(currentSession.id, title.trim())
-              }
-            } catch (e) {
-              console.error('Title generation failed:', e)
-            } finally {
-              setGeneratingTitleId(null)
-            }
-          }
-        },
-        (error) => {
-          console.error('Chat stream error:', error)
-          streamingRef.current = false
-          const message = renderErrorMessage(error)
-          // Inline error in the assistant placeholder so the conversation
-          // history shows what happened in context.
-          updateStreamingMessage(message)
-          finalizeStreamingMessage()
-          // Plus a bottom-right notification so users can't miss an error
-          // that happens off-screen (e.g. they scrolled up). Title is
-          // intentionally generic — the actionable copy lives in `message`.
-          useNotificationStore.getState().push({
-            kind: 'error',
-            title: 'Chat error',
-            message,
-          })
-        },
-      )
-    } catch (error) {
-      console.error('Chat setup error:', error)
-      streamingRef.current = false
-      const msg = error instanceof Error ? renderErrorMessage(error) : `I'm sorry, I couldn't connect: ${String(error)}`
-      updateStreamingMessage(msg)
-      await finalizeStreamingMessage()
-    }
-  }, [llmConfig, ready, maxOutputTokens, contextBudget, therapyType, createSession, addMessage, updateStreamingMessage, finalizeStreamingMessage, updateSessionTitle])
-
 
   // Handle "Explore with nopy" entry context from router state
   useEffect(() => {
@@ -376,56 +111,17 @@ export function ChatView() {
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
-      {/* Session list - collapsible; overlays chat on narrow screens */}
-      <div
-        className="flex h-full flex-shrink-0 relative lg:static absolute top-0 left-0 z-20 lg:z-auto lg:shadow-none"
-        style={{
-          width: sessionPanelCollapsed ? 0 : 300,
-          maxWidth: '85vw',
-          height: '100%',
-          overflow: 'hidden',
-          transition: 'width 200ms ease',
-          boxShadow: sessionPanelCollapsed ? 'none' : '2px 0 8px rgba(0,0,0,0.08)',
-        }}
-      >
-        <ChatSessionList
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={handleSelectSession}
-          onCreate={handleNewSession}
-          onRename={(id, title) => updateSessionTitle(id, title)}
-          onDelete={(id) => deleteSession(id)}
-          generatingTitleId={generatingTitleId}
-        />
-      </div>
-
-      {/* Session panel toggle - always visible so sessions stay reachable on narrow screens */}
-      <button
-        className="flex items-center justify-center flex-shrink-0 cursor-pointer relative z-30"
-        onClick={toggleSessionPanel}
-        style={{
-          width: 20,
-          background: 'var(--warm-cream)',
-          border: 'none',
-          borderRight: '1px solid var(--stone)',
-          color: 'var(--sage)',
-          transition: 'color 150ms ease, background 150ms ease',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = 'var(--forest)'
-          e.currentTarget.style.background = 'var(--parchment)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = 'var(--sage)'
-          e.currentTarget.style.background = 'var(--warm-cream)'
-        }}
-        title={sessionPanelCollapsed ? 'Show sessions' : 'Hide sessions'}
-      >
-        {sessionPanelCollapsed
-          ? <PanelLeftOpen size={12} strokeWidth={1.5} />
-          : <PanelLeftClose size={12} strokeWidth={1.5} />
-        }
-      </button>
+      <ChatSessionPanel
+        collapsed={sessionPanelCollapsed}
+        onToggle={toggleSessionPanel}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelect={handleSelectSession}
+        onCreate={handleNewSession}
+        onRename={(id, title) => updateSessionTitle(id, title)}
+        onDelete={(id) => deleteSession(id)}
+        generatingTitleId={generatingTitleId}
+      />
 
       {/* Chat area with its own header */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -436,76 +132,25 @@ export function ChatView() {
             </span>
           )}
         </MainHeader>
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-y-auto"
-            style={{ padding: '36px 44px 0 44px' }}
-          >
+
+        <ChatMessageList
+          session={activeSession}
+          ready={ready}
+          provider={llmConfig.provider}
+          onNewSession={handleNewSession}
+          scrollContainerRef={scrollContainerRef}
+          onScroll={handleScroll}
+          messagesEndRef={messagesEndRef}
+        />
+
+        {/* Input pinned below scroll area */}
+        {activeSession && (
+          <div style={{ padding: '0 44px' }}>
             <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
-              {!activeSession ? (
-                // Empty state
-                <div className="flex flex-col items-center justify-center text-center" style={{ paddingTop: 120 }}>
-                  <div
-                    className="flex items-center justify-center"
-                    style={{
-                      width: 48, height: 48, borderRadius: 12,
-                      background: 'linear-gradient(135deg, var(--bark), var(--amber))',
-                      marginBottom: 16,
-                    }}
-                  >
-                    <Leaf size={24} color="white" strokeWidth={1.8} />
-                  </div>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
-                    Start a conversation
-                  </h3>
-                  <p style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--sage)', maxWidth: 320, marginBottom: 20 }}>
-                    {ready
-                      ? "Share what's on your mind. I'm here to listen and help you explore your thoughts."
-                      : llmConfig.provider === 'local'
-                        ? 'Pick a local model in Settings to begin chatting.'
-                        : llmConfig.provider === 'openai'
-                          ? 'Add your OpenAI API key and pick a model in Settings to begin chatting.'
-                          : 'Add your Anthropic API key in Settings to begin chatting.'}
-                  </p>
-                  {ready && (
-                    <button
-                      onClick={handleNewSession}
-                      className="cursor-pointer flex items-center gap-2"
-                      style={{
-                        fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500,
-                        padding: '7px 16px', borderRadius: 'var(--radius-sm)',
-                        background: 'var(--forest)', color: 'white', border: 'none',
-                        boxShadow: '0 2px 6px rgba(91, 127, 94, 0.22)',
-                      }}
-                    >
-                      <MessageCircle size={14} strokeWidth={2} />
-                      New conversation
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {/* Messages */}
-                  <div className="flex flex-col" style={{ gap: 32 }}>
-                    {activeSession.messages.map((msg) => (
-                      <ChatMessage key={msg.id} message={msg} />
-                    ))}
-                  </div>
-                  <div ref={messagesEndRef} />
-                </>
-              )}
+              <ChatInput onSend={handleSend} disabled={!ready || isStreaming} />
             </div>
           </div>
-
-          {/* Input pinned below scroll area */}
-          {activeSession && (
-            <div style={{ padding: '0 44px' }}>
-              <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
-                <ChatInput onSend={handleSend} disabled={!ready || isStreaming} />
-              </div>
-            </div>
-          )}
+        )}
       </div>
     </div>
   )

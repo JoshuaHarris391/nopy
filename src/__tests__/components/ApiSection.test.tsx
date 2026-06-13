@@ -18,10 +18,8 @@ const { useAnthropicModelsMock, useOpenaiModelsMock, probeMock, openUrlMock } = 
   probeMock: vi.fn(),
   openUrlMock: vi.fn(async () => {}),
 }))
-vi.mock('../../hooks/useAnthropicModels', () => ({
+vi.mock('../../hooks/useProviderModels', () => ({
   useAnthropicModels: useAnthropicModelsMock,
-}))
-vi.mock('../../hooks/useOpenaiModels', () => ({
   useOpenaiModels: useOpenaiModelsMock,
 }))
 vi.mock('../../services/localServer', async () => {

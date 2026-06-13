@@ -14,6 +14,7 @@ import {
   loadManifestFromDisk,
 } from '../services/contextPersistence'
 import { useSettingsStore } from './settingsStore'
+import { saveToDiskAndReconcileFilename } from './diskSync'
 
 const NOTES_KEY = 'nopy-context-notes'
 const INJECTION_KEY = 'nopy-context-injection'
@@ -61,7 +62,15 @@ interface ContextState {
   clear: () => Promise<void>
 }
 
-export const useContextStore = create<ContextState>()((setState, getState) => ({
+export const useContextStore = create<ContextState>()((setState, getState) => {
+  // Single commit path for injection changes: state → IDB → manifest file.
+  const commitInjection = async (injection: InjectionMap) => {
+    setState({ injection })
+    await set(INJECTION_KEY, Object.values(injection))
+    await saveManifestToDisk(Object.values(injection), getJournalPath())
+  }
+
+  return {
   notes: [],
   injection: {},
   loaded: false,
@@ -107,18 +116,15 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
     const notes = [note, ...getState().notes.filter((n) => n.id !== note.id)]
     setState({ notes, lastError: null })
     await set(NOTES_KEY, notes)
-    try {
-      const filename = await saveContextNoteToDisk(note, getJournalPath())
-      if (filename !== note.sourceFilename) {
-        const updated = getState().notes.map((n) => (n.id === note.id ? { ...n, sourceFilename: filename } : n))
-        setState({ notes: updated })
-        await set(NOTES_KEY, updated)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setState({ lastError: `Failed to save "${note.title}" to disk: ${msg}` })
-      throw e
-    }
+    await saveToDiskAndReconcileFilename({
+      item: note,
+      journalPath: getJournalPath(),
+      saveToDisk: saveContextNoteToDisk,
+      idbKey: NOTES_KEY,
+      getItems: () => getState().notes,
+      setItems: (items) => setState({ notes: items }),
+      setLastError: (message) => setState({ lastError: message }),
+    })
   },
 
   updateNote: async (id, updates) => {
@@ -131,18 +137,16 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
     await set(NOTES_KEY, notes)
     const updated = notes.find((n) => n.id === id)
     if (!updated) return
-    try {
-      const filename = await saveContextNoteToDisk(updated, getJournalPath(), oldFilename)
-      if (filename !== updated.sourceFilename) {
-        const refreshed = getState().notes.map((n) => (n.id === id ? { ...n, sourceFilename: filename } : n))
-        setState({ notes: refreshed })
-        await set(NOTES_KEY, refreshed)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setState({ lastError: `Failed to save "${updated.title}" to disk: ${msg}` })
-      throw e
-    }
+    await saveToDiskAndReconcileFilename({
+      item: updated,
+      oldFilename,
+      journalPath: getJournalPath(),
+      saveToDisk: saveContextNoteToDisk,
+      idbKey: NOTES_KEY,
+      getItems: () => getState().notes,
+      setItems: (items) => setState({ notes: items }),
+      setLastError: (message) => setState({ lastError: message }),
+    })
   },
 
   deleteNote: async (id) => {
@@ -170,10 +174,7 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
     const next: ContextInjection = injected
       ? { id, injected: true, order: existing?.injected ? existing.order : nextOrder(current) }
       : { id, injected: false, order: existing?.order ?? Number.MAX_SAFE_INTEGER }
-    const injection = { ...current, [id]: next }
-    setState({ injection })
-    await set(INJECTION_KEY, Object.values(injection))
-    await saveManifestToDisk(Object.values(injection), getJournalPath())
+    await commitInjection({ ...current, [id]: next })
   },
 
   applyShelf: async (orderedIds) => {
@@ -192,9 +193,7 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
         injection[inj.id] = { ...inj, injected: false }
       }
     }
-    setState({ injection })
-    await set(INJECTION_KEY, Object.values(injection))
-    await saveManifestToDisk(Object.values(injection), getJournalPath())
+    await commitInjection(injection)
   },
 
   clear: async () => {
@@ -202,4 +201,5 @@ export const useContextStore = create<ContextState>()((setState, getState) => ({
     await del(NOTES_KEY)
     await del(INJECTION_KEY)
   },
-}))
+  }
+})

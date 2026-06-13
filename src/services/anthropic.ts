@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { LlmError, LLM_ERROR_MESSAGES } from './llm'
 
 let clientInstance: Anthropic | null = null
 let currentApiKey = ''
@@ -14,6 +15,31 @@ export function getClient(apiKey: string): Anthropic {
   return clientInstance
 }
 
+/**
+ * Translate Anthropic SDK errors into the dispatcher's LlmError shape so the
+ * UI can surface curated copy from LLM_ERROR_MESSAGES instead of raw API
+ * messages — same contract as the OpenAI and local providers. Detection is
+ * duck-typed on `status` (the SDK's APIError carries it) rather than
+ * `instanceof` so it survives SDK module mocking in tests.
+ */
+function toLlmError(error: unknown): LlmError {
+  if (error instanceof LlmError) return error
+  const status = (error as { status?: unknown } | null)?.status
+  const message = error instanceof Error ? error.message : String(error)
+  if (typeof status === 'number') {
+    if (status === 401) {
+      return new LlmError('INVALID_API_KEY', "Your Anthropic API key isn't valid. Update it in Settings.", error)
+    }
+    if (status === 429) {
+      return new LlmError('RATE_LIMITED', LLM_ERROR_MESSAGES.RATE_LIMITED, error)
+    }
+    if (status === 400 && /context|maximum.*token|too\s*long/i.test(message)) {
+      return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, error)
+    }
+  }
+  return new LlmError('UNKNOWN', message, error)
+}
+
 export async function streamChatResponse(
   apiKey: string,
   model: string,
@@ -25,30 +51,35 @@ export async function streamChatResponse(
   onError: (error: Error) => void,
 ): Promise<void> {
   console.log('[anthropic] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
-  const client = getClient(apiKey)
-  const stream = client.messages.stream({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages,
-  })
+  try {
+    const client = getClient(apiKey)
+    const stream = client.messages.stream({
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+    })
 
-  let fullText = ''
+    let fullText = ''
 
-  stream.on('text', (text) => {
-    fullText += text
-    onChunk(fullText)
-  })
+    stream.on('text', (text) => {
+      fullText += text
+      onChunk(fullText)
+    })
 
-  stream.on('finalMessage', () => {
-    console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
-    onComplete(fullText)
-  })
+    stream.on('finalMessage', () => {
+      console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
+      onComplete(fullText)
+    })
 
-  stream.on('error', (error) => {
-    console.error('[anthropic] streamChatResponse: stream error —', error instanceof Error ? error.message : String(error))
-    onError(error instanceof Error ? error : new Error(String(error)))
-  })
+    stream.on('error', (error) => {
+      console.error('[anthropic] streamChatResponse: stream error —', error instanceof Error ? error.message : String(error))
+      onError(toLlmError(error))
+    })
+  } catch (error) {
+    console.error('[anthropic] streamChatResponse: setup error —', error instanceof Error ? error.message : String(error))
+    onError(toLlmError(error))
+  }
 }
 
 export async function fetchModels(apiKey: string): Promise<{ id: string; displayName: string }[]> {
@@ -72,20 +103,24 @@ export async function sendMessage(
   signal?: AbortSignal,
 ): Promise<string> {
   console.log('[anthropic] sendMessage: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
-  const client = getClient(apiKey)
-  const response = await client.messages.create(
-    {
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages,
-    },
-    { signal },
-  )
-  const block = response.content[0]
-  const text = block?.type === 'text' ? block.text : ''
-  console.log('[anthropic] sendMessage: response', text.length, 'chars | stop_reason', response.stop_reason)
-  return text
+  try {
+    const client = getClient(apiKey)
+    const response = await client.messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages,
+      },
+      { signal },
+    )
+    const block = response.content[0]
+    const text = block?.type === 'text' ? block.text : ''
+    console.log('[anthropic] sendMessage: response', text.length, 'chars | stop_reason', response.stop_reason)
+    return text
+  } catch (error) {
+    throw toLlmError(error)
+  }
 }
 
 export async function sendMessageStreaming(
@@ -98,24 +133,28 @@ export async function sendMessageStreaming(
   signal?: AbortSignal,
 ): Promise<string> {
   console.log('[anthropic] sendMessageStreaming: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
-  const client = getClient(apiKey)
-  const stream = client.messages.stream(
-    {
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages,
-    },
-    { signal },
-  )
+  try {
+    const client = getClient(apiKey)
+    const stream = client.messages.stream(
+      {
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages,
+      },
+      { signal },
+    )
 
-  let fullText = ''
-  stream.on('text', (text) => {
-    fullText += text
-    onProgress(fullText.length)
-  })
+    let fullText = ''
+    stream.on('text', (text) => {
+      fullText += text
+      onProgress(fullText.length)
+    })
 
-  await stream.finalMessage()
-  console.log('[anthropic] sendMessageStreaming: complete —', fullText.length, 'chars')
-  return fullText
+    await stream.finalMessage()
+    console.log('[anthropic] sendMessageStreaming: complete —', fullText.length, 'chars')
+    return fullText
+  } catch (error) {
+    throw toLlmError(error)
+  }
 }

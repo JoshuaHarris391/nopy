@@ -11,6 +11,7 @@ import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 import { moodLabelColors } from '../../utils/mood'
 import { computeWindowedStats } from '../../services/entryProcessor'
+import { isLlmConfigured } from '../../services/llm'
 
 export function ProfileView() {
   const profile = useProfileStore((s) => s.profile)
@@ -21,13 +22,7 @@ export function ProfileView() {
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
-  // Same readiness gate as IndexView / MaintenanceSection. Anthropic needs
-  // apiKey; OpenAI needs both openaiApiKey + openaiModel; Local needs a
-  // localModel name.
-  const ready =
-    llmConfig.provider === 'anthropic' ? !!llmConfig.apiKey
-      : llmConfig.provider === 'openai' ? !!llmConfig.openaiApiKey && !!llmConfig.openaiModel
-        : !!llmConfig.localModel
+  const ready = isLlmConfigured(llmConfig)
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)

@@ -52,7 +52,26 @@ async function _persistToDisk(state: ChatState) {
   scheduleChatSave(fullSessions, journalPath)
 }
 
-export const useChatStore = create<ChatState>()((setState, getState) => ({
+export const useChatStore = create<ChatState>()((setState, getState) => {
+  // Single commit path for changes to the session meta list: state → IDB
+  // meta key → debounced disk snapshot.
+  const commitSessions = async (sessions: ChatSessionMeta[]) => {
+    setState({ sessions })
+    await set('chat:meta', sessions)
+    _persistToDisk(getState())
+  }
+
+  // Patch one or more fields on the full session record stored in IDB.
+  // No-op when the session doesn't exist (e.g. already deleted).
+  const patchStoredSession = async (id: string, patch: Partial<ChatSession>) => {
+    const session = await get<ChatSession>(`chat:session:${id}`)
+    if (session) {
+      Object.assign(session, patch)
+      await set(`chat:session:${id}`, session)
+    }
+  }
+
+  return {
   sessions: [],
   activeSession: null,
   activeSessionId: null,
@@ -114,9 +133,8 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
     console.log('[chatStore] createSession: created session', session.id)
     const meta = toMeta(session)
     const sessions = [meta, ...getState().sessions]
-    setState({ sessions, activeSession: session, activeSessionId: session.id })
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    setState({ activeSession: session, activeSessionId: session.id })
+    await commitSessions(sessions)
     return session.id
   },
 
@@ -142,10 +160,7 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
 
     // Update meta list
     const meta = toMeta(updatedSession)
-    const sessions = state.sessions.map((s) => (s.id === meta.id ? meta : s))
-    setState({ sessions })
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(state.sessions.map((s) => (s.id === meta.id ? meta : s)))
   },
 
   updateStreamingMessage: (content) => {
@@ -175,84 +190,57 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
     await set(`chat:session:${updatedSession.id}`, updatedSession)
 
     const meta = toMeta(updatedSession)
-    const sessions = getState().sessions.map((s) => (s.id === meta.id ? meta : s))
-    setState({ sessions })
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(getState().sessions.map((s) => (s.id === meta.id ? meta : s)))
   },
 
   archiveSession: async (id) => {
     console.log('[chatStore] archiveSession: id', id)
-    const session = await get<ChatSession>(`chat:session:${id}`)
-    if (session) {
-      session.status = 'archived'
-      await set(`chat:session:${id}`, session)
-    }
+    await patchStoredSession(id, { status: 'archived' })
     const sessions = getState().sessions.map((s) =>
       s.id === id ? { ...s, status: 'archived' as const } : s,
     )
-    setState({ sessions })
     if (getState().activeSessionId === id) {
       setState({ activeSession: null, activeSessionId: null })
     }
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(sessions)
   },
 
   deleteSession: async (id) => {
     console.log('[chatStore] deleteSession: id', id)
     await del(`chat:session:${id}`)
     const sessions = getState().sessions.filter((s) => s.id !== id)
-    setState({ sessions })
     if (getState().activeSessionId === id) {
       setState({ activeSession: null, activeSessionId: null })
     }
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(sessions)
   },
 
   updateSessionTitle: async (id, title) => {
-    const session = await get<ChatSession>(`chat:session:${id}`)
-    if (session) {
-      session.title = title
-      await set(`chat:session:${id}`, session)
-    }
+    await patchStoredSession(id, { title })
     const sessions = getState().sessions.map((s) =>
       s.id === id ? { ...s, title } : s,
     )
-    setState({ sessions })
     const active = getState().activeSession
     if (active && active.id === id) {
       setState({ activeSession: { ...active, title } })
     }
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(sessions)
   },
 
   updateSessionSummary: async (id, summary) => {
-    const session = await get<ChatSession>(`chat:session:${id}`)
-    if (session) {
-      session.summary = summary
-      await set(`chat:session:${id}`, session)
-    }
+    await patchStoredSession(id, { summary })
     const sessions = getState().sessions.map((s) =>
       s.id === id ? { ...s, summary } : s,
     )
-    setState({ sessions })
     const active = getState().activeSession
     if (active && active.id === id) {
       setState({ activeSession: { ...active, summary } })
     }
-    await set('chat:meta', sessions)
-    _persistToDisk(getState())
+    await commitSessions(sessions)
   },
 
   updateEntryContext: async (id, entryContext) => {
-    const session = await get<ChatSession>(`chat:session:${id}`)
-    if (session) {
-      session.entryContext = entryContext
-      await set(`chat:session:${id}`, session)
-    }
+    await patchStoredSession(id, { entryContext })
     const active = getState().activeSession
     if (active && active.id === id) {
       setState({ activeSession: { ...active, entryContext } })
@@ -268,4 +256,5 @@ export const useChatStore = create<ChatState>()((setState, getState) => ({
     setState({ sessions: [], activeSession: null, activeSessionId: null, loaded: false })
     console.log('[chatStore] Cleared all chat data from IDB')
   },
-}))
+  }
+})
