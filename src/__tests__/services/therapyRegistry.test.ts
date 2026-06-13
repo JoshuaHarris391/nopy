@@ -7,7 +7,7 @@ import {
   type TherapyType,
 } from '../../services/prompts/therapists'
 
-const ALL_TYPES: TherapyType[] = ['cbt', 'act', 'breakup']
+const ALL_TYPES: TherapyType[] = ['cbt', 'act']
 
 describe('therapy agent registry', () => {
   it('returns the CBT system prompt for the cbt key', () => {
