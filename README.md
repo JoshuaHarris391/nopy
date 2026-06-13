@@ -5,7 +5,12 @@
   <sub>Your words live on your machine as plain Markdown. The AI features run through your own API key from the provider you choose — Anthropic, OpenAI, or a local model — nothing in between, no accounts, no servers of ours.</sub>
 </p>
 
+<h3 align="center">
+  🌿 <a href="https://nopy-site.vercel.app/">nopy-site.vercel.app</a>
+</h3>
+
 <p align="center">
+  <a href="https://nopy-site.vercel.app/"><img src="https://img.shields.io/badge/website-nopy--site.vercel.app-5b7f5e?style=for-the-badge" alt="Website"></a>
   <a href="#"><img src="https://img.shields.io/badge/version-0.7.0-863bff?style=for-the-badge" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/JoshuaHarris391/nopy?style=for-the-badge&color=89b4fa" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-a6e3a1?style=for-the-badge" alt="Platforms"></a>
