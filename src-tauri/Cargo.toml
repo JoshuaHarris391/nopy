@@ -1,6 +1,6 @@
 [package]
 name = "nopy"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cosy AI assisted journal"
 authors = ["Joshua Harris"]
 license = "AGPL-3.0"
