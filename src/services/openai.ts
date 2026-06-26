@@ -1,5 +1,6 @@
 import OpenAI, { APIError } from 'openai'
 import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import type { ChatUsage } from '../types/chat'
 
 let clientInstance: OpenAI | null = null
 let currentApiKey = ''
@@ -60,7 +61,10 @@ export async function streamChatResponse(
   messages: Message[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  onComplete: (fullText: string) => void,
+  // Accepts an optional `usage` arg for provider-signature parity with the
+  // dispatcher; OpenAI streaming doesn't surface billed usage today, so this
+  // provider never passes it (the chat header's usage stat stays hidden).
+  onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
 ): Promise<void> {
   console.log('[openai] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)

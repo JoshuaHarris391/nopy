@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
-import type { ChatSession, ChatSessionMeta, ChatMessage, ChatEntryContext } from '../types/chat'
+import type { ChatSession, ChatSessionMeta, ChatMessage, ChatEntryContext, ChatUsage } from '../types/chat'
 import { scheduleChatSave, loadChatFromDisk } from '../services/chatPersistence'
 import { useSettingsStore } from './settingsStore'
 import { useJournalStore } from './journalStore'
@@ -17,7 +17,7 @@ interface ChatState {
   loadSession: (id: string) => Promise<void>
   addMessage: (message: ChatMessage) => Promise<void>
   updateStreamingMessage: (content: string) => void
-  finalizeStreamingMessage: () => Promise<void>
+  finalizeStreamingMessage: (usage?: ChatUsage) => Promise<void>
   archiveSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   updateSessionTitle: (id: string, title: string) => Promise<void>
@@ -174,16 +174,30 @@ export const useChatStore = create<ChatState>()((setState, getState) => {
     }
   },
 
-  finalizeStreamingMessage: async () => {
+  finalizeStreamingMessage: async (usage?: ChatUsage) => {
     const session = getState().activeSession
     if (!session) return
     console.log('[chatStore] finalizeStreamingMessage: session', session.id, '| total messages', session.messages.length)
     const messages = session.messages.map((m) =>
       m.streaming ? { ...m, streaming: false } : m,
     )
+    // Accumulate this turn's billed usage onto the running session total so the
+    // header reflects the cost of the whole conversation. When `usage` is
+    // absent (error path, or a provider that doesn't report it) the prior
+    // total is carried unchanged.
+    const prev = session.usage ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    const nextUsage: ChatUsage | undefined = usage
+      ? {
+          inputTokens: prev.inputTokens + usage.inputTokens,
+          outputTokens: prev.outputTokens + usage.outputTokens,
+          cacheReadTokens: prev.cacheReadTokens + usage.cacheReadTokens,
+          cacheWriteTokens: prev.cacheWriteTokens + usage.cacheWriteTokens,
+        }
+      : session.usage
     const updatedSession: ChatSession = {
       ...session,
       messages,
+      usage: nextUsage,
       updatedAt: new Date().toISOString(),
     }
     setState({ activeSession: updatedSession })

@@ -2,6 +2,7 @@ import * as anthropic from './anthropic'
 import * as localServer from './localServer'
 import * as openai from './openai'
 import type { LlmConfig, LlmModelRole } from '../types/settings'
+import type { ChatUsage } from '../types/chat'
 
 export type { LlmConfig, LlmModelRole } from '../types/settings'
 
@@ -131,7 +132,7 @@ export async function streamChatResponse(
   messages: Message[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  onComplete: (fullText: string) => void,
+  onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
 ): Promise<void> {
   let model: string

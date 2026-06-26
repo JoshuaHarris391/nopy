@@ -15,6 +15,7 @@ interface SettingsState extends UserSettings {
   setSidebarCollapsed: (collapsed: boolean) => void
   toggleSessionPanel: () => void
   setSessionPanelCollapsed: (collapsed: boolean) => void
+  setShowTokenUsage: (value: boolean) => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
   setJournalIndexLimit: (count: number) => void
@@ -48,6 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
       onboardingComplete: false,
       sidebarCollapsed: false,
       sessionPanelCollapsed: false,
+      showTokenUsage: false,
       journalPath: '',
       recentJournals: [],
       theme: 'system',
@@ -72,6 +74,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       toggleSessionPanel: () => set((state) => ({ sessionPanelCollapsed: !state.sessionPanelCollapsed })),
       setSessionPanelCollapsed: (collapsed) => set({ sessionPanelCollapsed: collapsed }),
+      setShowTokenUsage: (value) => set({ showTokenUsage: value }),
       setJournalPath: (path) => set({ journalPath: path }),
       recordJournal: (path) => set((state) => ({ recentJournals: recordJournalEntry(state.recentJournals, path) })),
       removeRecentJournal: (path) => set((state) => ({ recentJournals: state.recentJournals.filter((j) => j.path !== path) })),
@@ -87,7 +90,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 6,
+      version: 7,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -103,6 +106,8 @@ export const useSettingsStore = create<SettingsState>()(
       // with their current journal — it shows up as the highlighted suggestion
       // on first launch into the new launcher. A fresh install has no persisted
       // blob, so migrate() never runs and recentJournals stays the empty default.
+      // v6 → v7 added showTokenUsage (chat-header billed-token display). Seeds
+      // OFF so existing users see no change until they opt in.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -146,6 +151,12 @@ export const useSettingsStore = create<SettingsState>()(
           next = {
             ...next,
             recentJournals: jp ? recordJournalEntry([], jp) : [],
+          }
+        }
+        if (version < 7) {
+          next = {
+            ...next,
+            showTokenUsage: next.showTokenUsage ?? false,
           }
         }
         return next

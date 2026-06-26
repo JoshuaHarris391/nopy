@@ -171,8 +171,8 @@ export function useChatSend({
         filteredMessages,
         maxOutputTokens,
         (fullText) => updateStreamingMessage(fullText),
-        async (fullText) => {
-          await finalizeStreamingMessage()
+        async (fullText, usage) => {
+          await finalizeStreamingMessage(usage)
           streamingRef.current = false
 
           // Defensive guard: if a provider misbehaves and fires onComplete

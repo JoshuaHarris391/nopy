@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import type { ChatUsage } from '../types/chat'
 
 let clientInstance: Anthropic | null = null
 let currentApiKey = ''
@@ -81,7 +82,7 @@ export async function streamChatResponse(
   messages: { role: 'user' | 'assistant'; content: string }[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  onComplete: (fullText: string) => void,
+  onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
 ): Promise<void> {
   console.log('[anthropic] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
@@ -103,17 +104,28 @@ export async function streamChatResponse(
     })
 
     stream.on('finalMessage', (message) => {
-      const usage = message?.usage
-      if (usage) {
+      // Real billed usage straight from the API — what the user is actually
+      // charged. With prompt caching on, this is where the split shows: cache
+      // reads bill at ~0.1x and writes at ~1.25x, the rest at full input rate.
+      const u = message?.usage
+      if (u) {
         console.log(
           '[anthropic] streamChatResponse: cache —',
-          'read', usage.cache_read_input_tokens ?? 0,
-          '| write', usage.cache_creation_input_tokens ?? 0,
-          '| uncached input', usage.input_tokens,
+          'read', u.cache_read_input_tokens ?? 0,
+          '| write', u.cache_creation_input_tokens ?? 0,
+          '| uncached input', u.input_tokens,
         )
       }
+      const usage: ChatUsage | undefined = u
+        ? {
+            inputTokens: u.input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
+            cacheReadTokens: u.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+          }
+        : undefined
       console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
-      onComplete(fullText)
+      onComplete(fullText, usage)
     })
 
     stream.on('error', (error) => {

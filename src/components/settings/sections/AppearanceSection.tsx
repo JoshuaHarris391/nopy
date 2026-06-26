@@ -14,6 +14,8 @@ const OPTIONS: { value: ThemeOption; label: string; Icon: typeof Sun }[] = [
 export function AppearanceSection() {
   const theme = useSettingsStore((s) => s.theme)
   const setTheme = useSettingsStore((s) => s.setTheme)
+  const showTokenUsage = useSettingsStore((s) => s.showTokenUsage)
+  const setShowTokenUsage = useSettingsStore((s) => s.setShowTokenUsage)
 
   return (
     <SettingsSection title="Appearance">
@@ -41,6 +43,19 @@ export function AppearanceSection() {
             )
           })}
         </div>
+      </SettingsRow>
+
+      <SettingsRow
+        label="Show token usage"
+        description="Display billed input/output tokens in the chat header to estimate cost (Anthropic only)"
+      >
+        <input
+          type="checkbox"
+          checked={showTokenUsage}
+          onChange={(e) => setShowTokenUsage(e.target.checked)}
+          aria-label="Show token usage in the chat header"
+          style={{ cursor: 'pointer', width: 16, height: 16 }}
+        />
       </SettingsRow>
     </SettingsSection>
   )
