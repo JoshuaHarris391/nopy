@@ -9,7 +9,7 @@ import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { isLlmConfigured } from '../../services/llm'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { MainHeader } from '../ui/MainHeader'
-import { formatUsage } from '../../utils/formatUsage'
+import { formatUsage, usageBreakdown } from '../../utils/formatUsage'
 import { ChatInput } from './ChatInput'
 import { ChatSessionPanel } from './ChatSessionPanel'
 import { ChatMessageList } from './ChatMessageList'
@@ -133,9 +133,9 @@ export function ChatView() {
               {activeSession.messages.length} messages
             </span>
           )}
-          {showTokenUsage && activeSession && formatUsage(activeSession.usage) && (
+          {showTokenUsage && activeSession?.usage && (
             <span
-              title="Billed tokens for this conversation, used to estimate cost"
+              title={`Estimated tokens billed for this conversation, cache-adjusted (reads ~0.1×, writes ~1.25×). Raw: ${usageBreakdown(activeSession.usage)}`}
               style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}
             >
               {formatUsage(activeSession.usage)}
