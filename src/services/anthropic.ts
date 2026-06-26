@@ -4,6 +4,40 @@ import { LlmError, LLM_ERROR_MESSAGES } from './llm'
 let clientInstance: Anthropic | null = null
 let currentApiKey = ''
 
+/**
+ * Ephemeral (5-minute) cache marker. A chat re-sends the same large system
+ * prompt and the same growing history on every turn, so caching the prefix
+ * means each turn only pays full input price for the newest user message and
+ * the reply — the rest is served at ~0.1x. The 5-minute TTL is refreshed on
+ * every turn, so it stays warm throughout an active conversation.
+ */
+const CACHE_CONTROL = { type: 'ephemeral' } as const
+
+/**
+ * Build the cached `system` + `messages` for a chat request. Two prefix
+ * breakpoints (max is 4):
+ *   1. the system block — the session-stable preamble (therapy prompt +
+ *      profile + index + focused entry), read on every follow-up turn;
+ *   2. the last message — the multi-turn pattern: each turn writes a cache
+ *      entry covering `system + history + new message`, the next turn reads it.
+ * Non-final messages keep plain-string content (no marker).
+ */
+function buildCachedRequest(
+  system: string,
+  messages: { role: 'user' | 'assistant'; content: string }[],
+): { system: Anthropic.TextBlockParam[]; messages: Anthropic.MessageParam[] } {
+  const cachedSystem: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: system, cache_control: CACHE_CONTROL },
+  ]
+  const lastIndex = messages.length - 1
+  const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
+    i === lastIndex
+      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: CACHE_CONTROL }] }
+      : { role: m.role, content: m.content },
+  )
+  return { system: cachedSystem, messages: cachedMessages }
+}
+
 export function getClient(apiKey: string): Anthropic {
   if (clientInstance && currentApiKey === apiKey) {
     console.log('[anthropic] getClient: reusing existing client')
@@ -53,11 +87,12 @@ export async function streamChatResponse(
   console.log('[anthropic] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
   try {
     const client = getClient(apiKey)
+    const cached = buildCachedRequest(system, messages)
     const stream = client.messages.stream({
       model,
       max_tokens: maxTokens,
-      system,
-      messages,
+      system: cached.system,
+      messages: cached.messages,
     })
 
     let fullText = ''
@@ -67,7 +102,16 @@ export async function streamChatResponse(
       onChunk(fullText)
     })
 
-    stream.on('finalMessage', () => {
+    stream.on('finalMessage', (message) => {
+      const usage = message?.usage
+      if (usage) {
+        console.log(
+          '[anthropic] streamChatResponse: cache —',
+          'read', usage.cache_read_input_tokens ?? 0,
+          '| write', usage.cache_creation_input_tokens ?? 0,
+          '| uncached input', usage.input_tokens,
+        )
+      }
       console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
       onComplete(fullText)
     })

@@ -150,12 +150,15 @@ describe('getClient', () => {
 })
 
 describe('streamChatResponse', () => {
-  it('forwards model, system, messages, max_tokens to the SDK unchanged', async () => {
+  it('forwards model and max_tokens unchanged, and wraps system + the last message with a cache breakpoint', async () => {
     /**
-     * The whole point of this wrapper is to be a thin pass-through. If the
-     * upcoming multi-provider refactor reshapes the request body, this test
-     * fails immediately — surfacing the regression before it reaches a real
-     * Anthropic API call in dev.
+     * The chat path enables Anthropic prompt caching so a long conversation
+     * re-pays full input price only for the newest message. That means the
+     * request body is no longer a plain pass-through: `system` becomes a
+     * single cached text block, and the *last* message's content becomes a
+     * cached text block too (the multi-turn prefix breakpoint). `model` and
+     * `max_tokens` still pass straight through — a regression there would
+     * silently send the wrong model or truncate replies.
      */
     const fake = mockState.installFakeStream()
     const messages = [{ role: 'user' as const, content: 'hi' }]
@@ -176,9 +179,48 @@ describe('streamChatResponse', () => {
     expect(streamArgs).toEqual({
       model: 'claude-sonnet-4-5-20250514',
       max_tokens: 512,
-      system: 'system prompt',
-      messages,
+      system: [{ type: 'text', text: 'system prompt', cache_control: { type: 'ephemeral' } }],
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }] },
+      ],
     })
+  })
+
+  it('caches the system block and only the final message, leaving earlier turns as plain strings', async () => {
+    /**
+     * Prompt caching is a prefix match, so the breakpoints must land in
+     * exactly two places: the session-stable system block, and the end of
+     * the most-recent turn. Marking an *earlier* message would split the
+     * cached prefix on every turn and defeat the whole feature, so the
+     * non-final messages must stay plain strings (no cache_control). This is
+     * the behavioural guarantee the cost savings rest on.
+     */
+    const fake = mockState.installFakeStream()
+    const messages = [
+      { role: 'user' as const, content: 'first' },
+      { role: 'assistant' as const, content: 'reply' },
+      { role: 'user' as const, content: 'second' },
+    ]
+    const promise = mod.streamChatResponse(
+      'key', 'claude-sonnet-4-5-20250514', 'system prompt', messages, 512,
+      () => {}, () => {}, () => {},
+    )
+    await promise
+    fake.emitFinal()
+
+    const streamArgs = mockState.instances[0].streamCalls[0][0] as Record<string, unknown>
+
+    // Exactly one system breakpoint.
+    expect(streamArgs.system).toEqual([
+      { type: 'text', text: 'system prompt', cache_control: { type: 'ephemeral' } },
+    ])
+
+    // Earlier turns are plain strings; only the last message is a cached block.
+    expect(streamArgs.messages).toEqual([
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: [{ type: 'text', text: 'second', cache_control: { type: 'ephemeral' } }] },
+    ])
   })
 
   it('calls onChunk with cumulative text in arrival order, then onComplete once with the final text', async () => {
