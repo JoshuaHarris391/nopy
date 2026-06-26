@@ -213,6 +213,45 @@ describe('finalizeStreamingMessage', () => {
     const persisted = idbStore.get(`chat:session:${id}`) as ChatSession
     expect(persisted.messages[0].streaming).toBe(false)
   })
+
+  it('accumulates billed token usage across turns onto session.usage and persists it', async () => {
+    /**
+     * The chat header shows the cost of the WHOLE conversation, so each turn's
+     * billed usage is summed onto the running session total rather than
+     * replacing it. A turn finalized with no usage (the error path, or a
+     * provider like OpenAI/local that doesn't report usage) must leave the
+     * running total untouched — not reset it to zero.
+     */
+    const id = await useChatStore.getState().createSession()
+
+    // Turn 1 — first usage seen, session.usage starts from absent.
+    await useChatStore.getState().addMessage(makeMessage({ role: 'assistant', content: 'a', streaming: true }))
+    await useChatStore.getState().finalizeStreamingMessage({
+      inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 10,
+    })
+
+    // Turn 2 — adds on top, including a cache-read this time.
+    await useChatStore.getState().addMessage(makeMessage({ role: 'assistant', content: 'b', streaming: true }))
+    await useChatStore.getState().finalizeStreamingMessage({
+      inputTokens: 50, outputTokens: 30, cacheReadTokens: 80, cacheWriteTokens: 0,
+    })
+
+    // Turn 3 — finalized with no usage; totals must carry unchanged.
+    await useChatStore.getState().addMessage(makeMessage({ role: 'assistant', content: 'c', streaming: true }))
+    await useChatStore.getState().finalizeStreamingMessage()
+
+    const session = useChatStore.getState().activeSession!
+    expect(session.usage).toEqual({
+      inputTokens: 150,
+      outputTokens: 50,
+      cacheReadTokens: 80,
+      cacheWriteTokens: 10,
+    })
+
+    // Persisted to IDB so the totals survive a reload.
+    const persisted = idbStore.get(`chat:session:${id}`) as ChatSession
+    expect(persisted.usage).toEqual(session.usage)
+  })
 })
 
 describe('end-to-end streaming contract', () => {

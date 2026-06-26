@@ -9,6 +9,7 @@ import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { isLlmConfigured } from '../../services/llm'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { MainHeader } from '../ui/MainHeader'
+import { formatUsage } from '../../utils/formatUsage'
 import { ChatInput } from './ChatInput'
 import { ChatSessionPanel } from './ChatSessionPanel'
 import { ChatMessageList } from './ChatMessageList'
@@ -24,6 +25,7 @@ export function ChatView() {
   const sessionPanelCollapsed = useSettingsStore((s) => s.sessionPanelCollapsed)
   const toggleSessionPanel = useSettingsStore((s) => s.toggleSessionPanel)
   const setSessionPanelCollapsed = useSettingsStore((s) => s.setSessionPanelCollapsed)
+  const showTokenUsage = useSettingsStore((s) => s.showTokenUsage)
   const sessions = useChatStore((s) => s.sessions)
   const activeSession = useChatStore((s) => s.activeSession)
   const activeSessionId = useChatStore((s) => s.activeSessionId)
@@ -129,6 +131,14 @@ export function ChatView() {
           {activeSession && (
             <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}>
               {activeSession.messages.length} messages
+            </span>
+          )}
+          {showTokenUsage && activeSession && formatUsage(activeSession.usage) && (
+            <span
+              title="Billed tokens for this conversation, used to estimate cost"
+              style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--sage)' }}
+            >
+              {formatUsage(activeSession.usage)}
             </span>
           )}
         </MainHeader>

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import type { ChatUsage } from '../types/chat'
 
 let clientInstance: Anthropic | null = null
 let currentApiKey = ''
@@ -47,7 +48,7 @@ export async function streamChatResponse(
   messages: { role: 'user' | 'assistant'; content: string }[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  onComplete: (fullText: string) => void,
+  onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
 ): Promise<void> {
   console.log('[anthropic] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
@@ -67,9 +68,21 @@ export async function streamChatResponse(
       onChunk(fullText)
     })
 
-    stream.on('finalMessage', () => {
+    stream.on('finalMessage', (message) => {
+      // Real billed usage straight from the API — this is what the user is
+      // charged, and (once prompt caching lands) it's where the cached vs
+      // full-price split becomes visible.
+      const u = message?.usage
+      const usage: ChatUsage | undefined = u
+        ? {
+            inputTokens: u.input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
+            cacheReadTokens: u.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+          }
+        : undefined
       console.log('[anthropic] streamChatResponse: complete —', fullText.length, 'chars received')
-      onComplete(fullText)
+      onComplete(fullText, usage)
     })
 
     stream.on('error', (error) => {

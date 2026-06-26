@@ -69,6 +69,12 @@ export interface UserSettings {
   onboardingComplete: boolean
   sidebarCollapsed: boolean
   sessionPanelCollapsed: boolean
+  /**
+   * Show cumulative billed token usage (input/output, plus cached when prompt
+   * caching is active) in the chat header so users can estimate cost. Off by
+   * default; only populated for Anthropic, which returns billed usage.
+   */
+  showTokenUsage: boolean
   journalPath: string
   /**
    * Journals the user has created or opened, most-recent-first. Surfaced as

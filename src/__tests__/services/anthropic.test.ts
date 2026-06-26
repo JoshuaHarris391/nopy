@@ -181,6 +181,45 @@ describe('streamChatResponse', () => {
     })
   })
 
+  it('normalizes the final message usage and passes it to onComplete as billed token counts', async () => {
+    /**
+     * The chat header's cost estimate must reflect what Anthropic actually
+     * bills, so the wrapper reads the real `usage` off the final message and
+     * hands it to onComplete (renamed to the app's ChatUsage shape). The four
+     * fields map 1:1 to the four billing rates: input (1x), output, cache
+     * write (~1.25x), cache read (~0.1x). If a refactor drops this, the header
+     * would silently show nothing for Anthropic and the whole feature breaks.
+     */
+    const fake = mockState.installFakeStream()
+    const completes: { text: string; usage: unknown }[] = []
+    const promise = mod.streamChatResponse(
+      'k', 'm', 's', [{ role: 'user', content: 'hi' }], 100,
+      () => {},
+      (text, usage) => completes.push({ text, usage }),
+      () => {},
+    )
+    await promise
+
+    fake.emitText('answer')
+    fake.emitFinal({
+      usage: {
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_input_tokens: 80,
+        cache_creation_input_tokens: 5,
+      },
+    })
+
+    expect(completes).toHaveLength(1)
+    expect(completes[0].text).toBe('answer')
+    expect(completes[0].usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 80,
+      cacheWriteTokens: 5,
+    })
+  })
+
   it('calls onChunk with cumulative text in arrival order, then onComplete once with the final text', async () => {
     /**
      * The provider contract that the chat store relies on: each `onChunk`

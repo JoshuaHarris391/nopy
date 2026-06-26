@@ -1,6 +1,7 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { LlmError, LLM_ERROR_MESSAGES } from './llm'
 import { hasFileSystem } from './fs'
+import type { ChatUsage } from '../types/chat'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
@@ -268,7 +269,9 @@ export async function streamChatResponse(
   messages: Message[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  onComplete: (fullText: string) => void,
+  // `usage` arg kept for parity with the dispatcher signature; LM Studio's
+  // streaming response carries no billed usage, so it's never passed.
+  onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
   signal?: AbortSignal,
 ): Promise<void> {

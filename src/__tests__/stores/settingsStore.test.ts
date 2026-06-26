@@ -17,6 +17,7 @@ const DEFAULTS = {
   onboardingComplete: false,
   sidebarCollapsed: false,
   sessionPanelCollapsed: false,
+  showTokenUsage: false,
   journalPath: '',
   recentJournals: [],
   theme: 'system' as const,
@@ -72,6 +73,7 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setModelContextWindowOverride(32000), expectField: 'modelContextWindowOverride', expectValue: 32000 },
       { call: () => useSettingsStore.getState().setSidebarCollapsed(true), expectField: 'sidebarCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setSessionPanelCollapsed(true), expectField: 'sessionPanelCollapsed', expectValue: true },
+      { call: () => useSettingsStore.getState().setShowTokenUsage(true), expectField: 'showTokenUsage', expectValue: true },
       { call: () => useSettingsStore.getState().setJournalPath('/tmp/j'), expectField: 'journalPath', expectValue: '/tmp/j' },
       { call: () => useSettingsStore.getState().setTheme('dark'), expectField: 'theme', expectValue: 'dark' },
       { call: () => useSettingsStore.getState().setProvider('local'), expectField: 'provider', expectValue: 'local' },
@@ -347,6 +349,32 @@ describe('multi-provider settings', () => {
     // Pre-existing fields preserved.
     expect(state.apiKey).toBe('sk-existing')
     expect(state.contextBudget).toBe(200000)
+  })
+
+  it('migrates a v6 persisted blob (no showTokenUsage) to v7 default of false', async () => {
+    /**
+     * The chat-header token-usage display added `showTokenUsage`. Existing
+     * users on v6 have no such field; the v6→v7 step must seed it OFF so the
+     * upgrade is invisible until they opt in — and must leave their other
+     * settings untouched.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: { apiKey: 'sk-existing', theme: 'dark', journalPath: '/tmp/journal' },
+        version: 6,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.showTokenUsage).toBe(false)
+    // Pre-existing fields preserved.
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.theme).toBe('dark')
+    expect(state.journalPath).toBe('/tmp/journal')
   })
 
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {
