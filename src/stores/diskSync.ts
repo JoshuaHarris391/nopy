@@ -1,4 +1,5 @@
 import { set as idbSet } from 'idb-keyval'
+import { FilenameExistsError } from '../services/fs'
 
 /**
  * Shared disk-save tail for stores that mirror items to markdown files
@@ -35,6 +36,10 @@ export async function saveToDiskAndReconcileFilename<T extends { id: string; tit
       await idbSet(idbKey, updated)
     }
   } catch (e) {
+    // A filename collision is a user-resolvable condition (rename the entry),
+    // not a disk failure. Rethrow it untouched so the editor can prompt for a
+    // new title via a dialog instead of showing the generic error bar.
+    if (e instanceof FilenameExistsError) throw e
     const msg = e instanceof Error ? e.message : String(e)
     setLastError(`Failed to save "${item.title}" to disk: ${msg}`)
     throw e
