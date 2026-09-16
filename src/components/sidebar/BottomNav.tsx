@@ -1,5 +1,9 @@
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Layers, Target, List, Settings } from 'lucide-react'
+import { useSettingsStore } from '../../stores/settingsStore'
+
+/** Items that stay while private mode hides the AI half of the app. */
+const PRIVATE_ITEMS = new Set(['/journal', '/settings'])
 
 const items = [
   { to: '/journal', icon: BookOpen, label: 'Journal' },
@@ -11,6 +15,9 @@ const items = [
 ]
 
 export function BottomNav() {
+  const privateMode = useSettingsStore((s) => s.privateMode)
+  const visible = privateMode ? items.filter((item) => PRIVATE_ITEMS.has(item.to)) : items
+
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 flex items-center justify-around border-t z-20"
@@ -20,7 +27,7 @@ export function BottomNav() {
         borderColor: 'var(--stone)',
       }}
     >
-      {items.map((item) => {
+      {visible.map((item) => {
         const Icon = item.icon
         return (
           <NavLink

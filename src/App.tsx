@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
+import { PrivateModeGuard } from './app/PrivateModeGuard'
 import { JournalLanding } from './components/journal/books/JournalLanding'
 import { BookshelfView } from './components/journal/books/BookshelfView'
 import { BookView } from './components/journal/books/BookView'
@@ -55,10 +56,12 @@ export default function App() {
           <Route path="journal/books/:year/:month?" element={<BookView />} />
           <Route path="journal/new" element={<EntryEditor />} />
           <Route path="journal/:id" element={<EntryEditor />} />
-          <Route path="chat" element={<ChatView />} />
-          <Route path="context" element={<ContextView />} />
-          <Route path="profile" element={<ProfileView />} />
-          <Route path="index" element={<IndexView />} />
+          <Route element={<PrivateModeGuard />}>
+            <Route path="chat" element={<ChatView />} />
+            <Route path="context" element={<ContextView />} />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="index" element={<IndexView />} />
+          </Route>
           <Route path="settings" element={<SettingsView />} />
         </Route>
       </Routes>

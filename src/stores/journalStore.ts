@@ -215,6 +215,8 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   processEntries: async (config, force, onProgress, signal) => {
+    // Private mode: never touch the LLM, even if a UI path slipped through.
+    if (useSettingsStore.getState().privateMode) return 0
     console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
     const { entries } = getState()
     const results = await processAllEntries(entries, config, force, onProgress, signal)
@@ -224,6 +226,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   reindexEntry: async (id, config, signal) => {
+    if (useSettingsStore.getState().privateMode) return
     const entry = getState().entries.find((e) => e.id === id)
     if (!entry) {
       console.warn('[journalStore] reindexEntry: entry not found', id)

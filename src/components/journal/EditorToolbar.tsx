@@ -17,6 +17,8 @@ interface EditorToolbarProps {
   onReindex: () => void
   /** Fade in on mount, e.g. after a page turn reveals the live editor under its preview. */
   fadeIn?: boolean
+  /** Journal-only mode: drop the index status, Index button and Start Session. */
+  privateMode?: boolean
 }
 
 export function EditorToolbar({
@@ -31,6 +33,7 @@ export function EditorToolbar({
   reindexReady,
   onReindex,
   fadeIn = false,
+  privateMode = false,
 }: EditorToolbarProps) {
   const reindexing = reindexState === 'running'
   const reindexDisabled = !canReindex || !reindexReady
@@ -103,6 +106,8 @@ export function EditorToolbar({
             <Plus size={11} strokeWidth={2} />
           </button>
         </div>
+        {!privateMode && (
+          <>
         <span>·</span>
         <div
           className="flex items-center gap-1.5"
@@ -150,15 +155,19 @@ export function EditorToolbar({
         {reindexState === 'done' && (
           <span style={{ color: 'var(--gentle-green)', fontWeight: 500 }}>Indexed</span>
         )}
+          </>
+        )}
       </div>
-      <Button
-        variant="primary"
-        onClick={onStartSession}
-        style={{ fontSize: 12, padding: '7px 14px' }}
-      >
-        <MessageCircle size={13} strokeWidth={1.8} />
-        Start Session
-      </Button>
+      {!privateMode && (
+        <Button
+          variant="primary"
+          onClick={onStartSession}
+          style={{ fontSize: 12, padding: '7px 14px' }}
+        >
+          <MessageCircle size={13} strokeWidth={1.8} />
+          Start Session
+        </Button>
+      )}
     </div>
   )
 }

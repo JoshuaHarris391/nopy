@@ -82,6 +82,9 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   },
 
   generateProfile: async (entries, config, signal) => {
+    // Private mode: profile generation would index and summarise the journal
+    // with an LLM, so it is a no-op until the user switches private mode off.
+    if (useSettingsStore.getState().privateMode) return
     const setPhase = (phase: string) => setState({ phase })
     const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })

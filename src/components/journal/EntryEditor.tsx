@@ -44,6 +44,7 @@ export function EntryEditor() {
   const lastError = useJournalStore((s) => s.lastError)
   const clearLastError = useJournalStore((s) => s.clearLastError)
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
+  const privateMode = useSettingsStore((s) => s.privateMode)
   const index = useJournalIndex()
   const reindex = useCancellableTask<void>()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -464,6 +465,7 @@ export function EntryEditor() {
             canReindex={canReindex}
             reindexReady={reindexReady}
             onReindex={handleReindex}
+            privateMode={privateMode}
           />
         </div>
       </div>

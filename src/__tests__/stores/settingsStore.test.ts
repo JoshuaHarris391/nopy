@@ -18,6 +18,7 @@ const DEFAULTS = {
   sidebarCollapsed: false,
   sessionPanelCollapsed: false,
   showTokenUsage: false,
+  privateMode: false,
   journalPath: '',
   recentJournals: [],
   theme: 'system' as const,
@@ -74,6 +75,7 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setSidebarCollapsed(true), expectField: 'sidebarCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setSessionPanelCollapsed(true), expectField: 'sessionPanelCollapsed', expectValue: true },
       { call: () => useSettingsStore.getState().setShowTokenUsage(true), expectField: 'showTokenUsage', expectValue: true },
+      { call: () => useSettingsStore.getState().setPrivateMode(true), expectField: 'privateMode', expectValue: true },
       { call: () => useSettingsStore.getState().setJournalPath('/tmp/j'), expectField: 'journalPath', expectValue: '/tmp/j' },
       { call: () => useSettingsStore.getState().setTheme('dark'), expectField: 'theme', expectValue: 'dark' },
       { call: () => useSettingsStore.getState().setProvider('local'), expectField: 'provider', expectValue: 'local' },
@@ -375,6 +377,33 @@ describe('multi-provider settings', () => {
     expect(state.apiKey).toBe('sk-existing')
     expect(state.theme).toBe('dark')
     expect(state.journalPath).toBe('/tmp/journal')
+  })
+
+  it('migrates a v7 persisted blob (no privateMode) to v8 default of false', async () => {
+    /**
+     * Private mode turns nopy into a journal-only app. Existing users on v7
+     * have no such field; the v7→v8 step must seed it OFF so nobody opens the
+     * app after an update to find chat, profile and index missing — and must
+     * leave their other settings untouched.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: { apiKey: 'sk-existing', theme: 'dark', journalPath: '/tmp/journal', showTokenUsage: true },
+        version: 7,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.privateMode).toBe(false)
+    // Pre-existing fields preserved.
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.theme).toBe('dark')
+    expect(state.journalPath).toBe('/tmp/journal')
+    expect(state.showTokenUsage).toBe(true)
   })
 
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {

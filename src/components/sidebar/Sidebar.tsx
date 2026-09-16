@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BookOpen, MessageCircle, Layers, Target, List, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { BookOpen, MessageCircle, Layers, Target, List, Settings, ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
@@ -21,6 +21,7 @@ export function Sidebar() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const privateMode = useSettingsStore((s) => s.privateMode)
   const theme = useSettingsStore((s) => s.theme)
   const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
   const isDark = theme === 'dark' || (theme === 'system' && systemDark)
@@ -97,7 +98,11 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: '8px 0' }}>
         {sections.map((section, sectionIndex) => {
-          const items = navItems.filter((item) => item.section === section)
+          // Private mode keeps only the Reflect section; the Understand section
+          // and its divider drop out via the empty check below.
+          const items = navItems.filter(
+            (item) => item.section === section && (!privateMode || item.section === 'Reflect'),
+          )
           if (items.length === 0) return null
           return (
             <div key={section}>
@@ -164,6 +169,9 @@ export function Sidebar() {
       >
         {collapsed ? (
           <>
+            {privateMode && (
+              <Lock size={12} strokeWidth={1.8} aria-label="Private mode on" style={{ color: 'var(--forest)' }} />
+            )}
             <SettingsCogButton reducedMotion={reducedMotion} />
             <button
               onClick={toggleSidebar}
@@ -206,15 +214,24 @@ export function Sidebar() {
                   color: 'var(--sage)',
                 }}
               >
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
-                  }}
-                />
-                <span>{apiKey ? 'Connected' : 'No API key'}</span>
+                {privateMode ? (
+                  <>
+                    <Lock size={12} strokeWidth={1.8} style={{ color: 'var(--forest)' }} />
+                    <span>Private</span>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: apiKey ? 'var(--gentle-green)' : 'var(--soft-coral)',
+                      }}
+                    />
+                    <span>{apiKey ? 'Connected' : 'No API key'}</span>
+                  </>
+                )}
               </div>
             </div>
             <button

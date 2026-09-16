@@ -75,6 +75,12 @@ export interface UserSettings {
    * default; only populated for Anthropic, which returns billed usage.
    */
   showTokenUsage: boolean
+  /**
+   * Journal-only mode. Hides every AI surface (chat, context, profile, index,
+   * provider settings) and short-circuits indexing and profile generation so
+   * nothing can reach an LLM provider while it is on. Off by default.
+   */
+  privateMode: boolean
   journalPath: string
   /**
    * Journals the user has created or opened, most-recent-first. Surfaced as
