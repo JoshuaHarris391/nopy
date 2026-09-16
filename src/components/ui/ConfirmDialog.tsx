@@ -7,13 +7,14 @@ interface ConfirmDialogProps {
   title: string
   body: string
   confirmLabel?: string
+  cancelLabel?: string
   danger?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
 
 export function ConfirmDialog({
-  open, title, body, confirmLabel = 'Delete', danger = true, onConfirm, onCancel,
+  open, title, body, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const prevFocusRef = useRef<HTMLElement | null>(null)
@@ -56,7 +57,7 @@ export function ConfirmDialog({
           {body}
         </p>
         <div className="flex gap-2 justify-end">
-          <Button ref={cancelRef} variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel}>{cancelLabel}</Button>
           <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Button>
         </div>
       </div>

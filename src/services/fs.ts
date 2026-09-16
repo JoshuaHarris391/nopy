@@ -7,6 +7,25 @@ export function hasFileSystem(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+/**
+ * Thrown by saveEntryToDisk when an entry's slugified filename would land on a
+ * file that belongs to a *different* entry. Refusing the write here is what
+ * prevents one entry from silently overwriting another's markdown file (e.g.
+ * two entries created the same day both default to today's date as the title,
+ * or an entry renamed onto another's title). Callers surface this to the user
+ * as a prompt to pick a different title.
+ */
+export class FilenameExistsError extends Error {
+  readonly filename: string
+  readonly title: string
+  constructor(filename: string, title: string) {
+    super(`An entry named "${title}" already exists in this journal.`)
+    this.name = 'FilenameExistsError'
+    this.filename = filename
+    this.title = title
+  }
+}
+
 export function slugify(title: string, id: string): string {
   const slug = title
     .toLowerCase()
@@ -69,6 +88,16 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string, 
 
   const filename = `${slugify(entry.title, entry.id)}.md`
   const filePath = `${journalPath}/${filename}`
+
+  // Refuse to write over a DIFFERENT entry's file. "Owning" the target means it
+  // is the file this entry already occupies (a prior save) or the source of a
+  // rename. Anything else that already exists at this path belongs to another
+  // entry, so writing would lose that entry's content. Checked before the
+  // rename cleanup below so the entry's own old file is also left intact.
+  const ownsTarget = filename === entry.sourceFilename || filename === oldSourceFilename
+  if (!ownsTarget && (await exists(filePath))) {
+    throw new FilenameExistsError(filename, entry.title)
+  }
 
   // If the filename changed (e.g. title was edited), delete the old file
   if (oldSourceFilename && oldSourceFilename !== filename) {

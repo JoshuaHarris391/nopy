@@ -11,12 +11,14 @@ import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
 import { DateTimePicker } from '../ui/DateTimePicker'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { RenameEntryDialog } from '../ui/RenameEntryDialog'
 import { Button } from '../ui/Button'
 import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
 import { isLlmConfigured } from '../../services/llm'
+import { FilenameExistsError } from '../../services/fs'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
 export function EntryEditor() {
@@ -34,6 +36,12 @@ export function EntryEditor() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const reindex = useCancellableTask<void>()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showRename, setShowRename] = useState(false)
+  // True when the current entry could not be written to disk because its title
+  // collides with another entry. The entry then lives only in the in-memory
+  // cache, so leaving the editor without resolving it would strand a phantom.
+  const [unsavedToDisk, setUnsavedToDisk] = useState(false)
+  const [showLeavePrompt, setShowLeavePrompt] = useState(false)
 
   const reindexReady = isLlmConfigured(llmConfig)
 
@@ -70,49 +78,61 @@ export function EntryEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, entries, loaded])
 
-  const ensureEntry = useCallback(async (): Promise<string> => {
-    if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
-      const newId = crypto.randomUUID()
-      const now = new Date().toISOString()
-      const entry: JournalEntry = {
-        id: newId,
-        title: format(new Date(), 'yyyy-MM-dd'),
-        content: '',
-        createdAt: now,
-        updatedAt: now,
-        mood: null,
-        tags: [],
-        summary: null,
-        indexed: false,
-      }
-      await addEntry(entry)
-      entryIdRef.current = newId
-      isNewRef.current = false
-      window.history.replaceState(null, '', `/journal/${newId}`)
-      return newId
-    }
-    return entryIdRef.current!
-  }, [addEntry])
-
-  const handleSave = useCallback(async () => {
+  const persist = useCallback(async (saveTitle: string) => {
     if (saving) return
     setSaving(true)
     try {
-      const entryId = await ensureEntry()
       const mood: MoodScore | null = moodValue
         ? { value: moodValue, label: moodValueToLabel(moodValue) }
         : null
-      await updateEntry(entryId, { title, content, mood, createdAt })
+      if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
+        // Create the new entry under the user's real title in a single write.
+        // Set the refs BEFORE the await: if the save collides (and throws), the
+        // next autosave must not create a second entry — it should retry through
+        // the updateEntry path against the entry we just added to the store.
+        const newId = crypto.randomUUID()
+        entryIdRef.current = newId
+        isNewRef.current = false
+        window.history.replaceState(null, '', `/journal/${newId}`)
+        const entry: JournalEntry = {
+          id: newId,
+          title: saveTitle,
+          content,
+          createdAt,
+          updatedAt: new Date().toISOString(),
+          mood,
+          tags: [],
+          summary: null,
+          indexed: false,
+        }
+        await addEntry(entry)
+      } else {
+        await updateEntry(entryIdRef.current!, { title: saveTitle, content, mood, createdAt })
+      }
       autosave.markClean()
+      setUnsavedToDisk(false)
       setJustSaved(true)
       setTimeout(() => setJustSaved(false), 2000)
     } catch (e) {
-      console.error('[editor] Save failed:', e)
+      // A filename collision is recoverable: prompt the user for a new title
+      // instead of logging a failure. The entry's file was not written, so the
+      // colliding entry's content on disk is untouched.
+      if (e instanceof FilenameExistsError) {
+        // If the entry has no file on disk yet (a brand-new entry), it now lives
+        // only in the cache — flag it so leaving the editor warns the user.
+        const cur = useJournalStore.getState().entries.find((en) => en.id === entryIdRef.current)
+        setUnsavedToDisk(!cur?.sourceFilename)
+        setShowRename(true)
+      } else {
+        console.error('[editor] Save failed:', e)
+      }
     } finally {
       setSaving(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, ensureEntry, updateEntry, title, content, moodValue, createdAt])
+  }, [saving, addEntry, updateEntry, content, moodValue, createdAt])
+
+  const handleSave = useCallback(() => persist(title), [persist, title])
 
   const autosave = useAutosave(handleSave, [title, content, moodValue, createdAt])
 
@@ -145,6 +165,25 @@ export function EntryEditor() {
     navigate('/')
   }, [deleteEntry, navigate])
 
+  const handleClose = useCallback(() => {
+    // Don't let the user wander off leaving a cache-only entry that never made
+    // it to disk — make them decide to discard it or go back and rename it.
+    if (unsavedToDisk) {
+      autosave.cancelPending()
+      setShowLeavePrompt(true)
+      return
+    }
+    navigate('/')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unsavedToDisk, navigate])
+
+  const handleDiscardAndLeave = useCallback(async () => {
+    setShowLeavePrompt(false)
+    const entryId = entryIdRef.current
+    if (entryId) await deleteEntry(entryId)
+    navigate('/')
+  }, [deleteEntry, navigate])
+
   const markFieldDirty = () => {
     autosave.markDirty()
     setJustSaved(false)
@@ -170,7 +209,7 @@ export function EntryEditor() {
             Saved
           </div>
         )}
-        <Button variant="secondary" onClick={() => navigate('/')}>Close</Button>
+        <Button variant="secondary" onClick={handleClose}>Close</Button>
         {!isNew && entryIdRef.current && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
@@ -300,6 +339,35 @@ export function EntryEditor() {
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+
+      <ConfirmDialog
+        open={showLeavePrompt}
+        title="This entry isn't saved"
+        body={`“${title}” is already used by another entry, so this entry hasn't been saved to your journal folder — it only exists in the app. Leave now and it will be discarded; go back to rename it and keep it.`}
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={handleDiscardAndLeave}
+        onCancel={() => setShowLeavePrompt(false)}
+      />
+
+      {showRename && (
+        <RenameEntryDialog
+          currentTitle={title}
+          conflictTitle={title}
+          onRename={(newTitle) => {
+            setShowRename(false)
+            setTitle(newTitle)
+            void persist(newTitle)
+          }}
+          onCancel={() => {
+            setShowRename(false)
+            // Nothing was written to disk. Stop autosave from immediately
+            // retrying the same colliding title; the next edit will retry.
+            autosave.cancelPending()
+            autosave.markClean()
+          }}
+        />
+      )}
     </>
   )
 }

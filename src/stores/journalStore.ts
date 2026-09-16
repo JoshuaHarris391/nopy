@@ -173,7 +173,14 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
       // Write back any new entries that lacked frontmatter (so they get IDs for future syncs)
       for (const diskEntry of diskEntries) {
         if (!existingById.has(diskEntry.id)) {
-          await saveEntryToDisk(diskEntry, journalPath)
+          try {
+            await saveEntryToDisk(diskEntry, journalPath, diskEntry.sourceFilename)
+          } catch (e) {
+            // Two disk files can slugify to the same name (e.g. duplicate plain
+            // imports). Skip the colliding write-back rather than aborting the
+            // whole sync — the entry is still loaded into memory.
+            console.warn('[sync] Skipped frontmatter write-back for', diskEntry.sourceFilename, e)
+          }
         }
       }
 
@@ -197,7 +204,13 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const journalPath = getJournalPath()
     for (const [id] of results) {
       const entry = entries.find((e) => e.id === id)
-      if (entry) await saveEntryToDisk(entry, journalPath)
+      if (!entry) continue
+      try {
+        await saveEntryToDisk(entry, journalPath, entry.sourceFilename)
+      } catch (e) {
+        // Don't let one entry's filename collision abort metadata writes for the rest.
+        console.warn('[journalStore] Skipped metadata write for', entry.sourceFilename, e)
+      }
     }
   },
 
