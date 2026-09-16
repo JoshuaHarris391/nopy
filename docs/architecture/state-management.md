@@ -76,9 +76,11 @@ Simple settings (API key, preferred model, journal path, theme, sidebar collapse
 
 This store is minimal and correct — don't overbuild it.
 
-### `uiStore`
+### `journalNavStore`
 
-Ephemeral UI state (sidebar visibility, etc.). Not persisted.
+Session-only memory of where the reader is in the journal: the last month scroll viewed, its scroll offset, and the entry to reveal when returning from the editor. Not persisted; cleared by `switchJournal`. Components write to it from effects and handlers via `getState()` so scroll-time writes never trigger re-renders.
+
+The sorted, year/month-bucketed view of `entries` is not stored; it is derived by `src/services/journalBooks.ts` and memoised per entries-array identity (`getJournalIndex`).
 
 ---
 
@@ -104,7 +106,7 @@ These rules keep stores decoupled and mutations auditable:
 | `profileStore` | `idb-keyval` (manual) + Tauri `writeTextFile` | `nopy-profile` + `profiles/profile.json` + `profiles/psychological-profile.md` on disk |
 | `chatStore` | `idb-keyval` (manual) | `chat:meta` + `chat:session:{id}` per session |
 | `settingsStore` | Zustand `persist` middleware | `nopy-settings` |
-| `uiStore` | None (ephemeral) | — |
+| `journalNavStore` | None (session only) | — |
 
 Every mutation writes the full value back. There is no partial update, batching, or lazy flush.
 
@@ -133,5 +135,6 @@ See `docs/tasks/refactor/01-surface-fs-errors.md` for the implementation plan.
 | Profile store | `src/stores/profileStore.ts` |
 | Chat sessions store | `src/stores/chatStore.ts` |
 | Settings store | `src/stores/settingsStore.ts` |
-| UI ephemeral store | `src/stores/uiStore.ts` |
+| Journal navigation memory | `src/stores/journalNavStore.ts` |
+| Journal books index (derived) | `src/services/journalBooks.ts` |
 | Store types | `src/types/journal.ts`, `src/types/profile.ts`, `src/types/chat.ts`, `src/types/settings.ts` |

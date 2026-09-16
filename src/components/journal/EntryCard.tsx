@@ -7,9 +7,13 @@ import type { JournalEntry } from '../../types/journal'
 interface EntryCardProps {
   entry: JournalEntry
   index: number
+  /** Play the staggered entrance. Off when a month scroll is being restored. */
+  animate?: boolean
+  /** Briefly mark this card as the one the reader just came back from. */
+  highlighted?: boolean
 }
 
-export function EntryCard({ entry, index }: EntryCardProps) {
+export function EntryCard({ entry, index, animate = true, highlighted = false }: EntryCardProps) {
   const wordCount = entry.content.split(/\s+/).filter(Boolean).length
   const date = new Date(entry.createdAt)
 
@@ -17,12 +21,15 @@ export function EntryCard({ entry, index }: EntryCardProps) {
     <Link
       to={`/journal/${entry.id}`}
       className="block no-underline"
+      data-entry-id={entry.id}
       style={{
-        animation: `cardIn 450ms ease-out ${80 + index * 80}ms both`,
+        // Cap the stagger: with fill-mode `both`, an uncapped delay leaves the
+        // tail of a long month invisible for seconds.
+        animation: animate ? `cardIn 450ms ease-out ${80 + Math.min(index, 10) * 80}ms both` : 'none',
       }}
     >
       <div
-        className="relative overflow-hidden cursor-pointer"
+        className={`relative overflow-hidden cursor-pointer${highlighted ? ' entry-card--returned' : ''}`}
         style={{
           background: 'var(--parchment)',
           border: '1px solid var(--stone)',

@@ -63,7 +63,7 @@ View components are page-level components rendered by the router. Each lives in 
 
 | View | Directory | Key files |
 |---|---|---|
-| Journal | `components/journal/` | `JournalView.tsx`, `EntryEditor.tsx`, `EntryCard.tsx`, `EditorToolbar.tsx` |
+| Journal | `components/journal/` | `books/BookshelfView.tsx`, `books/BookView.tsx`, `books/MonthScroll.tsx`, `EntryEditor.tsx`, `EntryNav.tsx`, `EntryCard.tsx`, `EditorToolbar.tsx` |
 | Chat | `components/chat/` | `ChatView.tsx`, `ChatMessage.tsx`, `ChatInput.tsx`, `ChatSessionList.tsx`, `AgentAvatar.tsx` |
 | Profile | `components/profile/` | `ProfileView.tsx`, `MoodTimeline.tsx`, `LeafCatcherGame.tsx` |
 | Settings | `components/settings/` | `SettingsView.tsx`, `sections/AppearanceSection.tsx`, `sections/ApiSection.tsx`, `sections/DataPrivacySection.tsx`, `sections/MaintenanceSection.tsx` |

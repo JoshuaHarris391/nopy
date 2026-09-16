@@ -5,6 +5,7 @@ import { useJournalStore } from '../stores/journalStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useContextStore } from '../stores/contextStore'
+import { useJournalNavStore } from '../stores/journalNavStore'
 
 export interface JournalSwitchResult {
   added: number
@@ -33,6 +34,8 @@ export async function switchJournal(path: string): Promise<JournalSwitchResult> 
   await useJournalStore.getState().clear()
   await useProfileStore.getState().clear()
   await useContextStore.getState().clear()
+  // Where the reader was in the old journal means nothing in the new one.
+  useJournalNavStore.getState().clear()
 
   useSettingsStore.getState().setJournalPath(path)
   await grantFsScope(path)

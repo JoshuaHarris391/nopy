@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
-import { JournalView } from './components/journal/JournalView'
+import { JournalLanding } from './components/journal/books/JournalLanding'
+import { BookshelfView } from './components/journal/books/BookshelfView'
+import { BookView } from './components/journal/books/BookView'
 import { ChatView } from './components/chat/ChatView'
 import { ContextView } from './components/context/ContextView'
 import { ProfileView } from './components/profile/ProfileView'
@@ -47,7 +49,10 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<JournalView />} />
+          <Route index element={<Navigate to="/journal" replace />} />
+          <Route path="journal" element={<JournalLanding />} />
+          <Route path="journal/books" element={<BookshelfView />} />
+          <Route path="journal/books/:year/:month?" element={<BookView />} />
           <Route path="journal/new" element={<EntryEditor />} />
           <Route path="journal/:id" element={<EntryEditor />} />
           <Route path="chat" element={<ChatView />} />
