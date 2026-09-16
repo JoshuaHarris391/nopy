@@ -3,7 +3,7 @@ import { get, set, del } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
 import { processAllEntries, processEntry, type ProcessedEntry, type IndexRunMode } from '../services/entryProcessor'
-import { buildIndexHints } from '../services/entryRecords'
+import { buildIndexHints, isWriterRated } from '../services/entryRecords'
 import { CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { useSettingsStore } from './settingsStore'
 import { saveToDiskAndReconcileFilename } from './diskSync'
@@ -21,6 +21,7 @@ function entryChanged(a: JournalEntry, b: JournalEntry): boolean {
     a.indexed !== b.indexed ||
     JSON.stringify(a.tags) !== JSON.stringify(b.tags) ||
     JSON.stringify(a.mood) !== JSON.stringify(b.mood) ||
+    (a.moodSource ?? null) !== (b.moodSource ?? null) ||
     (a.indexVersion ?? 0) !== (b.indexVersion ?? 0) ||
     JSON.stringify(a.insight ?? null) !== JSON.stringify(b.insight ?? null)
   )
@@ -191,10 +192,13 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
       const meta = results.get(e.id)
       if (!meta) return e
       // The writer's own mood always wins over the indexer's estimate (which
-      // is still kept in insight.inferredMood). Domains land in `tags`.
+      // is still kept in insight.inferredMood); a mood the indexer set last
+      // time is replaced by its fresh estimate. Domains land in `tags`.
+      const writerRated = isWriterRated(e)
       return {
         ...e,
-        mood: e.mood ?? meta.mood,
+        mood: writerRated ? e.mood : meta.mood,
+        moodSource: writerRated ? (e.moodSource ?? 'writer') : 'indexer',
         tags: meta.domains,
         summary: meta.summary,
         insight: meta.insight,

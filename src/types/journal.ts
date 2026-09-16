@@ -35,6 +35,13 @@ export interface JournalEntry {
   createdAt: string // ISO timestamp
   updatedAt: string // ISO timestamp
   mood: MoodScore | null
+  /**
+   * Who set `mood`: the writer (a strong, human-determined metric that the
+   * indexer must never override) or the indexer's own estimate. Absent on
+   * entries persisted before the flag existed, which are treated as
+   * writer-rated so nothing a person set is ever overwritten.
+   */
+  moodSource?: 'writer' | 'indexer' | null
   /** Closed domain values for v2-indexed entries; free-form tags on legacy ones. */
   tags: string[]
   summary: string | null

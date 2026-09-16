@@ -63,6 +63,9 @@ export function EntryEditor() {
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
   const [content, setContent] = useState('')
   const [moodValue, setMoodValue] = useState<number | null>(null)
+  // True once the writer has touched the mood control for this entry, so a
+  // mood the indexer assigned is not re-saved as if a person had chosen it.
+  const moodTouchedRef = useRef(false)
   const [createdAt, setCreatedAt] = useState<string>(() => new Date().toISOString())
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
@@ -100,6 +103,7 @@ export function EntryEditor() {
     setTitle(entry.title)
     setContent(entry.content)
     setMoodValue(entry.mood?.value ?? null)
+    moodTouchedRef.current = false
     setCreatedAt(entry.createdAt)
     entryIdRef.current = entry.id
     isNewRef.current = false
@@ -120,6 +124,10 @@ export function EntryEditor() {
       const mood: MoodScore | null = moodValue
         ? { value: moodValue, label: moodValueToLabel(moodValue) }
         : null
+      const existing = useJournalStore.getState().entries.find((e) => e.id === entryIdRef.current)
+      const moodSource: JournalEntry['moodSource'] = mood == null
+        ? null
+        : (moodTouchedRef.current || !existing?.moodSource) ? 'writer' : existing.moodSource
       if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
         // Create the new entry under the user's real title in a single write.
         // Set the refs BEFORE the await: if the save collides (and throws), the
@@ -139,6 +147,7 @@ export function EntryEditor() {
           createdAt,
           updatedAt: new Date().toISOString(),
           mood,
+          moodSource,
           tags: [],
           summary: null,
           indexed: false,
@@ -148,7 +157,7 @@ export function EntryEditor() {
         }
         await addEntry(entry)
       } else {
-        await updateEntry(entryIdRef.current!, { title: saveTitle, content, mood, createdAt })
+        await updateEntry(entryIdRef.current!, { title: saveTitle, content, mood, moodSource, createdAt })
       }
       autosave.markClean()
       setUnsavedToDisk(false)
@@ -410,7 +419,7 @@ export function EntryEditor() {
 
           <MoodBar
             value={moodValue}
-            onChange={(v) => { setMoodValue(v); markFieldDirty() }}
+            onChange={(v) => { setMoodValue(v); moodTouchedRef.current = true; markFieldDirty() }}
           />
 
           <div style={{ margin: '8px 0 28px' }}>

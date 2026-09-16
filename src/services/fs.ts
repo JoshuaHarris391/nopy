@@ -46,6 +46,7 @@ export function entryToMarkdown(entry: JournalEntry): string {
   }
   if (entry.mood) {
     frontmatter.mood = entry.mood
+    if (entry.moodSource) frontmatter.moodSource = entry.moodSource
   }
   if (entry.summary) {
     frontmatter.summary = entry.summary
@@ -226,6 +227,7 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
         createdAt: fm?.createdAt || filenameDate || new Date().toISOString(),
         updatedAt: fm?.updatedAt || filenameDate || new Date().toISOString(),
         mood: fm?.mood ?? null,
+        moodSource: fm?.moodSource ?? null,
         tags: fm?.tags ?? [],
         summary: fm?.summary ?? null,
         indexed: hasFrontmatter ? (fm?.indexed ?? false) : false,

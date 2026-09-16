@@ -88,6 +88,18 @@ export function hasStructuredIndex(entry: JournalEntry): entry is JournalEntry &
   return entry.indexed && entry.insight != null && getIndexVersion(entry) >= 2
 }
 
+/**
+ * True when the entry's mood is the writer's own rating. A missing source on
+ * an entry that has a mood is treated as writer-rated, so nothing a person
+ * set before the flag existed can ever be overwritten by the indexer.
+ */
+export function isWriterRated(entry: JournalEntry): boolean {
+  return entry.mood != null && entry.moodSource !== 'indexer'
+}
+
+/** Quotes shorter than this are slogans ("Cannot complain"), not evidence. */
+export const MIN_QUOTE_WORDS = 4
+
 // ---------------------------------------------------------------------------
 // Text folding and vocabulary routing
 // ---------------------------------------------------------------------------
@@ -297,7 +309,9 @@ export function applyVocabularies(loose: LooseEntryRecord): EntryRecord {
 /** Keep only quotes that appear verbatim (after folding) in the entry. */
 export function verifyQuotes(quotes: EntryQuote[], content: string): { kept: EntryQuote[]; dropped: number } {
   const folded = foldText(content)
-  const kept = quotes.filter((q) => folded.includes(foldText(q.text)))
+  const kept = quotes.filter((q) => (
+    q.text.split(/\s+/).filter(Boolean).length >= MIN_QUOTE_WORDS && folded.includes(foldText(q.text))
+  ))
   return { kept, dropped: quotes.length - kept.length }
 }
 
@@ -435,7 +449,7 @@ export function buildIndexHints(entries: JournalEntry[], target: JournalEntry, n
   return {
     roster: buildPeopleRoster(others).slice(0, 20),
     recentQuotes: recentQuoteHints(buildRecurringQuotes(others), now),
-    statedMood: target.mood?.value ?? null,
+    statedMood: isWriterRated(target) ? target.mood!.value : null,
   }
 }
 
@@ -447,7 +461,10 @@ export interface MonthRollup {
   key: string
   entries: number
   structured: number
-  mood: { mean: number; min: number; max: number; minDate: string; maxDate: string } | null
+  /** The writer's own ratings only: the primary wellbeing metric. */
+  mood: { mean: number; n: number; min: number; max: number; minDate: string; maxDate: string } | null
+  /** The indexer's estimate over structured entries, for comparison. */
+  inferredMood: { mean: number; n: number } | null
   states: Record<StateKey, { mean: number; n: number } | null>
   topEmotions: Array<[string, number]>
   domains: Array<[string, number]>
@@ -455,6 +472,7 @@ export interface MonthRollup {
   coping: Array<{ strategy: string; count: number; meanEffect: number | null }>
   safety: { monitor: string[]; concern: string[] }
   predictions: number
+  body: { sleepMean: number | null; sleepN: number; substances: Array<[string, number]>; symptoms: Array<[string, number]> }
 }
 
 export interface CorpusReport {
@@ -489,18 +507,28 @@ export function buildCorpusReport(entries: JournalEntry[]): CorpusReport {
   }
 
   const months: MonthRollup[] = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, list]) => {
-    const withMood = list.filter((e) => e.mood)
+    const withMood = list.filter(isWriterRated)
     let mood: MonthRollup['mood'] = null
     if (withMood.length > 0) {
       const minE = withMood.reduce((a, b) => (b.mood!.value < a.mood!.value ? b : a))
       const maxE = withMood.reduce((a, b) => (b.mood!.value > a.mood!.value ? b : a))
       mood = {
         mean: round1(mean(withMood.map((e) => e.mood!.value))),
+        n: withMood.length,
         min: minE.mood!.value, max: maxE.mood!.value,
         minDate: day(minE.createdAt), maxDate: day(maxE.createdAt),
       }
     }
     const structured = list.filter(hasStructuredIndex)
+    const inferredVals = structured.map((e) => e.insight.inferredMood).filter((v): v is number => v != null)
+    const inferredMood = inferredVals.length ? { mean: round1(mean(inferredVals)), n: inferredVals.length } : null
+    const sleepVals = structured.map((e) => e.insight.body.sleepHours).filter((v): v is number => v != null)
+    const substanceCounts = new Map<string, number>()
+    const symptomCounts = new Map<string, number>()
+    for (const e of structured) {
+      for (const sub of e.insight.body.substances) substanceCounts.set(sub.type, (substanceCounts.get(sub.type) ?? 0) + 1)
+      for (const sym of e.insight.body.symptoms) symptomCounts.set(sym, (symptomCounts.get(sym) ?? 0) + 1)
+    }
     const states = {} as MonthRollup['states']
     for (const k of STATE_KEYS) {
       const vals = structured
@@ -541,6 +569,7 @@ export function buildCorpusReport(entries: JournalEntry[]): CorpusReport {
       entries: list.length,
       structured: structured.length,
       mood,
+      inferredMood,
       states,
       topEmotions: topCounts(emotionCounts, 3),
       domains: topCounts(domainCounts, 4),
@@ -554,6 +583,12 @@ export function buildCorpusReport(entries: JournalEntry[]): CorpusReport {
         .map(([strategy, v]) => ({ strategy, count: v.count, meanEffect: v.effects.length ? round1(mean(v.effects)) : null })),
       safety,
       predictions,
+      body: {
+        sleepMean: sleepVals.length ? round1(mean(sleepVals)) : null,
+        sleepN: sleepVals.length,
+        substances: topCounts(substanceCounts, 3),
+        symptoms: topCounts(symptomCounts, 3),
+      },
     }
   })
 
@@ -585,12 +620,17 @@ export function renderCorpusReport(r: CorpusReport): string {
   lines.push(`Entries indexed: ${r.months.reduce((s, m) => s + m.entries, 0)}` + (r.legacyCount ? ` (${r.legacyCount} legacy, summary only)` : ''))
   lines.push('')
   lines.push('## By month')
-  lines.push('States are 0-10 means over entries with confidence ≥ 0.5; "–" means no confident evidence that month.')
+  lines.push('"writer mood" is the writer\'s own 1-10 rating (n = entries they rated): the primary wellbeing metric, which outranks every inferred value. "inferred mood" is the indexer\'s estimate. States are 0-10 means over entries with confidence ≥ 0.5; "–" means no confident evidence that month.')
   lines.push('')
-  lines.push('| Month | n | mood mean (min–max) | ' + STATE_KEYS.map((k) => STATE_SHORT[k]).join(' | ') + ' | top emotions | domains | people (felt after) | coping (mean effect) | safety |')
-  lines.push('|' + Array(6 + STATE_KEYS.length).fill('---').join('|') + '|')
+  lines.push('| Month | n | writer mood mean (n, min–max) | inferred mood | ' + STATE_KEYS.map((k) => STATE_SHORT[k]).join(' | ') + ' | top emotions | domains | people (felt after) | coping (mean effect) | body | safety |')
+  lines.push('|' + Array(8 + STATE_KEYS.length).fill('---').join('|') + '|')
   for (const m of r.months) {
-    const mood = m.mood ? `${m.mood.mean} (${m.mood.min}–${m.mood.max})` : '–'
+    const mood = m.mood ? `${m.mood.mean} (n ${m.mood.n}, ${m.mood.min}–${m.mood.max})` : '–'
+    const inferred = m.inferredMood ? `${m.inferredMood.mean}` : '–'
+    const bodyParts: string[] = []
+    if (m.body.sleepMean != null) bodyParts.push(`sleep ${m.body.sleepMean}h (n ${m.body.sleepN})`)
+    for (const [t, c] of m.body.substances) bodyParts.push(`${t} ×${c}`)
+    for (const [t, c] of m.body.symptoms) bodyParts.push(`${t} ×${c}`)
     const states = STATE_KEYS.map((k) => fmtState(m.states[k])).join(' | ')
     const emotions = m.topEmotions.map(([l, c]) => `${l} ${c}`).join(', ') || '–'
     const domains = m.domains.map(([d, c]) => `${d} ${c}`).join(', ') || '–'
@@ -599,7 +639,7 @@ export function renderCorpusReport(r: CorpusReport): string {
     const safetyParts: string[] = []
     if (m.safety.concern.length) safetyParts.push(`concern ×${m.safety.concern.length}`)
     if (m.safety.monitor.length) safetyParts.push(`monitor ×${m.safety.monitor.length}`)
-    lines.push(`| ${m.key} | ${m.entries} | ${mood} | ${states} | ${emotions} | ${domains} | ${people} | ${coping} | ${safetyParts.join(', ') || '–'} |`)
+    lines.push(`| ${m.key} | ${m.entries} | ${mood} | ${inferred} | ${states} | ${emotions} | ${domains} | ${people} | ${coping} | ${bodyParts.join(', ') || '–'} | ${safetyParts.join(', ') || '–'} |`)
   }
   if (r.roster.length) {
     lines.push('')
@@ -637,7 +677,15 @@ export function renderCorpusReport(r: CorpusReport): string {
 // Rendering one record
 // ---------------------------------------------------------------------------
 
-export type RecordTier = 'brief' | 'full'
+/**
+ * How much of a record to render:
+ *  - `full`     every populated section (Index view, tests, debugging)
+ *  - `standard` what the profile needs from a recent entry: summary, people,
+ *               quotes, focal chain, realised, prediction, safety, observations
+ *  - `brief`    the gist for the narrative JSON step
+ *  - `digest`   one line for an older entry; the corpus report carries the rest
+ */
+export type RecordTier = 'brief' | 'standard' | 'full' | 'digest'
 
 function fmtStateValue(s: { value: number | null; confidence: number | null }): string {
   return s.value != null && (s.confidence ?? 0) >= REPORT_STATE_CONFIDENCE ? String(s.value) : '–'
@@ -652,20 +700,40 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
   const words = entry.content.split(/\s+/).filter(Boolean).length
   const lines: string[] = []
 
+  const moodStr = entry.mood
+    ? `mood ${entry.mood.value}/10 (${isWriterRated(entry) ? 'writer-rated' : 'inferred'})`
+    : 'mood –'
+
   if (!hasStructuredIndex(entry)) {
-    const mood = entry.mood ? ` · mood ${entry.mood.value}/10` : ''
-    lines.push(`## ${date} · "${entry.title}"${mood} · ${words}w`)
+    if (tier === 'digest') return `- ${date} · "${entry.title}" · ${moodStr} · legacy index`
+    lines.push(`## ${date} · "${entry.title}" · ${moodStr} · ${words}w`)
     lines.push(entry.summary || '(no summary)')
     lines.push('[legacy index: summary only]')
     return lines.join('\n')
   }
 
   const ins = entry.insight
-  const moodSrc = entry.mood && entry.mood.value !== ins.inferredMood ? 'stated' : 'inferred'
-  const moodStr = entry.mood ? `mood ${entry.mood.value}/10 (${moodSrc})` : 'mood –'
-  const states = STATE_KEYS.map((k) => `${STATE_SHORT[k]} ${fmtStateValue(ins.states[k])}`).join(' ')
   const domains = entry.tags.length ? ` · ${entry.tags.join(', ')}` : ''
-  lines.push(`## ${date} · "${entry.title}" · ${moodStr} · ${states}${domains} · ${words}w`)
+
+  if (tier === 'digest') {
+    const counts = new Map(recurring.map((r) => [foldText(r.text), r.count]))
+    const order = ['self_judgement', 'identity', 'rule', 'prediction']
+    const rank = (q: EntryQuote) => (q.matchesRecent ? -10 : 0) + (order.indexOf(q.category) === -1 ? 9 : order.indexOf(q.category))
+    const pick = [...ins.quotes].sort((a, b) => rank(a) - rank(b))[0]
+    const parts = [`- ${date} · "${entry.title}" · ${moodStr}${domains}`]
+    if (pick) {
+      const n = counts.get(foldText(pick.matchesRecent ?? pick.text))
+      parts.push(`"${pick.text}"${n && n >= 2 ? ` (recurring ×${n})` : ''}`)
+    }
+    if (ins.safety.flag !== 'none') parts.push(`safety: ${ins.safety.flag}`)
+    return parts.join(' · ')
+  }
+
+  const full = tier === 'full'
+  const states = STATE_KEYS.map((k) => `${STATE_SHORT[k]} ${fmtStateValue(ins.states[k])}`).join(' ')
+  lines.push(full
+    ? `## ${date} · "${entry.title}" · ${moodStr} · ${states}${domains} · ${words}w`
+    : `## ${date} · "${entry.title}" · ${moodStr}${domains}`)
   lines.push(entry.summary || '')
 
   if (tier === 'brief') {
@@ -674,11 +742,11 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
     return lines.filter(Boolean).join('\n')
   }
 
-  if (ins.emotions.length) lines.push(`Emotions: ${ins.emotions.map((e) => `${e.label} ${e.intensity}`).join(', ')}`)
+  if (full && ins.emotions.length) lines.push(`Emotions: ${ins.emotions.map((e) => `${e.label} ${e.intensity}`).join(', ')}`)
   if (ins.people.length) {
     lines.push('People: ' + ins.people.map((p) => {
       const rel = [p.role !== 'unknown' ? p.role : null, `${p.interaction}${p.feltAfter ? ` → ${p.feltAfter}` : ''}`].filter(Boolean).join('; ')
-      return `${p.name} (${rel})${p.note ? ` — ${p.note}` : ''}`
+      return `${p.name} (${rel})${full && p.note ? ` — ${p.note}` : ''}`
     }).join(' | '))
   }
   if (ins.quotes.length) {
@@ -697,7 +765,7 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
   }
   if (ins.revelations.length) lines.push(`Realised: ${ins.revelations.join(' | ')}`)
   if (ins.prediction) lines.push(`Predicts: ${ins.prediction.text}${ins.prediction.targetDate ? ` (by ${ins.prediction.targetDate})` : ''}`)
-  if (ins.coping.length) {
+  if (full && ins.coping.length) {
     lines.push('Coping: ' + ins.coping.map((c) => `${c.strategy}${c.effect != null ? ` (${c.effect > 0 ? '+' : ''}${c.effect})` : ''}`).join(', '))
   }
   const body: string[] = []
@@ -707,7 +775,7 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
   for (const s of ins.body.substances) body.push(`${s.type}${s.quantity ? ` ${s.quantity}` : ''}`)
   if (ins.body.symptoms.length) body.push(ins.body.symptoms.join(', '))
   if (ins.body.notes) body.push(ins.body.notes)
-  if (body.length) lines.push(`Body: ${body.join(' · ')}`)
+  if (full && body.length) lines.push(`Body: ${body.join(' · ')}`)
   if (ins.safety.flag !== 'none') lines.push(`Safety: ${ins.safety.flag}${ins.safety.evidence ? ` — "${ins.safety.evidence}"` : ''}`)
   if (ins.observations.length) {
     lines.push('Observed: ' + ins.observations.map((o) => `[${o.kind}, ${o.basis}] ${o.text}`).join(' | '))
@@ -732,30 +800,61 @@ export function selectEntriesForFullProfile(
   return { entries: indexed.filter((e) => !seen.has(e.id)), isRevision: true }
 }
 
+export interface FitOptions {
+  now?: Date
+  /** Entries this recent get the standard tier. */
+  recentDays?: number
+  /** At least this many newest entries get the standard tier regardless of age. */
+  recentMin?: number
+}
+
 /**
- * Render records newest-first until the token budget is spent, then emit
- * them oldest-first. Records that don't fit are only represented by the
- * corpus report, and the text says so.
+ * Render the records the full profile reads. Recent entries get the
+ * standard tier; older ones a one-line digest, since the corpus report
+ * already carries their numbers. Filled newest-first until the token budget
+ * is spent; anything that does not fit is only represented by the report,
+ * and the text says so.
  */
 export function fitRecordsToBudget(
   entries: JournalEntry[],
   budgetTokens: number,
   recurring: RecurringQuote[] = [],
-): { text: string; included: number; dropped: number } {
+  opts: FitOptions = {},
+): { text: string; included: number; standard: number; digest: number; dropped: number } {
+  const now = opts.now ?? new Date()
+  const recentDays = opts.recentDays ?? 90
+  const recentMin = opts.recentMin ?? 60
   const sorted = [...entries].sort(byDateAsc)
-  const rendered = sorted.map((e) => renderEntryRecord(e, 'full', recurring))
+  const cutoff = new Date(now.getTime() - recentDays * 86_400_000).getTime()
+  const firstRecentByCount = Math.max(0, sorted.length - recentMin)
+  const rendered = sorted.map((e, i) => {
+    const recent = i >= firstRecentByCount || new Date(e.createdAt).getTime() >= cutoff
+    const tier: RecordTier = recent ? 'standard' : 'digest'
+    return { tier, text: renderEntryRecord(e, tier, recurring) }
+  })
   let used = 0
   let start = rendered.length
   for (let i = rendered.length - 1; i >= 0; i--) {
-    const cost = estimateTokens(rendered[i]) + 1
+    const cost = estimateTokens(rendered[i].text) + 1
     if (used + cost > budgetTokens) break
     used += cost
     start = i
   }
   const kept = rendered.slice(start)
   const dropped = start
+  const standard = kept.filter((r) => r.tier === 'standard').length
+  const digest = kept.length - standard
   const parts: string[] = []
   if (dropped > 0) parts.push(`(${dropped} earlier record${dropped === 1 ? '' : 's'} omitted for length; the corpus report above still covers them)`)
-  parts.push(...kept)
-  return { text: parts.join('\n\n'), included: kept.length, dropped }
+  let i = 0
+  while (i < kept.length) {
+    if (kept[i].tier === 'digest') {
+      const lines: string[] = []
+      while (i < kept.length && kept[i].tier === 'digest') lines.push(kept[i++].text)
+      parts.push(`Older entries (one line each; see the corpus report for their numbers):\n${lines.join('\n')}`)
+    } else {
+      parts.push(kept[i++].text)
+    }
+  }
+  return { text: parts.join('\n\n'), included: kept.length, standard, digest, dropped }
 }

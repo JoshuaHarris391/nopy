@@ -7,6 +7,7 @@ export const FrontmatterEntrySchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   mood: MoodScoreSchema.nullable().optional(),
+  moodSource: z.enum(['writer', 'indexer']).nullable().optional().catch(null),
   tags: z.array(z.string()).optional().default([]),
   summary: z.string().nullable().optional(),
   indexed: z.boolean().optional().default(false),

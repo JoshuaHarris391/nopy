@@ -65,22 +65,25 @@ describe('applyVocabularies: routing free text onto the closed vocabularies', ()
 })
 
 describe('Guards against invented evidence', () => {
-  it('keeps only quotes that appear verbatim in the entry, tolerating curly quotes and spacing', () => {
+  it('keeps only verbatim quotes of at least a few words, tolerating curly quotes and spacing', () => {
     /**
      * Quotes are the only verbatim evidence the profile will ever have, so a
-     * quote the model tidied up or invented must not be stored. Typographic
-     * apostrophes and line breaks are not meaningful differences.
+     * quote the model tidied up or invented must not be stored, and a
+     * two-word slogan like "Bed early" is not evidence of anything.
+     * Typographic apostrophes and line breaks are not meaningful differences.
      * Input: the entry says "I don’t know\nwhat I want"; quotes are that line
-     * with a straight apostrophe on one line, and a sentence not in the entry.
-     * Expected: the first is kept, the fabricated one dropped (dropped = 1).
+     * with a straight apostrophe on one line, a sentence not in the entry,
+     * and the verbatim but two-word "Bed early".
+     * Expected: only the first is kept (dropped = 2).
      */
     const content = 'Long day. I don’t know\nwhat I want anymore. Bed early.'
     const { kept, dropped } = verifyQuotes([
       { text: "I don't know what I want anymore", category: 'self_judgement', matchesRecent: null },
       { text: 'she deserves someone who knows what they want', category: 'prediction', matchesRecent: null },
+      { text: 'Bed early', category: 'other', matchesRecent: null },
     ], content)
     expect(kept.map((q) => q.text)).toEqual(["I don't know what I want anymore"])
-    expect(dropped).toBe(1)
+    expect(dropped).toBe(2)
   })
 
   it('only trusts a recurring-phrase match that was actually in the hint list', () => {
@@ -188,6 +191,9 @@ describe('Aggregating records across the journal', () => {
     expect(report.months[0].entries).toBe(3)
     expect(report.months[0].structured).toBe(2)
     expect(report.months[0].states.anxiety).toEqual({ mean: 8, n: 1 })
+    expect(report.months[0].mood).toMatchObject({ mean: 4, n: 3 })
+    expect(report.months[0].body).toMatchObject({ sleepMean: 4, sleepN: 2, substances: [['alcohol', 2]] })
+    expect(report.text).toContain('writer mood')
     expect(report.months[0].safety.monitor).toEqual(['2025-03-20'])
     expect(report.safety).toEqual([{ date: '2025-03-20', flag: 'monitor', evidence: "can't see the point of any of it" }])
     expect(report.legacyCount).toBe(1)
@@ -209,7 +215,7 @@ describe('Rendering records for the profile prompt', () => {
      */
     const entry = makeEntry()
     const text = renderEntryRecord(entry, 'full')
-    expect(text).toContain('## 2025-03-14 · "Sunday, again" · mood 4/10 (inferred) · anx 7')
+    expect(text).toContain('## 2025-03-14 · "Sunday, again" · mood 4/10 (writer-rated) · anx 7')
     expect(text).toContain('People: Maya (partner; conflict → depleted)')
     expect(text).toContain('> "I dont think I have ever chosen something without checking someones face first" [self_judgement]')
     expect(text).toContain('Focal: Maya found the unopened contract → "I have let her down again"')
@@ -273,12 +279,39 @@ describe('Choosing what the full profile reads', () => {
       .toEqual({ entries: [c, a, b], isRevision: false })
   })
 
+  it('renders recent entries in full detail and older ones as one-line digests', () => {
+    /**
+     * Sending every field of every record would cost hundreds of tokens per
+     * entry. The profile needs detail for the recent window; for older
+     * entries the corpus report already carries the numbers, so one line
+     * with the date, the writer's mood, the domains and the most telling
+     * quote is enough.
+     * Input: an entry from a year ago and one from last week, with "now"
+     * fixed and the recent window set to 90 days / at least 1 entry.
+     * Expected: the old entry is a single "- 2024-..." line carrying its
+     * quote, grouped under an "Older entries" heading; the recent one is a
+     * standard record with Quotes and Focal lines; counts report 1 and 1.
+     */
+    const now = new Date('2025-03-20T00:00:00.000Z')
+    const entries = [
+      makeEntry({ title: 'Long ago', createdAt: '2024-03-01T00:00:00.000Z' }),
+      makeEntry({ title: 'Last week', createdAt: '2025-03-14T00:00:00.000Z' }),
+    ]
+    const { text, standard, digest, dropped } = fitRecordsToBudget(entries, 100_000, [], { now, recentMin: 1 })
+    expect({ standard, digest, dropped }).toEqual({ standard: 1, digest: 1, dropped: 0 })
+    expect(text).toContain('Older entries (one line each')
+    expect(text).toContain('- 2024-03-01 · "Long ago" · mood 4/10 (writer-rated) · relationship, housing · "I dont think I have ever chosen')
+    expect(text).toContain('## 2025-03-14 · "Last week" · mood 4/10 (writer-rated) · relationship, housing')
+    expect(text).toContain('Focal: Maya found the unopened contract')
+    expect(text).not.toContain('Emotions:')
+  })
+
   it('keeps the newest records when the budget is tight and says how many were left out', () => {
     /**
      * A first run on a large journal cannot send every record. The corpus
      * report covers all of them, so the rendered run keeps the most recent
      * records and states how many older ones it omitted.
-     * Input: three records, a budget that fits roughly one of them.
+     * Input: three recent records, a budget that fits roughly one of them.
      * Expected: one included, two dropped, the note first and the newest
      * record present.
      */
@@ -287,7 +320,7 @@ describe('Choosing what the full profile reads', () => {
       makeEntry({ title: 'Middle', createdAt: '2025-02-01T00:00:00.000Z' }),
       makeEntry({ title: 'Newest', createdAt: '2025-03-01T00:00:00.000Z' }),
     ]
-    const one = renderEntryRecord(entries[2], 'full')
+    const one = renderEntryRecord(entries[2], 'standard')
     const { text, included, dropped } = fitRecordsToBudget(entries, Math.ceil(one.length / 4) + 10)
     expect(included).toBe(1)
     expect(dropped).toBe(2)

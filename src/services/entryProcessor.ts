@@ -238,9 +238,7 @@ export async function generateFullProfile(
   const overhead = estimateTokens(system) + estimateTokens(preamble) + TOKEN_LIMITS.fullProfile
   const budget = Math.max(0, Math.floor(opts.contextWindowTokens * 0.9) - overhead)
   const fitted = fitRecordsToBudget(indexed, budget, opts.corpusReport.recurring)
-  if (fitted.dropped > 0) {
-    console.warn('[entryProcessor] generateFullProfile: budget', budget, 'tokens — omitted', fitted.dropped, 'oldest records')
-  }
+  console.log('[entryProcessor] generateFullProfile: budget', budget, 'tokens | standard', fitted.standard, '| digest', fitted.digest, '| omitted', fitted.dropped)
   const heading = isRevision
     ? `# New entry records since the previous profile (${fitted.included}, oldest first)`
     : `# Entry records (${fitted.included}, oldest first)`

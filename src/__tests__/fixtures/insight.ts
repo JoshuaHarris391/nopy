@@ -52,6 +52,7 @@ export function makeEntry(overrides: Partial<JournalEntry> = {}): JournalEntry {
     createdAt: '2025-03-14T20:00:00.000Z',
     updatedAt: '2025-03-14T20:00:00.000Z',
     mood: { value: 4, label: 'low' },
+    moodSource: 'writer',
     tags: ['relationship', 'housing'],
     summary: 'Argued with Maya about the Leeds move after she found the unopened contract; went quiet rather than answer.',
     indexed: true,

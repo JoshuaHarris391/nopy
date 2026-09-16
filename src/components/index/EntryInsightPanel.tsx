@@ -41,7 +41,7 @@ export function EntryInsightPanel({ entry }: { entry: JournalEntry }) {
   const [copied, setCopied] = useState(false)
 
   const raw = JSON.stringify({
-    mood: entry.mood, tags: entry.tags, summary: entry.summary,
+    mood: entry.mood, moodSource: entry.moodSource ?? null, tags: entry.tags, summary: entry.summary,
     indexVersion: entry.indexVersion ?? (entry.indexed ? 1 : 0), indexModel: entry.indexModel ?? null,
     insight: entry.insight ?? null,
   }, null, 2)

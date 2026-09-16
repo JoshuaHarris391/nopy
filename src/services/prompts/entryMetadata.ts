@@ -20,7 +20,7 @@ export function buildEntryIndexSystemPrompt(): string {
 Rules you never break:
 - Output only the JSON object. No markdown, no commentary, no code fences.
 - Read the whole entry before extracting anything.
-- If a stated mood is provided, it is the writer's own rating. Report your own estimate in mood/inferredMood; never argue with theirs.
+- If a stated mood is provided, it is the writer's own rating and the primary wellbeing metric for this entry. Report your own estimate in mood/inferredMood without arguing with theirs, and keep your inferred states consistent with it: where the text seems to contradict the writer's rating, say so in the evidence string rather than adjusting the rating.
 - Use null when the entry gives no basis for a value. Never fill a field to make the record look complete. A one-line entry on a hard day is a valid entry.
 - Every inferred state has a value, a confidence and an evidence string of at most 15 words taken from the entry. Confidence below 0.3 means value null.
 - Quotes are copied character for character, including typos, grammar and profanity. Never paraphrase, trim mid-sentence, or soften.
