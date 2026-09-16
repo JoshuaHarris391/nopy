@@ -41,9 +41,7 @@ export function MaintenanceSection() {
     <SettingsSection title="Maintenance">
       <SettingsRow
         label="Profile generation"
-        description={profileGenerationMode === 'incremental'
-          ? 'Incremental: revise the existing profile with new entries only.'
-          : 'Full: rewrite the profile from every entry each time.'}
+        description="Incremental revises the selected profile with new entries only (cheaper, faster). Full rewrites it from every entry in scope (slower, costs more). Also set from the Profile page." 
       >
         <select
           value={profileGenerationMode}

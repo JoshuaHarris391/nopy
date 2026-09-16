@@ -40,7 +40,7 @@ describe('Profile page: AI content, scope and history', () => {
   beforeEach(() => {
     idbStore.clear()
     localStorage.clear()
-    useSettingsStore.setState({ apiKey: 'sk-test', provider: 'anthropic', privateMode: false, profileScope: { kind: 'all' } })
+    useSettingsStore.setState({ apiKey: 'sk-test', provider: 'anthropic', privateMode: false, profileScope: { kind: 'all' }, profileGenerationMode: 'incremental' })
     useJournalStore.setState({
       entries: [
         makeEntry({ id: 'e1', createdAt: '2025-01-05T10:00:00.000Z' }),
@@ -95,7 +95,8 @@ describe('Profile page: AI content, scope and history', () => {
      * Input: choose "Last N entries" (defaults to 60, then set 2); click
      * Generate.
      * Expected: settings profileScope becomes entries/2, the count line says
-     * 2 of 3, and generateProfile is called with all three entries.
+     * 2 of 3, the build control switches profileGenerationMode to full, and
+     * generateProfile is called with all three entries.
      */
     const generateProfile = vi.fn(async () => {})
     useProfileStore.setState({ generateProfile })
@@ -108,6 +109,10 @@ describe('Profile page: AI content, scope and history', () => {
     fireEvent.blur(count, { target: { value: '2' } })
     expect(useSettingsStore.getState().profileScope).toEqual({ kind: 'entries', count: 2 })
     expect(screen.getByTestId('scope-count')).toHaveTextContent('2 of 3 indexed entries (last 2 entries)')
+
+    // The build control beside Generate writes the same setting Settings shows.
+    fireEvent.change(screen.getByRole('combobox', { name: 'Profile build mode' }), { target: { value: 'full' } })
+    expect(useSettingsStore.getState().profileGenerationMode).toBe('full')
 
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
     expect(generateProfile).toHaveBeenCalledTimes(1)

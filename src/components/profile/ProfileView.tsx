@@ -7,6 +7,7 @@ import { LeafCatcherGame } from './LeafCatcherGame'
 import { Button } from '../ui/Button'
 import { ProfileSection } from '../ui/ProfileSection'
 import { ProfileScopeControl } from './ProfileScopeControl'
+import { ProfileBuildControl } from './ProfileBuildControl'
 import { ProfileHistoryPanel } from './ProfileHistoryPanel'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
@@ -30,6 +31,8 @@ export function ProfileView() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const scope = useSettingsStore((s) => s.profileScope)
   const setProfileScope = useSettingsStore((s) => s.setProfileScope)
+  const buildMode = useSettingsStore((s) => s.profileGenerationMode)
+  const setBuildMode = useSettingsStore((s) => s.setProfileGenerationMode)
   const ready = isLlmConfigured(llmConfig)
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -79,6 +82,7 @@ export function ProfileView() {
         {ready && (
           <>
             <ProfileScopeControl scope={scope} onChange={setProfileScope} disabled={generating} />
+            <ProfileBuildControl mode={buildMode} onChange={setBuildMode} disabled={generating} />
             <Button
               variant="primary"
               onClick={handleGenerateProfile}
