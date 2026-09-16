@@ -22,7 +22,7 @@ vi.mock('idb-keyval', () => ({
  */
 const { processAllEntriesMock, processEntryMock, profileNarrativeMock, fullProfileMock } = vi.hoisted(() => ({
   processAllEntriesMock: vi.fn(async () => new Map()),
-  processEntryMock: vi.fn(async () => ({ mood: { value: 3, label: 'neutral' }, tags: [], summary: '' })),
+  processEntryMock: vi.fn(async () => ({ mood: { value: 3, label: 'neutral' }, domains: ['work'], summary: 'Indexed.', insight: null, indexModel: 'test' })),
   profileNarrativeMock: vi.fn(),
   fullProfileMock: vi.fn(),
 }))
@@ -71,7 +71,7 @@ describe('Private mode blocks the LLM at the store level', () => {
     const config = selectLlmConfig(useSettingsStore.getState())
     const noProgress = () => {}
 
-    const count = await useJournalStore.getState().processEntries(config, true, noProgress)
+    const count = await useJournalStore.getState().processEntries(config, 'all', noProgress)
     await useJournalStore.getState().reindexEntry('e1', config)
     await useProfileStore.getState().generateProfile([entry], config)
 
@@ -96,12 +96,12 @@ describe('Private mode blocks the LLM at the store level', () => {
      */
     const config = selectLlmConfig(useSettingsStore.getState())
 
-    await useJournalStore.getState().processEntries(config, true, () => {})
+    await useJournalStore.getState().processEntries(config, 'all', () => {})
     await useJournalStore.getState().reindexEntry('e1', config)
 
     expect(processAllEntriesMock).toHaveBeenCalledTimes(1)
     expect(processEntryMock).toHaveBeenCalledTimes(1)
-    expect(processEntryMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }), config, undefined)
+    expect(processEntryMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }), config, undefined, expect.objectContaining({ statedMood: null }))
     expect(useJournalStore.getState().entries[0].indexed).toBe(true)
   })
 })

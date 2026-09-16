@@ -64,7 +64,7 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
     'Something went wrong with the AI request. Check the console for details.',
 }
 
-type Message = { role: 'user' | 'assistant'; content: string }
+export type Message = { role: 'user' | 'assistant'; content: string }
 
 /**
  * Readiness gate shared by every AI-using surface (ChatView, ProfileView,

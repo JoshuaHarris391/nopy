@@ -81,6 +81,12 @@ export interface UserSettings {
    * nothing can reach an LLM provider while it is on. Off by default.
    */
   privateMode: boolean
+  /**
+   * How the full psychological profile is (re)generated. `incremental`
+   * (default) sends the previous profile plus only the index records added
+   * since; `full` rewrites from every record each time.
+   */
+  profileGenerationMode: 'incremental' | 'full'
   journalPath: string
   /**
    * Journals the user has created or opened, most-recent-first. Surfaced as

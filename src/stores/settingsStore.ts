@@ -17,6 +17,7 @@ interface SettingsState extends UserSettings {
   setSessionPanelCollapsed: (collapsed: boolean) => void
   setShowTokenUsage: (value: boolean) => void
   setPrivateMode: (value: boolean) => void
+  setProfileGenerationMode: (mode: 'incremental' | 'full') => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
   setJournalIndexLimit: (count: number) => void
@@ -52,6 +53,7 @@ export const useSettingsStore = create<SettingsState>()(
       sessionPanelCollapsed: false,
       showTokenUsage: false,
       privateMode: false,
+      profileGenerationMode: 'incremental',
       journalPath: '',
       recentJournals: [],
       theme: 'system',
@@ -78,6 +80,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSessionPanelCollapsed: (collapsed) => set({ sessionPanelCollapsed: collapsed }),
       setShowTokenUsage: (value) => set({ showTokenUsage: value }),
       setPrivateMode: (value) => set({ privateMode: value }),
+      setProfileGenerationMode: (mode) => set({ profileGenerationMode: mode }),
       setJournalPath: (path) => set({ journalPath: path }),
       recordJournal: (path) => set((state) => ({ recentJournals: recordJournalEntry(state.recentJournals, path) })),
       removeRecentJournal: (path) => set((state) => ({ recentJournals: state.recentJournals.filter((j) => j.path !== path) })),
@@ -93,7 +96,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 8,
+      version: 9,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -113,6 +116,8 @@ export const useSettingsStore = create<SettingsState>()(
       // OFF so existing users see no change until they opt in.
       // v7 → v8 added privateMode (journal-only mode that hides every AI
       // surface). Seeds OFF so the upgrade changes nothing until switched on.
+      // v8 → v9 added profileGenerationMode (incremental vs full rewrite of the
+      // full psychological profile). Seeds to 'incremental', the new default.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -168,6 +173,12 @@ export const useSettingsStore = create<SettingsState>()(
           next = {
             ...next,
             privateMode: next.privateMode ?? false,
+          }
+        }
+        if (version < 9) {
+          next = {
+            ...next,
+            profileGenerationMode: next.profileGenerationMode ?? 'incremental',
           }
         }
         return next

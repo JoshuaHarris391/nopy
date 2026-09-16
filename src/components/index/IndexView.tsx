@@ -6,6 +6,8 @@ import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { MoodDot } from '../ui/MoodDot'
 import { CancellableActionButton } from '../ui/CancellableActionButton'
+import { InsightMarkers } from './InsightMarkers'
+import { EntryInsightPanel } from './EntryInsightPanel'
 
 import { useJournalStore } from '../../stores/journalStore'
 import { useShallow } from 'zustand/react/shallow'
@@ -72,7 +74,7 @@ export function IndexView() {
   const handleUpdateIndex = () => {
     if (!ready) return
     indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(llmConfig, false, onProgress, signal)
+      const count = await useJournalStore.getState().processEntries(llmConfig, 'unindexed', onProgress, signal)
       return count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date'
     })
   }
@@ -176,9 +178,10 @@ export function IndexView() {
                     <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Date</th>
                     <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Title</th>
                     <th className="text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Mood</th>
+                    <th className="hidden sm:table-cell text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Markers</th>
                     <th className="hidden sm:table-cell text-left px-3 py-2 font-semibold" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Tags</th>
                     <th className="hidden lg:table-cell text-left px-3 py-2 font-semibold w-full" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', borderBottom: '2px solid var(--stone)' }}>Summary</th>
-                    <th className="lg:hidden" style={{ borderBottom: '2px solid var(--stone)', width: 40 }} />
+                    <th style={{ borderBottom: '2px solid var(--stone)', width: 40 }} />
                   </tr>
                 </thead>
                 {filtered.map((entry) => {
@@ -204,6 +207,9 @@ export function IndexView() {
                           )}
                         </td>
                         <td className="hidden sm:table-cell px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)' }}>
+                          <InsightMarkers entry={entry} />
+                        </td>
+                        <td className="hidden sm:table-cell px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)' }}>
                           <div className="flex flex-wrap gap-1">
                             {entry.tags.map((tag) => (
                               <span
@@ -222,8 +228,10 @@ export function IndexView() {
                         <td className="hidden lg:table-cell px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--manuscript)', opacity: 0.7, fontSize: 14.5, lineHeight: 1.5 }}>
                           {entry.summary || '\u2014'}
                         </td>
-                        <td className="lg:hidden px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)' }}>
+                        <td className="px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)' }}>
                           <button
+                            aria-label={isExpanded ? 'Collapse index details' : 'Expand index details'}
+                            aria-expanded={isExpanded}
                             onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : entry.id) }}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--sage)', display: 'flex', alignItems: 'center' }}
                           >
@@ -234,35 +242,13 @@ export function IndexView() {
                           </button>
                         </td>
                       </tr>
-                      <tr className="lg:hidden">
-                        <td colSpan={6} style={{ padding: 0, borderBottom: '1px solid rgba(212, 201, 184, 0.35)' }}>
-                          <div
-                            className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
-                          >
-                            <div style={{ paddingLeft: 12, paddingRight: 12, paddingTop: 8, paddingBottom: 16 }}>
-                              {entry.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mb-2 sm:hidden">
-                                  {entry.tags.map((tag) => (
-                                    <span
-                                      key={tag}
-                                      style={{
-                                        fontSize: 12, padding: '1px 6px', background: 'var(--warm-cream)',
-                                        border: '1px solid rgba(212, 201, 184, 0.5)', borderRadius: 10,
-                                        color: 'var(--bark)', whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--manuscript)', lineHeight: 1.65 }}>
-                                {entry.summary || '—'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={7} style={{ padding: 0, borderBottom: '1px solid rgba(212, 201, 184, 0.35)' }}>
+                            <EntryInsightPanel entry={entry} />
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   )
                 })}

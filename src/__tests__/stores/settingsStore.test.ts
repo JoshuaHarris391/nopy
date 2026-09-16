@@ -19,6 +19,7 @@ const DEFAULTS = {
   sessionPanelCollapsed: false,
   showTokenUsage: false,
   privateMode: false,
+  profileGenerationMode: 'incremental' as const,
   journalPath: '',
   recentJournals: [],
   theme: 'system' as const,
@@ -404,6 +405,31 @@ describe('multi-provider settings', () => {
     expect(state.theme).toBe('dark')
     expect(state.journalPath).toBe('/tmp/journal')
     expect(state.showTokenUsage).toBe(true)
+  })
+
+  it('migrates a v8 persisted blob (no profileGenerationMode) to v9 default of incremental', async () => {
+    /**
+     * The full psychological profile can now be revised incrementally
+     * instead of rewritten from every entry. Existing users on v8 have no
+     * such field; the v8→v9 step must seed it to 'incremental' (the cheaper
+     * default) and leave their other settings untouched.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: { apiKey: 'sk-existing', theme: 'dark', journalPath: '/tmp/journal', privateMode: true },
+        version: 8,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.profileGenerationMode).toBe('incremental')
+    expect(state.privateMode).toBe(true)
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.theme).toBe('dark')
   })
 
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {

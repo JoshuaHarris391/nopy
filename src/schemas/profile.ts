@@ -35,4 +35,13 @@ export const PsychologicalProfileSchema = ProfileResponseSchema.extend({
   entriesAnalyzed: z.number(),
   updatedAt: z.string(),
   fullProfile: z.string().nullable(),
+  /**
+   * Ids of the entries whose index records the current `fullProfile` has
+   * seen. Incremental generation sends only records outside this set. Ids,
+   * not a timestamp: entries can be backdated. Defaults keep an older
+   * profile.json parseable.
+   */
+  analyzedEntryIds: z.array(z.string()).optional(),
+  /** Index schema version the records had when `fullProfile` was written. */
+  indexVersionUsed: z.number().int().optional(),
 })

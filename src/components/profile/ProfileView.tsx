@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
@@ -12,6 +13,7 @@ import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
 import { moodLabelColors } from '../../utils/mood'
 import { computeWindowedStats } from '../../services/entryProcessor'
 import { isLlmConfigured } from '../../services/llm'
+import { isStaleIndex } from '../../services/entryRecords'
 
 export function ProfileView() {
   const profile = useProfileStore((s) => s.profile)
@@ -28,6 +30,7 @@ export function ProfileView() {
   const [profileHovered, setProfileHovered] = useState(false)
   const [moodRange, setMoodRange] = useState<Range>('month')
   const [moodOffset, setMoodOffset] = useState(0)
+  const staleCount = useMemo(() => entries.filter(isStaleIndex).length, [entries])
 
   const windowedStats = useMemo(() => {
     const { start, end } = getWindow(moodRange, moodOffset)
@@ -123,6 +126,19 @@ export function ProfileView() {
         )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: generating && !profile ? 0 : '36px 44px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        {ready && !generating && staleCount > 0 && (
+          <div
+            data-testid="stale-index-hint"
+            style={{
+              maxWidth: 760, margin: '0 auto 20px', width: '100%',
+              fontFamily: 'var(--font-ui)', fontSize: 12.5, color: 'var(--sage)',
+              padding: '8px 12px', background: 'var(--warm-cream)', border: '1px solid var(--stone)', borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            {staleCount === 1 ? '1 entry uses' : `${staleCount} entries use`} an older index.{' '}
+            <Link to="/settings" style={{ color: 'var(--bark)', textDecoration: 'underline' }}>Re-index in Settings</Link> for a richer profile.
+          </div>
+        )}
         {(!profile || generating) && !showFullProfile ? (
           <>
             <LeafCatcherGame />

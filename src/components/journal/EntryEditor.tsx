@@ -142,6 +142,9 @@ export function EntryEditor() {
           tags: [],
           summary: null,
           indexed: false,
+          insight: null,
+          indexVersion: 0,
+          indexModel: null,
         }
         await addEntry(entry)
       } else {

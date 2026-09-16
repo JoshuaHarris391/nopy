@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
-import type { MoodScore } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
-import { processAllEntries, processEntry } from '../services/entryProcessor'
+import { processAllEntries, processEntry, type ProcessedEntry, type IndexRunMode } from '../services/entryProcessor'
+import { buildIndexHints } from '../services/entryRecords'
+import { CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { useSettingsStore } from './settingsStore'
 import { saveToDiskAndReconcileFilename } from './diskSync'
 import type { LlmConfig } from '../types/settings'
@@ -19,7 +20,9 @@ function entryChanged(a: JournalEntry, b: JournalEntry): boolean {
     a.summary !== b.summary ||
     a.indexed !== b.indexed ||
     JSON.stringify(a.tags) !== JSON.stringify(b.tags) ||
-    JSON.stringify(a.mood) !== JSON.stringify(b.mood)
+    JSON.stringify(a.mood) !== JSON.stringify(b.mood) ||
+    (a.indexVersion ?? 0) !== (b.indexVersion ?? 0) ||
+    JSON.stringify(a.insight ?? null) !== JSON.stringify(b.insight ?? null)
   )
 }
 
@@ -28,21 +31,15 @@ interface JournalState {
   loaded: boolean
   syncing: boolean
   lastError: string | null
-  forceProcessing: boolean
-  forceProgress: { current: number; total: number; title: string }
-  forceResult: string | null
-  forceAbortController: AbortController | null
   clearLastError: () => void
   loadEntries: () => Promise<void>
   addEntry: (entry: JournalEntry) => Promise<void>
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
-  applyProcessedMetadata: (results: Map<string, { mood: MoodScore | null; tags: string[]; summary: string }>) => Promise<void>
-  processEntries: (config: LlmConfig, force: boolean, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
+  applyProcessedMetadata: (results: Map<string, ProcessedEntry>) => Promise<void>
+  processEntries: (config: LlmConfig, mode: IndexRunMode, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
   reindexEntry: (id: string, config: LlmConfig, signal?: AbortSignal) => Promise<void>
-  startForceUpdate: (config: LlmConfig) => Promise<void>
-  stopForceUpdate: () => void
   clear: () => Promise<void>
 }
 
@@ -51,10 +48,6 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   loaded: false,
   syncing: false,
   lastError: null,
-  forceProcessing: false,
-  forceProgress: { current: 0, total: 0, title: '' },
-  forceResult: null,
-  forceAbortController: null,
 
   clearLastError: () => setState({ lastError: null }),
 
@@ -197,7 +190,19 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     const entries = getState().entries.map((e) => {
       const meta = results.get(e.id)
       if (!meta) return e
-      return { ...e, mood: e.mood ?? meta.mood, tags: meta.tags, summary: meta.summary, indexed: true, updatedAt: now }
+      // The writer's own mood always wins over the indexer's estimate (which
+      // is still kept in insight.inferredMood). Domains land in `tags`.
+      return {
+        ...e,
+        mood: e.mood ?? meta.mood,
+        tags: meta.domains,
+        summary: meta.summary,
+        insight: meta.insight,
+        indexed: true,
+        indexVersion: CURRENT_INDEX_VERSION,
+        indexModel: meta.indexModel,
+        updatedAt: now,
+      }
     })
     setState({ entries })
     await set('nopy-entries', entries)
@@ -214,12 +219,12 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     }
   },
 
-  processEntries: async (config, force, onProgress, signal) => {
+  processEntries: async (config, mode, onProgress, signal) => {
     // Private mode: never touch the LLM, even if a UI path slipped through.
     if (useSettingsStore.getState().privateMode) return 0
     console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
     const { entries } = getState()
-    const results = await processAllEntries(entries, config, force, onProgress, signal)
+    const results = await processAllEntries(entries, config, mode, onProgress, signal)
     if (results.size === 0) return 0
     await getState().applyProcessedMetadata(results)
     return results.size
@@ -233,40 +238,9 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
       return
     }
     console.log('[journalStore] reindexEntry: id', id, '| content', entry.content.length, 'chars')
-    const meta = await processEntry(entry, config, signal)
+    const meta = await processEntry(entry, config, signal, buildIndexHints(getState().entries, entry))
     if (signal?.aborted) return // don't write stale metadata after a cancel
     await getState().applyProcessedMetadata(new Map([[id, meta]]))
-  },
-
-  startForceUpdate: async (config) => {
-    if (getState().forceProcessing) {
-      getState().stopForceUpdate()
-      return
-    }
-    const controller = new AbortController()
-    setState({ forceProcessing: true, forceResult: null, forceProgress: { current: 0, total: 0, title: '' }, forceAbortController: controller })
-    try {
-      const count = await getState().processEntries(config, true, (current, total, title) => {
-        setState({ forceProgress: { current, total, title } })
-      }, controller.signal)
-      if (!controller.signal.aborted) {
-        setState({ forceResult: `Done — ${count} entries reprocessed` })
-        setTimeout(() => setState({ forceResult: null }), 3000)
-      }
-    } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        setState({ forceResult: 'Reprocessing stopped' })
-      } else {
-        setState({ forceResult: 'Reprocessing failed' })
-      }
-      setTimeout(() => setState({ forceResult: null }), 3000)
-    } finally {
-      setState({ forceProcessing: false, forceAbortController: null })
-    }
-  },
-
-  stopForceUpdate: () => {
-    getState().forceAbortController?.abort()
   },
 
   clear: async () => {

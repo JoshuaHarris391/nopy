@@ -6,6 +6,10 @@ import { hasFileSystem, saveProfileToDisk } from '../services/fs'
 import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
+import { buildCorpusReport, selectEntriesForFullProfile, isStaleIndex } from '../services/entryRecords'
+import { CURRENT_INDEX_VERSION } from '../schemas/journal'
+import { getModelContextWindow } from '../services/models'
+import { useModelCatalogStore } from './modelCatalogStore'
 import { useJournalStore } from './journalStore'
 import { useNotificationStore } from './notificationStore'
 import { fetchModels, resolveModel } from '../services/llm'
@@ -119,6 +123,12 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       mainLabel = 'main model'
     }
 
+    const staleCount = entries.filter(isStaleIndex).length
+    if (staleCount > 0) {
+      console.log('[profileStore] generateProfile:', staleCount, 'entries carry an older index; re-index from Settings for richer evidence')
+    }
+    const mode = useSettingsStore.getState().profileGenerationMode
+
     // Build dynamic step list based on what actually needs to happen
     const unindexed = entries.filter((e) => !e.indexed)
     const steps: string[] = []
@@ -132,7 +142,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     if (unindexed.length > 0) {
       const s = stepNum('index')
       setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
-      const results = await processAllEntries(entries, config, false, setProgress, signal)
+      const results = await processAllEntries(entries, config, 'unindexed', setProgress, signal)
       if (results.size > 0) {
         await useJournalStore.getState().applyProcessedMetadata(results)
         entries = useJournalStore.getState().entries
@@ -151,6 +161,9 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
+    // Deterministic rollups over the whole journal; both LLM steps read it.
+    const corpusReport = buildCorpusReport(entries)
+
     // Generate summary profile via the lightweight model (streaming)
     const sSummary = stepNum('summary')
     setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (${lightweightLabel})...`)
@@ -159,26 +172,50 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       entries, config,
       (chars) => setProgress(Math.min(chars, 8000), 8000, `${chars} chars received`),
       signal,
+      corpusReport,
     )
     console.log(`[profileStore] Step ${sSummary}/${totalSteps}: summary profile generated`)
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Generate full psychological profile via the main model (streaming)
+    // Generate (or revise) the full psychological profile via the main model
+    // (streaming). Reads index records only — never raw journal text.
     const sFull = stepNum('full')
-    setPhase(`Step ${sFull}/${totalSteps} — Writing full psychological profile (${mainLabel})...`)
-    setProgress(0, 0, 'Waiting for response...')
-    let fullProfile: string | null = null
-    try {
-      fullProfile = await generateFullProfile(
-        entries, config,
-        (chars) => setProgress(Math.min(chars, 20000), 20000, `${chars} chars received`),
-        signal,
-      )
-      console.log(`[profileStore] Step ${sFull}/${totalSteps}: full profile generated`, fullProfile?.length ?? 0, 'chars')
-    } catch (e) {
-      console.error(`[profileStore] Step ${sFull}/${totalSteps}: full profile generation failed —`, e)
-      setPhase(`Step ${sFull}/${totalSteps} — Full profile generation failed, continuing...`)
+    const prior = getState().profile
+    const selection = selectEntriesForFullProfile(entries, prior, mode)
+    // A previous full profile survives a failed or skipped step so incremental
+    // mode never loses the work it is meant to build on.
+    let fullProfile: string | null = prior?.fullProfile ?? null
+    let analyzedEntryIds: string[] = prior?.analyzedEntryIds ?? []
+    if (selection.isRevision && selection.entries.length === 0) {
+      setPhase(`Step ${sFull}/${totalSteps} — Full profile up to date (no new entries)`)
+      console.log(`[profileStore] Step ${sFull}/${totalSteps}: nothing new since the last full profile — skipped`)
+    } else {
+      setPhase(selection.isRevision
+        ? `Step ${sFull}/${totalSteps} — Revising full profile with ${selection.entries.length} new ${selection.entries.length === 1 ? 'entry' : 'entries'} (${mainLabel})...`
+        : `Step ${sFull}/${totalSteps} — Writing full psychological profile (${mainLabel})...`)
+      setProgress(0, 0, 'Waiting for response...')
+      try {
+        const hostedId = config.provider === 'openai' ? config.openaiModel : config.anthropicMainModel
+        const catalogWindow = config.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
+        const { tokens: contextWindowTokens } = getModelContextWindow(
+          config, undefined, useSettingsStore.getState().modelContextWindowOverride, catalogWindow,
+        )
+        fullProfile = await generateFullProfile(selection.entries, config, {
+          corpusReport,
+          priorProfile: selection.isRevision ? prior?.fullProfile : null,
+          contextWindowTokens,
+          onStreamProgress: (chars) => setProgress(Math.min(chars, 20000), 20000, `${chars} chars received`),
+          signal,
+        })
+        const sentIds = selection.entries.map((e) => e.id)
+        analyzedEntryIds = selection.isRevision ? [...new Set([...analyzedEntryIds, ...sentIds])] : sentIds
+        console.log(`[profileStore] Step ${sFull}/${totalSteps}: full profile ${selection.isRevision ? 'revised' : 'generated'}`, fullProfile?.length ?? 0, 'chars')
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') throw e
+        console.error(`[profileStore] Step ${sFull}/${totalSteps}: full profile generation failed —`, e)
+        setPhase(`Step ${sFull}/${totalSteps} — Full profile generation failed, continuing...`)
+      }
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -193,6 +230,8 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       entriesAnalyzed: entries.filter((e) => e.indexed).length,
       updatedAt: new Date().toISOString(),
       fullProfile,
+      analyzedEntryIds,
+      indexVersionUsed: CURRENT_INDEX_VERSION,
     }
 
     const { setProfile } = getState()

@@ -42,12 +42,19 @@ export function entryToMarkdown(entry: JournalEntry): string {
     updatedAt: entry.updatedAt,
     tags: entry.tags,
     indexed: entry.indexed,
+    indexVersion: entry.indexVersion ?? (entry.indexed ? 1 : 0),
   }
   if (entry.mood) {
     frontmatter.mood = entry.mood
   }
   if (entry.summary) {
     frontmatter.summary = entry.summary
+  }
+  if (entry.indexModel) {
+    frontmatter.indexModel = entry.indexModel
+  }
+  if (entry.insight) {
+    frontmatter.insight = entry.insight
   }
 
   const yaml = yamlStringify(frontmatter).trimEnd()
@@ -222,6 +229,11 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
         tags: fm?.tags ?? [],
         summary: fm?.summary ?? null,
         indexed: hasFrontmatter ? (fm?.indexed ?? false) : false,
+        insight: hasFrontmatter ? (fm?.insight ?? null) : null,
+        // Entries written before versioning carry only `indexed`; treat an
+        // indexed one as the legacy summary-only shape (v1).
+        indexVersion: hasFrontmatter ? (fm?.indexVersion ?? (fm?.indexed ? 1 : 0)) : 0,
+        indexModel: hasFrontmatter ? (fm?.indexModel ?? null) : null,
         sourceFilename: file.name,
       })
     } catch (e) {
