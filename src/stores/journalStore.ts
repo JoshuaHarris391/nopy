@@ -118,7 +118,28 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
 
     setState({ syncing: true })
     try {
-      const diskEntries = await loadEntriesFromDisk(journalPath)
+      const loadedFromDisk = await loadEntriesFromDisk(journalPath)
+      // Two files carrying the same frontmatter id (a copied file, or a rename
+      // whose old file was never removed) would otherwise both load and show
+      // as duplicate entries that re-index can never reconcile. Keep the most
+      // recently updated file per id, skip the rest, and say which files clash
+      // so the writer can delete or rename one.
+      const seen = new Map<string, JournalEntry>()
+      const clashes = new Map<string, string[]>()
+      for (const e of loadedFromDisk) {
+        const prev = seen.get(e.id)
+        if (!prev) { seen.set(e.id, e); continue }
+        const keep = e.updatedAt > prev.updatedAt ? e : prev
+        const drop = keep === e ? prev : e
+        seen.set(e.id, keep)
+        clashes.set(e.id, [...(clashes.get(e.id) ?? [prev.sourceFilename ?? '?']), e.sourceFilename ?? '?'])
+        console.warn('[sync] Two files share entry id', e.id, '— using', keep.sourceFilename, 'and ignoring', drop.sourceFilename)
+      }
+      const diskEntries = [...seen.values()]
+      if (clashes.size > 0) {
+        const list = [...clashes.values()].map((files) => files.join(' and ')).join('; ')
+        setState({ lastError: `Duplicate entry files found (same id): ${list}. Delete or rename the copy you don't want; only the newest is shown.` })
+      }
       const existing = getState().entries
 
       // Index disk entries by ID and title
@@ -166,7 +187,7 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
 
       // Write back any new entries that lacked frontmatter (so they get IDs for future syncs)
       for (const diskEntry of diskEntries) {
-        if (!existingById.has(diskEntry.id)) {
+        if (!existingById.has(diskEntry.id) && !clashes.has(diskEntry.id)) {
           try {
             await saveEntryToDisk(diskEntry, journalPath, diskEntry.sourceFilename)
           } catch (e) {

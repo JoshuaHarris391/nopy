@@ -164,7 +164,9 @@ Nopy uses [`idb-keyval`](https://github.com/jakearchibald/idb-keyval) as a thin 
 | Key | Value | Owner |
 |---|---|---|
 | `nopy-entries` | `JournalEntry[]` | [`journalStore`](#journalstore) |
-| `nopy-profile` | `PsychologicalProfile` | [`profileStore`](#profilestore) |
+| `nopy-profile` | `PsychologicalProfile` (the selected version) | [`profileStore`](#profilestore) |
+| `nopy-profile-history` | `ProfileVersionMeta[]` (newest first) | [`profileStore`](#profilestore) |
+| `nopy-profile-version:<id>` | `PsychologicalProfile` (one kept generation) | [`profileStore`](#profilestore) |
 | `nopy-settings` | `UserSettings` | [`settingsStore`](#settingsstore) (via Zustand `persist`) |
 | `chat:meta` | `ChatSessionMeta[]` | [`chatStore`](#chatstore) |
 | `chat:session:{id}` | `ChatSession` | [`chatStore`](#chatstore) |
@@ -210,7 +212,9 @@ Holds the `PsychologicalProfile` and runs profile generation.
 2. **Local stats** — `computeLocalStats()` calculates average mood, journaling streak, average entry length, and reflection depth. No API call.
 3. **Narrative profile** — `generateProfileFromEntries()` sends entry summaries to Haiku and returns structured themes, cognitive patterns, strengths, growth areas, and emotional trends. Validated with `ProfileResponseSchema`.
 4. **Full profile** — `generateFullProfile()` sends full entry bodies to Opus 4.6 and returns a 2000–4000 word clinical markdown document. Not validated — the output is a free-form markdown string.
-5. **Persist** — merges everything into `PsychologicalProfile`, writes to `nopy-profile` in IndexedDB, and saves `profiles/profile.json` and `profiles/psychological-profile.md` next to the journal directory.
+5. **Persist** — merges everything into a new `PsychologicalProfile` version (with `id`, `createdAt`, the `scope` it was generated from, and `basedOn` when it revised the selected version), keeps it under `nopy-profile-version:<id>` and `profiles/history/<id>.json` (+ `.md`), adds it to `nopy-profile-history`, then selects it: `nopy-profile`, `profiles/profile.json` and `profiles/psychological-profile.md` always hold the selected version, which is what Context and Chat inject. Earlier versions are never overwritten; the Profile page can put any of them back in use or delete the ones not in use.
+
+   Before step 1 the entry list is narrowed by the Profile page's **scope** setting (all entries, newest N, or last N months), so indexing, stats, the corpus report and both LLM passes see the same scoped list. A revision is only attempted when the selected version was generated under the same scope.
 
 Each phase updates `phase` and `progress` in the store so the UI can show a progress bar. The whole pipeline respects an `AbortSignal` for cancellation.
 

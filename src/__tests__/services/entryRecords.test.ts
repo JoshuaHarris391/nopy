@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   applyVocabularies, verifyQuotes, verifyRecentMatches, filterPeopleLeakage, nullLowConfidence,
   buildPeopleRoster, buildRecurringQuotes, buildCorpusReport, renderEntryRecord,
-  selectEntriesForFullProfile, fitRecordsToBudget,
+  selectEntriesForFullProfile, fitRecordsToBudget, applyProfileScope, isStaleIndex, hasStructuredIndex,
 } from '../../services/entryRecords'
 import { EntryRecordCoercedSchema } from '../../schemas/journal'
 import type { PsychologicalProfile } from '../../types/profile'
@@ -245,6 +245,52 @@ describe('Rendering records for the profile prompt', () => {
   })
 })
 
+describe('Which entries need indexing work', () => {
+  it('agrees between "stale" and "structured" so every gap has exactly one fix', () => {
+    /**
+     * The Insights coverage hint, the Settings re-index count and the Index
+     * page markers must never disagree about an entry. An entry is either
+     * unindexed (needs Update Index), stale (indexed but needs Re-index), or
+     * structured (nothing to do). In particular, a version-2 entry whose
+     * stored record was dropped on load is stale, not silently fine.
+     * Input: a never-indexed entry, a legacy v1 entry, a v2 entry with no
+     * record, and a full v2 entry.
+     * Expected: stale is false/true/true/false; structured is
+     * false/false/false/true; the never-indexed entry is neither.
+     */
+    const unindexed = makeEntry({ indexed: false, insight: null, indexVersion: 0 })
+    const legacy = makeEntry({ insight: null, indexVersion: 1 })
+    const dropped = makeEntry({ insight: null, indexVersion: 2 })
+    const structured = makeEntry()
+    expect([unindexed, legacy, dropped, structured].map(isStaleIndex)).toEqual([false, true, true, false])
+    expect([unindexed, legacy, dropped, structured].map(hasStructuredIndex)).toEqual([false, false, false, true])
+  })
+})
+
+describe('Scoping which entries feed a generation', () => {
+  it('keeps everything, the newest N, or the last N months', () => {
+    /**
+     * The Profile page lets the writer choose how much history a generation
+     * reads. The rule must be by count or by calendar months from "now",
+     * and never depend on store order.
+     * Input: entries on 5 Jan, 5 Feb and 5 Mar 2025, given newest first;
+     * now is 20 March 2025.
+     * Expected: all → three oldest-first; last 2 entries → Feb and Mar;
+     * last 1 month → Mar only.
+     */
+    const now = new Date('2025-03-20T12:00:00.000Z')
+    const entries = [
+      makeEntry({ id: 'mar', createdAt: '2025-03-05T10:00:00.000Z' }),
+      makeEntry({ id: 'jan', createdAt: '2025-01-05T10:00:00.000Z' }),
+      makeEntry({ id: 'feb', createdAt: '2025-02-05T10:00:00.000Z' }),
+    ]
+    const ids = (list: typeof entries) => list.map((e) => e.id)
+    expect(ids(applyProfileScope(entries, { kind: 'all' }, now))).toEqual(['jan', 'feb', 'mar'])
+    expect(ids(applyProfileScope(entries, { kind: 'entries', count: 2 }, now))).toEqual(['feb', 'mar'])
+    expect(ids(applyProfileScope(entries, { kind: 'months', count: 1 }, now))).toEqual(['mar'])
+  })
+})
+
 describe('Choosing what the full profile reads', () => {
   const profile = (overrides: Partial<PsychologicalProfile>): PsychologicalProfile => ({
     summary: 's', themes: [{ theme: 't', frequency: 5, description: 'd' }], cognitivePatterns: [], strengths: [], growthAreas: [],
@@ -277,6 +323,11 @@ describe('Choosing what the full profile reads', () => {
       .toEqual({ entries: [], isRevision: true })
     expect(selectEntriesForFullProfile(entries, profile({ fullProfile: null, analyzedEntryIds: ['a'] }), 'incremental'))
       .toEqual({ entries: [c, a, b], isRevision: false })
+    // A prior generated under a different scope cannot be revised: everything is rewritten.
+    expect(selectEntriesForFullProfile(entries, profile({ analyzedEntryIds: ['a', 'b'], scope: { kind: 'entries', count: 30 } }), 'incremental', { kind: 'all' }))
+      .toEqual({ entries: [c, a, b], isRevision: false })
+    expect(selectEntriesForFullProfile(entries, profile({ analyzedEntryIds: ['a', 'b'], scope: { kind: 'all' } }), 'incremental', { kind: 'all' }))
+      .toEqual({ entries: [c], isRevision: true })
   })
 
   it('renders recent entries in full detail and older ones as one-line digests', () => {

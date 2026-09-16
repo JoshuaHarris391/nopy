@@ -30,7 +30,25 @@ export const LocalStatsSchema = z.object({
   journalingStreak: z.number(),
 })
 
+/** Which index records feed a generation. */
+export const ProfileScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('all') }),
+  z.object({ kind: z.literal('entries'), count: z.number().int().min(1) }),
+  z.object({ kind: z.literal('months'), count: z.number().int().min(1) }),
+])
+
 export const PsychologicalProfileSchema = ProfileResponseSchema.extend({
+  /**
+   * Version identity. Every generation is kept; the id names its history
+   * files and IndexedDB key. Optional so profiles saved before versioning
+   * still parse; they are assigned an id on load.
+   */
+  id: z.string().optional(),
+  createdAt: z.string().optional(),
+  scope: ProfileScopeSchema.optional(),
+  /** Id of the version an incremental revision built on. */
+  basedOn: z.string().nullable().optional(),
+  isRevision: z.boolean().optional(),
   ...LocalStatsSchema.shape,
   entriesAnalyzed: z.number(),
   updatedAt: z.string(),

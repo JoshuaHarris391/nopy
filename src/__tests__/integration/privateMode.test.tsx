@@ -97,7 +97,7 @@ describe('Private mode: the Settings toggle', () => {
 describe('Private mode: navigation', () => {
   it('the sidebar keeps only Journal and the settings cog, and shows a Private badge', () => {
     /**
-     * The "Understand" half of the sidebar (Chat, Context, Profile, Index) is
+     * The "Understand" half of the sidebar (Chat, Context, Profile, Insights, Index) is
      * exactly what private mode removes. The footer's API connection status is
      * also LLM information, so it is replaced by a small "Private" marker.
      *
@@ -111,7 +111,7 @@ describe('Private mode: navigation', () => {
       </MemoryRouter>,
     )
 
-    for (const label of ['Journal', 'Chat', 'Context', 'Profile', 'Index']) {
+    for (const label of ['Journal', 'Chat', 'Context', 'Profile', 'Insights', 'Index']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
     }
     expect(screen.getByText('Understand')).toBeInTheDocument()
@@ -120,7 +120,7 @@ describe('Private mode: navigation', () => {
     act(() => useSettingsStore.setState({ privateMode: true }))
 
     expect(screen.getByRole('link', { name: 'Journal' })).toBeInTheDocument()
-    for (const label of ['Chat', 'Context', 'Profile', 'Index']) {
+    for (const label of ['Chat', 'Context', 'Profile', 'Insights', 'Index']) {
       expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument()
     }
     expect(screen.queryByText('Understand')).not.toBeInTheDocument()
@@ -146,7 +146,7 @@ describe('Private mode: navigation', () => {
 
     expect(screen.getByRole('link', { name: 'Journal' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
-    for (const label of ['Chat', 'Context', 'Profile', 'Index']) {
+    for (const label of ['Chat', 'Context', 'Profile', 'Insights', 'Index']) {
       expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument()
     }
   })
@@ -178,6 +178,7 @@ describe('Private mode: navigation', () => {
               <Route path="journal" element={<div>journal page</div>} />
               <Route element={<PrivateModeGuard />}>
                 <Route path="chat" element={<div>chat page</div>} />
+                <Route path="insights" element={<div>insights page</div>} />
               </Route>
             </Route>
           </Routes>
@@ -195,6 +196,34 @@ describe('Private mode: navigation', () => {
     renderAt('/chat')
     expect(screen.getByTestId('path')).toHaveTextContent('/chat')
     expect(screen.getByText('chat page')).toBeInTheDocument()
+  })
+
+  it('the Insights route is guarded like every other AI-derived surface', async () => {
+    /**
+     * Insights is computed locally, but only from records an LLM produced,
+     * so private mode treats it as part of the "Understand" half.
+     * Input: open /insights with private mode on.
+     * Expected: path becomes /journal.
+     */
+    function Probe() {
+      const location = useLocation()
+      return (<><div data-testid="path">{location.pathname}</div><Outlet /></>)
+    }
+    useSettingsStore.setState({ privateMode: true })
+    render(
+      <MemoryRouter initialEntries={['/insights']}>
+        <Routes>
+          <Route element={<Probe />}>
+            <Route path="journal" element={<div>journal page</div>} />
+            <Route element={<PrivateModeGuard />}>
+              <Route path="insights" element={<div>insights page</div>} />
+            </Route>
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/journal'))
+    expect(screen.queryByText('insights page')).not.toBeInTheDocument()
   })
 })
 

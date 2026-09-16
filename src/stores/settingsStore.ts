@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { UserSettings, LlmProvider, LlmConfig } from '../types/settings'
+import type { ProfileScope } from '../types/profile'
 import { recordJournalEntry } from './recentJournals'
 import { DEFAULT_THERAPY, type TherapyType } from '../services/prompts/therapists'
 import { DEFAULT_ANTHROPIC_MAIN_MODEL, DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL } from '../services/models'
@@ -18,6 +19,7 @@ interface SettingsState extends UserSettings {
   setShowTokenUsage: (value: boolean) => void
   setPrivateMode: (value: boolean) => void
   setProfileGenerationMode: (mode: 'incremental' | 'full') => void
+  setProfileScope: (scope: ProfileScope) => void
   setMaxOutputTokens: (tokens: number) => void
   setContextBudget: (tokens: number) => void
   setJournalIndexLimit: (count: number) => void
@@ -54,6 +56,7 @@ export const useSettingsStore = create<SettingsState>()(
       showTokenUsage: false,
       privateMode: false,
       profileGenerationMode: 'incremental',
+      profileScope: { kind: 'all' },
       journalPath: '',
       recentJournals: [],
       theme: 'system',
@@ -81,6 +84,7 @@ export const useSettingsStore = create<SettingsState>()(
       setShowTokenUsage: (value) => set({ showTokenUsage: value }),
       setPrivateMode: (value) => set({ privateMode: value }),
       setProfileGenerationMode: (mode) => set({ profileGenerationMode: mode }),
+      setProfileScope: (scope) => set({ profileScope: scope }),
       setJournalPath: (path) => set({ journalPath: path }),
       recordJournal: (path) => set((state) => ({ recentJournals: recordJournalEntry(state.recentJournals, path) })),
       removeRecentJournal: (path) => set((state) => ({ recentJournals: state.recentJournals.filter((j) => j.path !== path) })),
@@ -96,7 +100,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nopy-settings',
-      version: 9,
+      version: 10,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -118,6 +122,8 @@ export const useSettingsStore = create<SettingsState>()(
       // surface). Seeds OFF so the upgrade changes nothing until switched on.
       // v8 → v9 added profileGenerationMode (incremental vs full rewrite of the
       // full psychological profile). Seeds to 'incremental', the new default.
+      // v9 → v10 added profileScope (which index records feed generation).
+      // Seeds to every entry, which is what generation always did before.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -179,6 +185,12 @@ export const useSettingsStore = create<SettingsState>()(
           next = {
             ...next,
             profileGenerationMode: next.profileGenerationMode ?? 'incremental',
+          }
+        }
+        if (version < 10) {
+          next = {
+            ...next,
+            profileScope: next.profileScope ?? { kind: 'all' },
           }
         }
         return next

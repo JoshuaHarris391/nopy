@@ -8,7 +8,7 @@ import { useCancellableTask } from '../../hooks/useCancellableTask'
 import { useJournalIndex } from '../../hooks/useJournalIndex'
 import type { FlipDirection } from '../../hooks/usePageSwipe'
 import { format } from 'date-fns'
-import { Check, Trash2, Loader2 } from 'lucide-react'
+import { Check, Trash2, Loader2, FolderOpen } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
 import { DateTimePicker } from '../ui/DateTimePicker'
@@ -24,7 +24,7 @@ import { useJournalNavStore } from '../../stores/journalNavStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
 import { isLlmConfigured } from '../../services/llm'
-import { FilenameExistsError } from '../../services/fs'
+import { FilenameExistsError, hasFileSystem, revealEntryOnDisk } from '../../services/fs'
 import { getJournalIndex, getNeighbours, monthOf, monthPath } from '../../services/journalBooks'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
@@ -344,6 +344,29 @@ export function EntryEditor() {
           />
         )}
         <Button variant="secondary" onClick={() => { void handleClose() }}>Close</Button>
+        {!isNew && entryIdRef.current && hasFileSystem() && (() => {
+          const current = entries.find((e) => e.id === entryIdRef.current)
+          const canReveal = !unsavedToDisk && !!current?.sourceFilename
+          return (
+          <button
+            onClick={() => { if (current && canReveal) void revealEntryOnDisk(current, useSettingsStore.getState().journalPath) }}
+            aria-label="Show file location"
+            title={canReveal ? 'Show this entry\'s file in Finder' : 'Save the entry to disk first'}
+            disabled={!canReveal}
+            className="flex items-center justify-center cursor-pointer"
+            style={{
+              width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+              background: 'transparent', border: 'none', color: 'var(--sage)',
+              transition: 'all var(--transition-gentle)', opacity: canReveal ? 0.7 : 0.3,
+              cursor: canReveal ? 'pointer' : 'not-allowed',
+            }}
+            onMouseEnter={(e) => { if (canReveal) e.currentTarget.style.opacity = '1' }}
+            onMouseLeave={(e) => { if (canReveal) e.currentTarget.style.opacity = '0.7' }}
+          >
+            <FolderOpen size={16} strokeWidth={1.8} />
+          </button>
+          )
+        })()}
         {!isNew && entryIdRef.current && (
           <button
             onClick={() => setShowDeleteConfirm(true)}

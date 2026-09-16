@@ -14,7 +14,8 @@ export function MaintenanceSection() {
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const profileGenerationMode = useSettingsStore((s) => s.profileGenerationMode)
   const setProfileGenerationMode = useSettingsStore((s) => s.setProfileGenerationMode)
-  const staleCount = useJournalStore((s) => s.entries.filter(isStaleIndex).length)
+  const needing = useJournalStore(useShallow((s) => s.entries.filter((e) => !e.indexed || isStaleIndex(e)).map((e) => e.title)))
+  const staleCount = needing.length
   const indexing = useIndexingStore()
 
   // Hide the section until the active provider is configured — friendlier
@@ -30,10 +31,11 @@ export function MaintenanceSection() {
 
   const handleReindexStale = () => {
     indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(llmConfig, 'stale', onProgress, signal)
-      return `Done — ${count} entries re-indexed`
+      const count = await useJournalStore.getState().processEntries(llmConfig, 'needed', onProgress, signal)
+      return `Done — ${count} entries indexed`
     })
   }
+  const named = needing.slice(0, 3).map((t) => `"${t || 'Untitled'}"`).join(', ') + (needing.length > 3 ? ` and ${needing.length - 3} more` : '')
 
   return (
     <SettingsSection title="Maintenance">
@@ -57,16 +59,16 @@ export function MaintenanceSection() {
       {staleCount > 0 && (
         <div style={{ padding: '10px 0' }}>
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Re-index outdated entries ({staleCount})</div>
-            <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
-              {staleCount === 1 ? '1 entry was' : `${staleCount} entries were`} indexed with an older, shorter format. Re-indexing gives the profile far richer evidence.
+            <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--manuscript)' }}>Re-index un-indexed entries ({staleCount})</div>
+            <div data-testid="unindexed-description" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)', marginTop: 2 }}>
+              {staleCount === 1 ? '1 entry has' : `${staleCount} entries have`} no usable index record (never indexed, indexed with an older format, or a record that could not be read): {named}. Indexing gives the profile far richer evidence.
             </div>
           </div>
           <CancellableActionButton
             state={indexing.state}
             result={indexing.result}
             error={indexing.error}
-            idleLabel="Re-index Outdated"
+            idleLabel="Re-index Un-indexed"
             icon={<RefreshCw size={13} strokeWidth={1.8} />}
             onRun={handleReindexStale}
             onAbort={indexing.abort}

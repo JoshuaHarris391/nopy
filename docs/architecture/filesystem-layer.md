@@ -94,7 +94,7 @@ After parsing, the raw object is validated by `FrontmatterEntrySchema` (`src/sch
 
 `deleteEntryFromDisk(id, journalPath, sourceFilename?)` deletes by filename if available, or scans the directory for a file containing the entry's ID.
 
-`saveProfileToDisk(profile, journalPath)` writes `profiles/profile.json` and `profiles/psychological-profile.md` next to the journal directory.
+`saveProfileToDisk(profile, journalPath)` writes the **selected** profile version to `profiles/profile.json` and `profiles/psychological-profile.md` next to the journal directory. Every generated version is also kept under `profiles/history/<id>.json` (+ `<id>.md` for the full text) by `saveProfileVersionToDisk`; `loadProfileHistoryFromDisk` lists them (skipping unparseable files) and `deleteProfileVersionFromDisk` removes one. A lone `profile.json` from before versioning is copied into `history/` on first load.
 
 ---
 

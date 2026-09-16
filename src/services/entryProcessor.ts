@@ -22,12 +22,14 @@ export interface ProcessedEntry extends EntryRecord {
 }
 
 /** Which entries an indexing run should (re)process. */
-export type IndexRunMode = 'unindexed' | 'stale' | 'all'
+export type IndexRunMode = 'unindexed' | 'stale' | 'needed' | 'all'
 
 export function selectEntriesForIndexing(entries: JournalEntry[], mode: IndexRunMode): JournalEntry[] {
   switch (mode) {
     case 'unindexed': return entries.filter((e) => !e.indexed)
     case 'stale': return entries.filter(isStaleIndex)
+    // Never indexed, or indexed without a usable record.
+    case 'needed': return entries.filter((e) => !e.indexed || isStaleIndex(e))
     case 'all': return entries
   }
 }
@@ -298,18 +300,7 @@ export function computeLocalStats(entries: JournalEntry[]): z.infer<typeof Local
 
   const averageMood = computeAverageMood(indexed) ?? 0
 
-  const dates = [...new Set(entries.map((e) => e.createdAt.slice(0, 10)))].sort().reverse()
-  let journalingStreak = 0
-  const today = new Date().toISOString().slice(0, 10)
-  let checkDate = today
-  for (const date of dates) {
-    if (date === checkDate || date === getPreviousDay(checkDate)) {
-      journalingStreak++
-      checkDate = date
-    } else {
-      break
-    }
-  }
+  const journalingStreak = computeJournalingStreak(entries)
 
   const avgEntryLength = computeAvgEntryLength(entries)
   const reflectionDepth = computeReflectionDepth(avgEntryLength)
@@ -343,6 +334,25 @@ export function computeWindowedStats(
   const reflectionDepth = computeReflectionDepth(avgEntryLength)
 
   return { averageMood, avgEntryLength, reflectionDepth }
+}
+
+/**
+ * Consecutive days with at least one entry, counting back from today (or
+ * yesterday, so a streak survives until the day is over). Not window-scoped.
+ */
+export function computeJournalingStreak(entries: JournalEntry[], today = new Date()): number {
+  const dates = [...new Set(entries.map((e) => e.createdAt.slice(0, 10)))].sort().reverse()
+  let streak = 0
+  let checkDate = today.toISOString().slice(0, 10)
+  for (const date of dates) {
+    if (date === checkDate || date === getPreviousDay(checkDate)) {
+      streak++
+      checkDate = date
+    } else {
+      break
+    }
+  }
+  return streak
 }
 
 function getPreviousDay(dateStr: string): string {

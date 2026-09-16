@@ -18,7 +18,8 @@ import type {
   JournalEntry, EntryInsight, MoodScore, StateKey, PersonMention, EntryQuote,
   Observation, FeltAfter, SafetyFlag,
 } from '../types/journal'
-import type { PsychologicalProfile } from '../types/profile'
+import type { PsychologicalProfile, ProfileScope } from '../types/profile'
+import { subMonths } from 'date-fns'
 import {
   CURRENT_INDEX_VERSION, STATE_KEYS, MIN_STATE_CONFIDENCE, REPORT_STATE_CONFIDENCE,
   DomainSchema, EmotionLabelSchema, InteractionSchema, FeltAfterSchema, CopingStrategySchema,
@@ -80,8 +81,14 @@ export function getIndexVersion(entry: JournalEntry): number {
   return entry.indexVersion ?? (entry.indexed ? 1 : 0)
 }
 
+/**
+ * An indexed entry whose record needs redoing: indexed under an older
+ * schema, or indexed at the current version but with no stored record (the
+ * frontmatter record failed validation on load and was dropped). Never
+ * true for an entry that has not been indexed at all; that is "unindexed".
+ */
 export function isStaleIndex(entry: JournalEntry): boolean {
-  return entry.indexed && getIndexVersion(entry) < CURRENT_INDEX_VERSION
+  return entry.indexed && (getIndexVersion(entry) < CURRENT_INDEX_VERSION || entry.insight == null)
 }
 
 export function hasStructuredIndex(entry: JournalEntry): entry is JournalEntry & { insight: EntryInsight } {
@@ -788,14 +795,47 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
 // Selecting and fitting records for the full profile
 // ---------------------------------------------------------------------------
 
+/** Keep every entry, the newest `count`, or those within the last `count` calendar months. */
+export function applyProfileScope(entries: JournalEntry[], scope: ProfileScope, now = new Date()): JournalEntry[] {
+  const sorted = [...entries].sort(byDateAsc)
+  if (scope.kind === 'entries') return sorted.slice(Math.max(0, sorted.length - scope.count))
+  if (scope.kind === 'months') {
+    const cutoff = subMonths(now, scope.count).getTime()
+    return sorted.filter((e) => new Date(e.createdAt).getTime() >= cutoff)
+  }
+  return sorted
+}
+
+export function describeScope(scope: ProfileScope | undefined): string {
+  if (!scope || scope.kind === 'all') return 'all entries'
+  if (scope.kind === 'entries') return `last ${scope.count} ${scope.count === 1 ? 'entry' : 'entries'}`
+  return `last ${scope.count} ${scope.count === 1 ? 'month' : 'months'}`
+}
+
+export function scopesEqual(a: ProfileScope | undefined, b: ProfileScope | undefined): boolean {
+  const x = a ?? { kind: 'all' as const }
+  const y = b ?? { kind: 'all' as const }
+  if (x.kind !== y.kind) return false
+  return x.kind === 'all' || (y.kind !== 'all' && x.count === y.count)
+}
+
+/**
+ * Which entries the full-profile step sends, and whether it is a revision of
+ * `profile` (the selected version) or a fresh write. A revision is only
+ * possible when the prior has a full profile, has seen some entries, and was
+ * generated under the same scope: revising a "last 30 entries" profile as if
+ * it covered everything would be wrong.
+ */
 export function selectEntriesForFullProfile(
   entries: JournalEntry[],
   profile: PsychologicalProfile | null,
   mode: ProfileGenerationMode,
+  currentScope?: ProfileScope,
 ): { entries: JournalEntry[]; isRevision: boolean } {
   const indexed = entries.filter((e) => e.indexed).sort(byDateAsc)
   const analysed = profile?.analyzedEntryIds ?? []
-  const canRevise = mode === 'incremental' && !!profile?.fullProfile && analysed.length > 0
+  const sameScope = currentScope === undefined || scopesEqual(profile?.scope, currentScope)
+  const canRevise = mode === 'incremental' && !!profile?.fullProfile && analysed.length > 0 && sameScope
   if (!canRevise) return { entries: indexed, isRevision: false }
   const seen = new Set(analysed)
   return { entries: indexed.filter((e) => !seen.has(e.id)), isRevision: true }

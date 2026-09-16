@@ -20,6 +20,7 @@ const DEFAULTS = {
   showTokenUsage: false,
   privateMode: false,
   profileGenerationMode: 'incremental' as const,
+  profileScope: { kind: 'all' as const },
   journalPath: '',
   recentJournals: [],
   theme: 'system' as const,
@@ -430,6 +431,30 @@ describe('multi-provider settings', () => {
     expect(state.privateMode).toBe(true)
     expect(state.apiKey).toBe('sk-existing')
     expect(state.theme).toBe('dark')
+  })
+
+  it('migrates a v9 persisted blob (no profileScope) to v10 default of all entries', async () => {
+    /**
+     * Profile generation can now be scoped to the newest N entries or the
+     * last N months. Existing users on v9 have no such field; the v9→v10
+     * step must seed "all", which is what generation always did before, and
+     * leave their other settings untouched.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: { apiKey: 'sk-existing', theme: 'dark', profileGenerationMode: 'full' },
+        version: 9,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.profileScope).toEqual({ kind: 'all' })
+    expect(state.profileGenerationMode).toBe('full')
+    expect(state.apiKey).toBe('sk-existing')
   })
 
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {

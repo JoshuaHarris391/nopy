@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
-import type { PsychologicalProfile } from '../types/profile'
+import type { PsychologicalProfile, ProfileVersionMeta } from '../types/profile'
 import type { JournalEntry } from '../types/journal'
-import { hasFileSystem, saveProfileToDisk } from '../services/fs'
+import {
+  hasFileSystem, saveProfileToDisk, saveProfileVersionToDisk, loadProfileHistoryFromDisk, deleteProfileVersionFromDisk,
+} from '../services/fs'
 import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
 import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
-import { buildCorpusReport, selectEntriesForFullProfile, isStaleIndex } from '../services/entryRecords'
+import { buildCorpusReport, selectEntriesForFullProfile, isStaleIndex, applyProfileScope } from '../services/entryRecords'
 import { CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { getModelContextWindow } from '../services/models'
 import { useModelCatalogStore } from './modelCatalogStore'
@@ -15,8 +17,54 @@ import { useNotificationStore } from './notificationStore'
 import { fetchModels, resolveModel } from '../services/llm'
 import type { LlmConfig } from '../types/settings'
 
+/**
+ * Profile store.
+ *
+ * `profile` is the SELECTED version: the one the Profile page shows and the
+ * one Context and Chat inject. It lives under the IndexedDB key
+ * `nopy-profile` and on disk as profiles/profile.json, exactly as before
+ * versions existed, so every consumer keeps reading a plain profile.
+ *
+ * Every generation is also kept as a version: a light `ProfileVersionMeta`
+ * list under `nopy-profile-history`, the full object under
+ * `nopy-profile-version:<id>`, and profiles/history/<id>.json (+ .md) on
+ * disk. Nothing is overwritten; the newest generation is selected
+ * automatically and any version can be selected or deleted (except the one
+ * in use).
+ */
+
+const SELECTED_KEY = 'nopy-profile'
+const HISTORY_KEY = 'nopy-profile-history'
+const versionKey = (id: string) => `nopy-profile-version:${id}`
+
+/** Profiles saved before versioning have no id; give them a stable one. */
+function ensureIdentity(profile: PsychologicalProfile): PsychologicalProfile {
+  if (profile.id) return profile
+  return { ...profile, id: `legacy-${profile.updatedAt}`, createdAt: profile.createdAt ?? profile.updatedAt }
+}
+
+export function toVersionMeta(profile: PsychologicalProfile): ProfileVersionMeta {
+  return {
+    id: profile.id!,
+    createdAt: profile.createdAt ?? profile.updatedAt,
+    entriesAnalyzed: profile.entriesAnalyzed,
+    scope: profile.scope ?? { kind: 'all' },
+    isRevision: profile.isRevision ?? false,
+    basedOn: profile.basedOn ?? null,
+    hasFullProfile: !!profile.fullProfile,
+    indexVersionUsed: profile.indexVersionUsed ?? null,
+  }
+}
+
+function sortNewestFirst(versions: ProfileVersionMeta[]): ProfileVersionMeta[] {
+  return [...versions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
 interface ProfileState {
+  /** The selected version. */
   profile: PsychologicalProfile | null
+  /** Every kept generation, newest first. */
+  versions: ProfileVersionMeta[]
   loaded: boolean
   generating: boolean
   lastError: string | null
@@ -25,7 +73,13 @@ interface ProfileState {
   clearLastError: () => void
   loadProfile: () => Promise<void>
   loadProfileFromDisk: () => Promise<boolean>
+  /** Write `profile` as the selected version (IndexedDB + profile.json). */
   setProfile: (profile: PsychologicalProfile) => Promise<void>
+  /** Keep a new generation and select it. */
+  addVersion: (profile: PsychologicalProfile) => Promise<void>
+  selectVersion: (id: string) => Promise<void>
+  /** Refuses the selected version; returns whether anything was deleted. */
+  deleteVersion: (id: string) => Promise<boolean>
   generateProfile: (
     entries: JournalEntry[],
     config: LlmConfig,
@@ -36,6 +90,7 @@ interface ProfileState {
 
 export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   profile: null,
+  versions: [],
   loaded: false,
   generating: false,
   lastError: null,
@@ -45,27 +100,50 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   clearLastError: () => setState({ lastError: null }),
 
   loadProfile: async () => {
-    const profile = await get<PsychologicalProfile>('nopy-profile')
-    console.log('[profileStore] loadProfile: profile found', profile != null, profile ? '| entriesAnalyzed ' + profile.entriesAnalyzed : '')
-    setState({ profile: profile ?? null, loaded: true })
+    const stored = await get<PsychologicalProfile>(SELECTED_KEY)
+    let versions = sortNewestFirst((await get<ProfileVersionMeta[]>(HISTORY_KEY)) ?? [])
+    let profile: PsychologicalProfile | null = null
+    if (stored) {
+      profile = ensureIdentity(stored)
+      // A profile saved before versioning becomes the first history entry.
+      if (!versions.some((v) => v.id === profile!.id)) {
+        versions = sortNewestFirst([toVersionMeta(profile), ...versions])
+        await set(versionKey(profile.id!), profile)
+        await set(HISTORY_KEY, versions)
+      }
+      if (profile !== stored) await set(SELECTED_KEY, profile)
+    }
+    console.log('[profileStore] loadProfile: selected', profile != null, '| versions', versions.length)
+    setState({ profile, versions, loaded: true })
   },
 
   loadProfileFromDisk: async () => {
     const journalPath = useSettingsStore.getState().journalPath
     if (!hasFileSystem() || !journalPath) return false
     const { readTextFile, exists } = await import('@tauri-apps/plugin-fs')
-    const filePath = `${journalPath}/profiles/profile.json`
-    if (!(await exists(filePath))) return false
     try {
-      const text = await readTextFile(filePath)
-      const parsed = PsychologicalProfileSchema.safeParse(JSON.parse(text))
-      if (!parsed.success) {
-        console.warn('[profileStore] profile.json failed schema validation', parsed.error.issues)
-        return false
+      const history = await loadProfileHistoryFromDisk(journalPath)
+      let selected: PsychologicalProfile | null = null
+      const filePath = `${journalPath}/profiles/profile.json`
+      if (await exists(filePath)) {
+        const parsed = PsychologicalProfileSchema.safeParse(JSON.parse(await readTextFile(filePath)))
+        if (parsed.success) selected = ensureIdentity(parsed.data)
+        else console.warn('[profileStore] profile.json failed schema validation', parsed.error.issues)
       }
-      setState({ profile: parsed.data, loaded: true, lastError: null })
-      await set('nopy-profile', parsed.data)
-      console.log('[profileStore] Restored profile from disk | entriesAnalyzed', parsed.data.entriesAnalyzed)
+      // A lone profile.json from before versioning joins the history on disk.
+      if (selected && !history.some((p) => p.id === selected!.id)) {
+        await saveProfileVersionToDisk(selected, journalPath)
+        history.unshift(selected)
+      }
+      if (!selected && history.length > 0) selected = history[0]
+      if (!selected) return false
+
+      const versions = sortNewestFirst(history.map(toVersionMeta))
+      for (const p of history) await set(versionKey(p.id!), p)
+      await set(HISTORY_KEY, versions)
+      await set(SELECTED_KEY, selected)
+      setState({ profile: selected, versions, loaded: true, lastError: null })
+      console.log('[profileStore] Restored profile from disk | versions', versions.length, '| selected entriesAnalyzed', selected.entriesAnalyzed)
       return true
     } catch (e) {
       console.warn('[profileStore] Failed to load profile from disk:', e)
@@ -75,7 +153,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
   setProfile: async (profile) => {
     setState({ profile, lastError: null })
-    await set('nopy-profile', profile)
+    await set(SELECTED_KEY, profile)
     try {
       await saveProfileToDisk(profile, useSettingsStore.getState().journalPath)
     } catch (e) {
@@ -85,14 +163,69 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     }
   },
 
-  generateProfile: async (entries, config, signal) => {
+  addVersion: async (input) => {
+    const profile: PsychologicalProfile = {
+      ...input,
+      id: input.id ?? crypto.randomUUID(),
+      createdAt: input.createdAt ?? input.updatedAt,
+    }
+    const versions = sortNewestFirst([toVersionMeta(profile), ...getState().versions.filter((v) => v.id !== profile.id)])
+    await set(versionKey(profile.id!), profile)
+    await set(HISTORY_KEY, versions)
+    setState({ versions })
+    try {
+      await saveProfileVersionToDisk(profile, useSettingsStore.getState().journalPath)
+    } catch (e) {
+      console.warn('[profileStore] Failed to save profile version to disk:', e)
+    }
+    await getState().setProfile(profile)
+  },
+
+  selectVersion: async (id) => {
+    let profile = await get<PsychologicalProfile>(versionKey(id))
+    if (!profile) {
+      const history = await loadProfileHistoryFromDisk(useSettingsStore.getState().journalPath)
+      profile = history.find((p) => p.id === id)
+      if (profile) await set(versionKey(id), profile)
+    }
+    if (!profile) {
+      console.warn('[profileStore] selectVersion: version not found', id)
+      return
+    }
+    await getState().setProfile(profile)
+    console.log('[profileStore] selectVersion:', id)
+  },
+
+  deleteVersion: async (id) => {
+    if (getState().profile?.id === id) {
+      console.warn('[profileStore] deleteVersion: refusing to delete the selected version', id)
+      return false
+    }
+    const versions = getState().versions.filter((v) => v.id !== id)
+    await del(versionKey(id))
+    await set(HISTORY_KEY, versions)
+    setState({ versions })
+    try {
+      await deleteProfileVersionFromDisk(id, useSettingsStore.getState().journalPath)
+    } catch (e) {
+      console.warn('[profileStore] Failed to remove profile version from disk:', e)
+    }
+    return true
+  },
+
+  generateProfile: async (allEntries, config, signal) => {
     // Private mode: profile generation would index and summarise the journal
     // with an LLM, so it is a no-op until the user switches private mode off.
     if (useSettingsStore.getState().privateMode) return
     const setPhase = (phase: string) => setState({ phase })
     const setProgress = (current: number, total: number, title: string) => setState({ progress: { current, total, title } })
     setState({ generating: true, phase: '', progress: { current: 0, total: 0, title: '' } })
-    console.log('[profileStore] generateProfile: starting | total entries', entries.length)
+
+    // The scope is applied once, here, so every step below (indexing, stats,
+    // corpus report, both LLM passes, the recorded counts) sees the same list.
+    const scope = useSettingsStore.getState().profileScope
+    let entries = applyProfileScope(allEntries, scope)
+    console.log('[profileStore] generateProfile: starting | scope', scope.kind, '| entries in scope', entries.length, 'of', allEntries.length)
 
     // Resolve display names for the lightweight + main roles so phase
     // strings show what the user picked in Settings (e.g. "Claude Haiku
@@ -138,14 +271,14 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     const stepNum = (id: string) => steps.indexOf(id) + 1
 
     try {
-    // Index unprocessed entries via the lightweight model
+    // Index unprocessed entries (inside the scope) via the lightweight model
     if (unindexed.length > 0) {
       const s = stepNum('index')
       setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
       const results = await processAllEntries(entries, config, 'unindexed', setProgress, signal)
       if (results.size > 0) {
         await useJournalStore.getState().applyProcessedMetadata(results)
-        entries = useJournalStore.getState().entries
+        entries = applyProfileScope(useJournalStore.getState().entries, scope)
         console.log(`[profileStore] Step ${s}/${totalSteps}: processed`, results.size, 'entries')
       }
     }
@@ -161,7 +294,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Deterministic rollups over the whole journal; both LLM steps read it.
+    // Deterministic rollups over the scoped journal; both LLM steps read it.
     const corpusReport = buildCorpusReport(entries)
 
     // Each step's records are fitted to the window of the model that reads
@@ -192,17 +325,19 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
     // Generate (or revise) the full psychological profile via the main model
-    // (streaming). Reads index records only — never raw journal text.
+    // (streaming). Reads index records only — never raw journal text. A
+    // revision builds on the SELECTED version, so choosing an older version
+    // and generating branches from it.
     const sFull = stepNum('full')
     const prior = getState().profile
-    const selection = selectEntriesForFullProfile(entries, prior, mode)
+    const selection = selectEntriesForFullProfile(entries, prior, mode, scope)
     // A previous full profile survives a failed or skipped step so incremental
     // mode never loses the work it is meant to build on.
     let fullProfile: string | null = prior?.fullProfile ?? null
     let analyzedEntryIds: string[] = prior?.analyzedEntryIds ?? []
     if (selection.isRevision && selection.entries.length === 0) {
       setPhase(`Step ${sFull}/${totalSteps} — Full profile up to date (no new entries)`)
-      console.log(`[profileStore] Step ${sFull}/${totalSteps}: nothing new since the last full profile — skipped`)
+      console.log(`[profileStore] Step ${sFull}/${totalSteps}: nothing new since the selected full profile — skipped`)
     } else {
       setPhase(selection.isRevision
         ? `Step ${sFull}/${totalSteps} — Revising full profile with ${selection.entries.length} new ${selection.entries.length === 1 ? 'entry' : 'entries'} (${mainLabel})...`
@@ -228,23 +363,28 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    // Save everything
+    // Keep the result as a new version and select it
     const sSave = stepNum('save')
     setPhase(`Step ${sSave}/${totalSteps} — Saving profile...`)
     setProgress(0, 0, '')
+    const now = new Date().toISOString()
     const profile: PsychologicalProfile = {
       ...narrative,
       ...localStats,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
       entriesAnalyzed: entries.filter((e) => e.indexed).length,
-      updatedAt: new Date().toISOString(),
       fullProfile,
       analyzedEntryIds,
       indexVersionUsed: CURRENT_INDEX_VERSION,
+      scope,
+      isRevision: selection.isRevision,
+      basedOn: selection.isRevision ? prior?.id ?? null : null,
     }
 
-    const { setProfile } = getState()
-    await setProfile(profile)
-    console.log('[profileStore] generateProfile: complete | entriesAnalyzed', profile.entriesAnalyzed, '| themes', profile.themes.length, '| cognitivePatterns', profile.cognitivePatterns.length)
+    await getState().addVersion(profile)
+    console.log('[profileStore] generateProfile: complete | version', profile.id, '| entriesAnalyzed', profile.entriesAnalyzed, '| themes', profile.themes.length)
     setPhase('Profile generated successfully')
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -269,7 +409,10 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
   },
 
   clear: async () => {
-    setState({ profile: null, loaded: false })
-    await del('nopy-profile')
+    const { versions } = getState()
+    setState({ profile: null, versions: [], loaded: false })
+    for (const v of versions) await del(versionKey(v.id))
+    await del(HISTORY_KEY)
+    await del(SELECTED_KEY)
   },
 }))

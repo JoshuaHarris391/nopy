@@ -1,4 +1,5 @@
 import type { TherapyType } from '../services/prompts/therapists'
+import type { ProfileScope } from './profile'
 
 export type LlmProvider = 'anthropic' | 'local' | 'openai'
 
@@ -87,6 +88,12 @@ export interface UserSettings {
    * since; `full` rewrites from every record each time.
    */
   profileGenerationMode: 'incremental' | 'full'
+  /**
+   * Which index records feed profile generation: every indexed entry, the
+   * newest N entries, or the last N calendar months. Chosen on the Profile
+   * page beside Generate.
+   */
+  profileScope: ProfileScope
   journalPath: string
   /**
    * Journals the user has created or opened, most-recent-first. Surfaced as

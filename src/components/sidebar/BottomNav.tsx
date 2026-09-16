@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { BookOpen, MessageCircle, Layers, Target, List, Settings } from 'lucide-react'
+import { BookOpen, MessageCircle, Layers, Target, List, BarChart3, Settings } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 /** Items that stay while private mode hides the AI half of the app. */
@@ -10,6 +10,7 @@ const items = [
   { to: '/chat', icon: MessageCircle, label: 'Chat' },
   { to: '/context', icon: Layers, label: 'Context' },
   { to: '/profile', icon: Target, label: 'Profile' },
+  { to: '/insights', icon: BarChart3, label: 'Insights' },
   { to: '/index', icon: List, label: 'Index' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
