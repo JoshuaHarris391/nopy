@@ -1,18 +1,25 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { RefreshCw, TrendingUp } from 'lucide-react'
 import { marked } from 'marked'
 import { MainHeader } from '../ui/MainHeader'
 import { LeafCatcherGame } from './LeafCatcherGame'
 import { Button } from '../ui/Button'
+import { ProfileSection } from '../ui/ProfileSection'
+import { ProfileScopeControl } from './ProfileScopeControl'
+import { ProfileBuildControl } from './ProfileBuildControl'
+import { ProfileHistoryPanel } from './ProfileHistoryPanel'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
-import { MoodTimeline, getWindow, type Range } from './MoodTimeline'
-import { moodLabelColors } from '../../utils/mood'
-import { computeWindowedStats } from '../../services/entryProcessor'
 import { isLlmConfigured } from '../../services/llm'
+import { isStaleIndex, applyProfileScope, describeScope } from '../../services/entryRecords'
 
+/**
+ * The AI-generated profile and its controls only. Locally computed charts
+ * and wellbeing metrics live on the Insights page.
+ */
 export function ProfileView() {
   const profile = useProfileStore((s) => s.profile)
   const loaded = useProfileStore((s) => s.loaded)
@@ -22,41 +29,17 @@ export function ProfileView() {
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
+  const scope = useSettingsStore((s) => s.profileScope)
+  const setProfileScope = useSettingsStore((s) => s.setProfileScope)
+  const buildMode = useSettingsStore((s) => s.profileGenerationMode)
+  const setBuildMode = useSettingsStore((s) => s.setProfileGenerationMode)
   const ready = isLlmConfigured(llmConfig)
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)
-  const [moodRange, setMoodRange] = useState<Range>('month')
-  const [moodOffset, setMoodOffset] = useState(0)
-
-  const windowedStats = useMemo(() => {
-    const { start, end } = getWindow(moodRange, moodOffset)
-    return computeWindowedStats(entries, start, end)
-  }, [entries, moodRange, moodOffset])
-
-  const windowedDistribution = useMemo(() => {
-    const { start, end } = getWindow(moodRange, moodOffset)
-    const s = start.getTime()
-    const e = end.getTime()
-    const windowed = entries.filter(
-      (entry) => entry.mood && entry.mood.label && new Date(entry.createdAt).getTime() >= s && new Date(entry.createdAt).getTime() <= e,
-    )
-    if (windowed.length === 0) return []
-    const counts: Record<string, number> = {}
-    for (const entry of windowed) {
-      const label = entry.mood!.label
-      counts[label] = (counts[label] || 0) + 1
-    }
-    const total = windowed.length
-    const order = ['great', 'good', 'neutral', 'mixed', 'low']
-    return order
-      .filter((l) => counts[l])
-      .map((l) => ({
-        label: l.charAt(0).toUpperCase() + l.slice(1),
-        percentage: Math.round((counts[l] / total) * 100),
-        color: moodLabelColors[l as keyof typeof moodLabelColors] || 'var(--sage)',
-      }))
-  }, [entries, moodRange, moodOffset])
+  const staleCount = useMemo(() => entries.filter(isStaleIndex).length, [entries])
+  const inScope = useMemo(() => applyProfileScope(entries, scope).filter((e) => e.indexed).length, [entries, scope])
+  const indexedTotal = useMemo(() => entries.filter((e) => e.indexed).length, [entries])
 
   useEffect(() => {
     if (!loaded) loadProfile()
@@ -92,12 +75,14 @@ export function ProfileView() {
       `}</style>
       <MainHeader title="Psychological Profile">
         {profile && (
-          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
-            Last updated: {new Date(profile.updatedAt).toLocaleDateString()} · {profile.entriesAnalyzed} entries analysed
+          <span data-testid="profile-selected-line" style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
+            Selected: {new Date(profile.createdAt ?? profile.updatedAt).toLocaleDateString()} · {profile.entriesAnalyzed} entries · {describeScope(profile.scope)}
           </span>
         )}
         {ready && (
           <>
+            <ProfileScopeControl scope={scope} onChange={setProfileScope} disabled={generating} />
+            <ProfileBuildControl mode={buildMode} onChange={setBuildMode} disabled={generating} />
             <Button
               variant="primary"
               onClick={handleGenerateProfile}
@@ -116,13 +101,36 @@ export function ProfileView() {
             </Button>
             {profile?.fullProfile && (
               <Button variant="secondary" onClick={() => setShowFullProfile(!showFullProfile)}>
-                {showFullProfile ? 'Dashboard' : 'View Full Profile'}
+                {showFullProfile ? 'Overview' : 'View Full Profile'}
               </Button>
             )}
           </>
         )}
       </MainHeader>
       <div className="flex-1 overflow-y-auto" style={{ padding: generating && !profile ? 0 : '36px 44px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        {ready && !generating && (
+          <div
+            data-testid="scope-count"
+            style={{ maxWidth: 760, margin: '0 auto 12px', width: '100%', fontFamily: 'var(--font-ui)', fontSize: 12.5, color: 'var(--sage)' }}
+          >
+            Next generation uses {inScope} of {indexedTotal} indexed {indexedTotal === 1 ? 'entry' : 'entries'} ({describeScope(scope)}).
+            {' '}<Link to="/insights" style={{ color: 'var(--bark)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 3 }}><TrendingUp size={12} />Charts are in Insights</Link>
+          </div>
+        )}
+        {ready && !generating && staleCount > 0 && (
+          <div
+            data-testid="stale-index-hint"
+            style={{
+              maxWidth: 760, margin: '0 auto 20px', width: '100%',
+              fontFamily: 'var(--font-ui)', fontSize: 12.5, color: 'var(--sage)',
+              padding: '8px 12px', background: 'var(--warm-cream)', border: '1px solid var(--stone)', borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            {staleCount === 1 ? '1 entry uses' : `${staleCount} entries use`} an older index.{' '}
+            <Link to="/settings" style={{ color: 'var(--bark)', textDecoration: 'underline' }}>Re-index in Settings</Link> for a richer profile.
+          </div>
+        )}
+        {!generating && <ProfileHistoryPanel />}
         {(!profile || generating) && !showFullProfile ? (
           <>
             <LeafCatcherGame />
@@ -166,44 +174,6 @@ export function ProfileView() {
                 {profile!.summary}
               </div>
 
-              {/* Wellbeing Metrics */}
-              <ProfileSection title="Wellbeing Overview">
-                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))' }}>
-                  <MetricCard label="Average Mood" value={windowedStats.averageMood != null ? windowedStats.averageMood.toFixed(1) : '--'} />
-                  <MetricCard label="Journaling Streak" value={profile!.journalingStreak != null ? `${profile!.journalingStreak}d` : '--'} />
-                  <MetricCard label="Avg Entry Length" value={windowedStats.avgEntryLength != null ? `${windowedStats.avgEntryLength}w` : '--'} />
-                  <MetricCard label="Reflection Depth" value={windowedStats.reflectionDepth ?? '--'} />
-                </div>
-
-                <MoodTimeline
-                  entries={entries}
-                  range={moodRange}
-                  offset={moodOffset}
-                  onRangeChange={setMoodRange}
-                  onOffsetChange={setMoodOffset}
-                />
-
-                {/* Emotional Distribution — computed from current mood window */}
-                {windowedDistribution.length > 0 && (
-                  <div style={{ marginTop: 20 }}>
-                    <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', fontWeight: 600, marginBottom: 12 }}>
-                      Emotional Distribution
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {windowedDistribution.map((item) => (
-                        <div key={item.label} className="flex items-center gap-3" style={{ fontFamily: 'var(--font-ui)', fontSize: 13.5 }}>
-                          <span style={{ width: 90, color: 'var(--manuscript)', flexShrink: 0 }}>{item.label}</span>
-                          <div style={{ flex: 1, height: 8, background: 'var(--warm-cream)', borderRadius: 4, overflow: 'hidden' }}>
-                            <div style={{ width: `${item.percentage}%`, height: '100%', background: item.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
-                          </div>
-                          <span style={{ width: 36, textAlign: 'right', color: 'var(--sage)', fontSize: 13.5 }}>{item.percentage}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </ProfileSection>
-
               {/* Themes */}
               {profile!.themes.length > 0 && (
                 <ProfileSection title="Recurring Themes">
@@ -245,8 +215,8 @@ export function ProfileView() {
                 </ProfileSection>
               )}
 
-              {/* Framework Insights */}
-              {profile!.frameworkInsights.length > 0 && (
+              {/* Cognitive patterns */}
+              {profile!.cognitivePatterns.length > 0 && (
                 <ProfileSection title="Therapeutic Observations">
                   <div className="flex flex-col gap-2.5">
                     {profile!.cognitivePatterns.map((p) => (
@@ -285,6 +255,20 @@ export function ProfileView() {
                 </ProfileSection>
               )}
 
+              {/* Framework insights */}
+              {profile!.frameworkInsights.length > 0 && (
+                <ProfileSection title="Framework Insights">
+                  <ul className="flex flex-col gap-2" style={{ listStyle: 'none', padding: 0 }}>
+                    {profile!.frameworkInsights.map((f) => (
+                      <li key={f} className="flex items-start gap-2" style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--manuscript)', lineHeight: 1.6 }}>
+                        <span style={{ color: 'var(--dusk-blue)', marginTop: 2 }}>●</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                </ProfileSection>
+              )}
+
               {/* Growth Areas */}
               {profile!.growthAreas.length > 0 && (
                 <ProfileSection title="Growth Areas">
@@ -304,42 +288,5 @@ export function ProfileView() {
         )}
       </div>
     </>
-  )
-}
-
-function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 32, paddingBottom: 32, borderBottom: '1px solid var(--stone)' }}>
-      <div style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function MetricCard({ label, value, trend }: { label: string; value: string; trend?: string }) {
-  return (
-    <div
-      style={{
-        background: 'var(--parchment)',
-        border: '1px solid var(--stone)',
-        borderRadius: 'var(--radius-sm)',
-        padding: '16px 18px',
-        transition: 'all var(--transition-gentle)',
-      }}
-    >
-      <div style={{ fontFamily: 'var(--font-ui)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--sage)', fontWeight: 600, marginBottom: 5 }}>
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 25, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
-        {value}
-      </div>
-      {trend && (
-        <div style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, marginTop: 3, color: 'var(--gentle-green)' }}>
-          {trend}
-        </div>
-      )}
-    </div>
   )
 }

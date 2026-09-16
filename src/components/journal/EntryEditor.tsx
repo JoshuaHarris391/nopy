@@ -8,7 +8,7 @@ import { useCancellableTask } from '../../hooks/useCancellableTask'
 import { useJournalIndex } from '../../hooks/useJournalIndex'
 import type { FlipDirection } from '../../hooks/usePageSwipe'
 import { format } from 'date-fns'
-import { Check, Trash2, Loader2 } from 'lucide-react'
+import { Check, Trash2, Loader2, FolderOpen } from 'lucide-react'
 import { MainHeader } from '../ui/MainHeader'
 import { MoodBar } from '../ui/MoodBar'
 import { DateTimePicker } from '../ui/DateTimePicker'
@@ -24,7 +24,7 @@ import { useJournalNavStore } from '../../stores/journalNavStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
 import { isLlmConfigured } from '../../services/llm'
-import { FilenameExistsError } from '../../services/fs'
+import { FilenameExistsError, hasFileSystem, revealEntryOnDisk } from '../../services/fs'
 import { getJournalIndex, getNeighbours, monthOf, monthPath } from '../../services/journalBooks'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
@@ -63,6 +63,9 @@ export function EntryEditor() {
   const [title, setTitle] = useState(isNew ? format(new Date(), 'yyyy-MM-dd') : '')
   const [content, setContent] = useState('')
   const [moodValue, setMoodValue] = useState<number | null>(null)
+  // True once the writer has touched the mood control for this entry, so a
+  // mood the indexer assigned is not re-saved as if a person had chosen it.
+  const moodTouchedRef = useRef(false)
   const [createdAt, setCreatedAt] = useState<string>(() => new Date().toISOString())
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
@@ -100,6 +103,7 @@ export function EntryEditor() {
     setTitle(entry.title)
     setContent(entry.content)
     setMoodValue(entry.mood?.value ?? null)
+    moodTouchedRef.current = false
     setCreatedAt(entry.createdAt)
     entryIdRef.current = entry.id
     isNewRef.current = false
@@ -120,6 +124,10 @@ export function EntryEditor() {
       const mood: MoodScore | null = moodValue
         ? { value: moodValue, label: moodValueToLabel(moodValue) }
         : null
+      const existing = useJournalStore.getState().entries.find((e) => e.id === entryIdRef.current)
+      const moodSource: JournalEntry['moodSource'] = mood == null
+        ? null
+        : (moodTouchedRef.current || !existing?.moodSource) ? 'writer' : existing.moodSource
       if (isNewRef.current && !entryIdRef.current?.match(/^[0-9a-f-]{36}$/)) {
         // Create the new entry under the user's real title in a single write.
         // Set the refs BEFORE the await: if the save collides (and throws), the
@@ -139,13 +147,17 @@ export function EntryEditor() {
           createdAt,
           updatedAt: new Date().toISOString(),
           mood,
+          moodSource,
           tags: [],
           summary: null,
           indexed: false,
+          insight: null,
+          indexVersion: 0,
+          indexModel: null,
         }
         await addEntry(entry)
       } else {
-        await updateEntry(entryIdRef.current!, { title: saveTitle, content, mood, createdAt })
+        await updateEntry(entryIdRef.current!, { title: saveTitle, content, mood, moodSource, createdAt })
       }
       autosave.markClean()
       setUnsavedToDisk(false)
@@ -332,6 +344,29 @@ export function EntryEditor() {
           />
         )}
         <Button variant="secondary" onClick={() => { void handleClose() }}>Close</Button>
+        {!isNew && entryIdRef.current && hasFileSystem() && (() => {
+          const current = entries.find((e) => e.id === entryIdRef.current)
+          const canReveal = !unsavedToDisk && !!current?.sourceFilename
+          return (
+          <button
+            onClick={() => { if (current && canReveal) void revealEntryOnDisk(current, useSettingsStore.getState().journalPath) }}
+            aria-label="Show file location"
+            title={canReveal ? 'Show this entry\'s file in Finder' : 'Save the entry to disk first'}
+            disabled={!canReveal}
+            className="flex items-center justify-center cursor-pointer"
+            style={{
+              width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+              background: 'transparent', border: 'none', color: 'var(--sage)',
+              transition: 'all var(--transition-gentle)', opacity: canReveal ? 0.7 : 0.3,
+              cursor: canReveal ? 'pointer' : 'not-allowed',
+            }}
+            onMouseEnter={(e) => { if (canReveal) e.currentTarget.style.opacity = '1' }}
+            onMouseLeave={(e) => { if (canReveal) e.currentTarget.style.opacity = '0.7' }}
+          >
+            <FolderOpen size={16} strokeWidth={1.8} />
+          </button>
+          )
+        })()}
         {!isNew && entryIdRef.current && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
@@ -407,7 +442,7 @@ export function EntryEditor() {
 
           <MoodBar
             value={moodValue}
-            onChange={(v) => { setMoodValue(v); markFieldDirty() }}
+            onChange={(v) => { setMoodValue(v); moodTouchedRef.current = true; markFieldDirty() }}
           />
 
           <div style={{ margin: '8px 0 28px' }}>

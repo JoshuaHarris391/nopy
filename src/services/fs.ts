@@ -2,6 +2,7 @@ import { stringify as yamlStringify, parse as yamlParse } from 'yaml'
 import type { JournalEntry } from '../types/journal'
 import type { PsychologicalProfile } from '../types/profile'
 import { FrontmatterEntrySchema } from '../schemas/frontmatter'
+import { EntryInsightSchema } from '../schemas/journal'
 
 export function hasFileSystem(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -42,12 +43,20 @@ export function entryToMarkdown(entry: JournalEntry): string {
     updatedAt: entry.updatedAt,
     tags: entry.tags,
     indexed: entry.indexed,
+    indexVersion: entry.indexVersion ?? (entry.indexed ? 1 : 0),
   }
   if (entry.mood) {
     frontmatter.mood = entry.mood
+    if (entry.moodSource) frontmatter.moodSource = entry.moodSource
   }
   if (entry.summary) {
     frontmatter.summary = entry.summary
+  }
+  if (entry.indexModel) {
+    frontmatter.indexModel = entry.indexModel
+  }
+  if (entry.insight) {
+    frontmatter.insight = entry.insight
   }
 
   const yaml = yamlStringify(frontmatter).trimEnd()
@@ -114,6 +123,17 @@ export async function saveEntryToDisk(entry: JournalEntry, journalPath: string, 
   return filename
 }
 
+/**
+ * Show the entry's markdown file in the system file browser (Finder /
+ * Explorer), selected inside its journal folder. No-op outside Tauri or
+ * for an entry that has not been written to disk yet.
+ */
+export async function revealEntryOnDisk(entry: Pick<JournalEntry, 'sourceFilename'>, journalPath: string): Promise<void> {
+  if (!hasFileSystem() || !journalPath || !entry.sourceFilename) return
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener')
+  await revealItemInDir(`${journalPath}/${entry.sourceFilename}`)
+}
+
 export async function deleteEntryFromDisk(id: string, journalPath: string, sourceFilename?: string): Promise<void> {
   if (!hasFileSystem() || !journalPath) return
 
@@ -162,6 +182,50 @@ export async function saveProfileToDisk(profile: PsychologicalProfile, journalPa
   }
 }
 
+const HISTORY_DIR = 'profiles/history'
+
+/** Every generated profile is kept under profiles/history/<id>.json (+ .md for the full text). */
+export async function saveProfileVersionToDisk(profile: PsychologicalProfile, journalPath: string): Promise<void> {
+  if (!hasFileSystem() || !journalPath || !profile.id) return
+  const { writeTextFile, mkdir, exists } = await import('@tauri-apps/plugin-fs')
+  const dir = `${journalPath}/${HISTORY_DIR}`
+  if (!(await exists(dir))) await mkdir(dir, { recursive: true })
+  await writeTextFile(`${dir}/${profile.id}.json`, JSON.stringify(profile, null, 2))
+  if (profile.fullProfile) await writeTextFile(`${dir}/${profile.id}.md`, profile.fullProfile)
+  console.log('[fs] Profile version saved to disk:', profile.id)
+}
+
+/** All versions under profiles/history, newest first. Unparseable files are skipped with a warning. */
+export async function loadProfileHistoryFromDisk(journalPath: string): Promise<PsychologicalProfile[]> {
+  if (!hasFileSystem() || !journalPath) return []
+  const { readDir, readTextFile, exists } = await import('@tauri-apps/plugin-fs')
+  const dir = `${journalPath}/${HISTORY_DIR}`
+  if (!(await exists(dir))) return []
+  const { PsychologicalProfileSchema } = await import('../schemas/profile')
+  const out: PsychologicalProfile[] = []
+  for (const file of await readDir(dir)) {
+    if (!file.name?.endsWith('.json')) continue
+    try {
+      const parsed = PsychologicalProfileSchema.safeParse(JSON.parse(await readTextFile(`${dir}/${file.name}`)))
+      if (parsed.success && parsed.data.id) out.push(parsed.data)
+      else console.warn('[fs] Skipping profile version that failed validation:', file.name)
+    } catch (e) {
+      console.warn('[fs] Skipping unreadable profile version:', file.name, e)
+    }
+  }
+  return out.sort((a, b) => (b.createdAt ?? b.updatedAt).localeCompare(a.createdAt ?? a.updatedAt))
+}
+
+export async function deleteProfileVersionFromDisk(id: string, journalPath: string): Promise<void> {
+  if (!hasFileSystem() || !journalPath) return
+  const { remove, exists } = await import('@tauri-apps/plugin-fs')
+  for (const ext of ['json', 'md']) {
+    const path = `${journalPath}/${HISTORY_DIR}/${id}.${ext}`
+    if (await exists(path)) await remove(path)
+  }
+  console.log('[fs] Profile version removed from disk:', id)
+}
+
 export function extractDateFromFilename(filename: string): string | null {
   const match = filename.match(/(\d{4}-\d{2}-\d{2})/)
   if (!match) return null
@@ -200,6 +264,14 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
       }
       const fm = frontmatterResult.success ? frontmatterResult.data : null
       const hasFrontmatter = rawHasFrontmatter && fm !== null
+      // The insight record is validated with a catch(null): a record that no
+      // longer matches the schema is dropped rather than making the entry
+      // unloadable. Say so, and why, or the entry silently reads as "needs
+      // re-indexing" with no trace of the cause.
+      if (frontmatter.insight != null && fm && fm.insight == null) {
+        const check = EntryInsightSchema.safeParse(frontmatter.insight)
+        console.warn('[fs] Dropped unreadable index record in', file.name, check.success ? '' : check.error.issues)
+      }
 
       const filenameDate = extractDateFromFilename(file.name)
       const nameWithoutExt = file.name.replace('.md', '')
@@ -219,9 +291,15 @@ export async function loadEntriesFromDisk(journalPath: string): Promise<JournalE
         createdAt: fm?.createdAt || filenameDate || new Date().toISOString(),
         updatedAt: fm?.updatedAt || filenameDate || new Date().toISOString(),
         mood: fm?.mood ?? null,
+        moodSource: fm?.moodSource ?? null,
         tags: fm?.tags ?? [],
         summary: fm?.summary ?? null,
         indexed: hasFrontmatter ? (fm?.indexed ?? false) : false,
+        insight: hasFrontmatter ? (fm?.insight ?? null) : null,
+        // Entries written before versioning carry only `indexed`; treat an
+        // indexed one as the legacy summary-only shape (v1).
+        indexVersion: hasFrontmatter ? (fm?.indexVersion ?? (fm?.indexed ? 1 : 0)) : 0,
+        indexModel: hasFrontmatter ? (fm?.indexModel ?? null) : null,
         sourceFilename: file.name,
       })
     } catch (e) {

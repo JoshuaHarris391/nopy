@@ -72,9 +72,9 @@ Each file has a frontmatter block between `---` fences followed by the body. The
 
 **When the user types in the editor** → the EntryEditor debounces every keystroke by 1500ms, then calls `updateEntry()`, which updates in-memory state, writes to IndexedDB, and writes the markdown file. Every mutation follows this memory → IndexedDB → disk sequence. See [Writing entries](#writing-entries).
 
-**When the user clicks "Update Index"** → unindexed entries get sent to Claude Haiku one at a time. The response flows through a Zod schema that repairs common drift (mood of 99 clamps to 5, bare string tags get wrapped in an array, unknown valence labels fall back to "Mixed"). See [AI entry processing](#ai-entry-processing).
+**When the user clicks "Update Index"** → unindexed entries are sent to the lightweight model one at a time, oldest first. Each response is parsed by a tolerant Zod schema, then checked locally (closed vocabularies, verbatim quotes, roster leakage, confidence floor) and repaired through up to three retries before the structured record is written into the entry's frontmatter. See [AI entry processing](#ai-entry-processing).
 
-**When the user clicks "Generate Profile"** → profile generation runs a [five-phase pipeline](#profile-generation): process unindexed entries, compute local stats, generate a narrative profile via Haiku, generate a full clinical document via Opus, then persist everything.
+**When the user clicks "Generate Profile"** → the entries in the chosen **scope** run through a [six-phase pipeline](#profile-generation): index any never-indexed ones, compute local stats, compute a corpus report from the records, generate a summary profile (lightweight model), generate or revise the full clinical document (main model) from records only, then keep the result as a new version and select it. Raw entry text is never sent to the profile steps.
 
 ### The validation layer
 
@@ -83,7 +83,7 @@ Three Zod schemas sit at trust boundaries. The point of all three is the same: n
 | Schema | Guards | Behaviour |
 |---|---|---|
 | [`FrontmatterEntrySchema`](#frontmatter-validation) | Data coming in from disk | Lenient on shape (fields optional), strict on types. Bad frontmatter loads the entry as unindexed with body preserved. |
-| [`EntryMetadataCoercedSchema`](#coercion-rules) | AI responses for entry metadata | Most forgiving of the three — actively repairs model drift. |
+| [`EntryRecordCoercedSchema`](#coercion-rules) | AI responses for entry indexing | Most forgiving of the three — every field falls back to null/empty so one bad field never fails the entry; closed vocabularies are enforced afterwards by local guards. |
 | `ProfileResponseSchema` | AI response for the narrative profile | Strict. |
 
 ### Things that might trip you up
@@ -110,11 +110,11 @@ For the full disk I/O reference, see `docs/architecture/filesystem-layer.md`.
 
 ### What gets written
 
-`entryToMarkdown()` (`fs.ts:17`) always writes `id`, `title`, `createdAt`, `updatedAt`, `tags`, and `indexed`. `mood` and `summary` are written only when present.
+`entryToMarkdown()` always writes `id`, `title`, `createdAt`, `updatedAt`, `tags`, `indexed` and `indexVersion`. `mood` (with `moodSource`), `summary`, `indexModel` and the nested `insight` record are written only when present. For a v2-indexed entry `tags` holds the closed domains vocabulary; legacy entries keep their free-text tags until re-indexed.
 
 ## Disk I/O
 
-Disk I/O is owned entirely by `src/services/fs.ts`. The module exposes three write functions (`saveEntryToDisk`, `deleteEntryFromDisk`, `saveProfileToDisk`) and one read function (`loadEntriesFromDisk`). Everything goes through Tauri's filesystem plugin.
+Disk I/O is owned entirely by `src/services/fs.ts`: entry writes (`saveEntryToDisk`, `deleteEntryFromDisk`), entry reads (`loadEntriesFromDisk`), the selected profile (`saveProfileToDisk`) and the profile history (`saveProfileVersionToDisk`, `loadProfileHistoryFromDisk`, `deleteProfileVersionFromDisk`), plus `revealEntryOnDisk` for the entry view's folder button. Everything goes through Tauri's filesystem and opener plugins.
 
 ### Reading entries
 
@@ -124,7 +124,7 @@ Disk I/O is owned entirely by `src/services/fs.ts`. The module exposes three wri
 2. For each `.md` file, `readTextFile` loads the contents.
 3. [`parseMarkdown()`](#markdown-format) splits it into `{ frontmatter, content }`.
 4. [`FrontmatterEntrySchema.safeParse(frontmatter)`](#frontmatter-validation) validates the frontmatter. On failure, a warning is logged and the entry is treated as if it had no frontmatter — its body is preserved, but metadata is discarded.
-5. Fields are filled in with fallbacks: missing `id` gets a fresh UUID, missing timestamps fall back to a date parsed from the filename or `now()`, missing tags default to `[]`, missing `indexed` defaults to `false`.
+5. Fields are filled in with fallbacks: missing `id` gets a fresh UUID, missing timestamps fall back to a date parsed from the filename or `now()`, missing tags default to `[]`, missing `indexed` defaults to `false`, a missing `indexVersion` reads as `1` when the entry is indexed (legacy summary-only) and `0` otherwise. An `insight` block that fails validation is dropped to `null` with a console warning naming the file and the issues; the entry then counts as stale and Settings offers to re-index it.
 6. The result is sorted by `createdAt` descending.
 
 **Plain markdown imports are supported transparently.** The parser returns an empty frontmatter object, the empty object passes the (all-optional) schema, and `loadEntriesFromDisk` infers the title from the filename and uses the entire file as the body. Dropping a bare `.md` file into the journal directory and clicking Sync is a first-class import flow.
@@ -140,9 +140,13 @@ Disk I/O is owned entirely by `src/services/fs.ts`. The module exposes three wri
 | `createdAt` | `string` (optional) | — |
 | `updatedAt` | `string` (optional) | — |
 | `mood` | `MoodScoreSchema \| null` (optional) | — |
+| `moodSource` | `'writer' \| 'indexer' \| null` (optional) | `null` (treated as writer-rated) |
 | `tags` | `string[]` (optional) | `[]` |
 | `summary` | `string \| null` (optional) | — |
 | `indexed` | `boolean` (optional) | `false` |
+| `indexVersion` | `number` (optional) | derived on load, see above |
+| `indexModel` | `string \| null` (optional) | — |
+| `insight` | `EntryInsightSchema \| null` (optional) | `null` on validation failure (`.catch`) |
 Every field is optional so that an empty frontmatter block (plain markdown imports) still parses successfully. UUID and ISO datetime formats are intentionally not enforced — legacy entries may have non-standard values, and `loadEntriesFromDisk` handles missing fields with its own fallbacks.
 
 The schema is **strict about shape**, though: if `mood` is present it must be a valid `MoodScore`, and if `tags` is present it must be an array of strings. A corrupted file with `mood: "bad"` won't silently become an entry with garbage mood data — it will fail validation and load with its metadata discarded and its body intact.
@@ -164,7 +168,9 @@ Nopy uses [`idb-keyval`](https://github.com/jakearchibald/idb-keyval) as a thin 
 | Key | Value | Owner |
 |---|---|---|
 | `nopy-entries` | `JournalEntry[]` | [`journalStore`](#journalstore) |
-| `nopy-profile` | `PsychologicalProfile` | [`profileStore`](#profilestore) |
+| `nopy-profile` | `PsychologicalProfile` (the selected version) | [`profileStore`](#profilestore) |
+| `nopy-profile-history` | `ProfileVersionMeta[]` (newest first) | [`profileStore`](#profilestore) |
+| `nopy-profile-version:<id>` | `PsychologicalProfile` (one kept generation) | [`profileStore`](#profilestore) |
 | `nopy-settings` | `UserSettings` | [`settingsStore`](#settingsstore) (via Zustand `persist`) |
 | `chat:meta` | `ChatSessionMeta[]` | [`chatStore`](#chatstore) |
 | `chat:session:{id}` | `ChatSession` | [`chatStore`](#chatstore) |
@@ -200,17 +206,19 @@ The three-layer write is **sequential, not atomic.** If the disk write fails aft
 
 ### `profileStore`
 
-Holds the `PsychologicalProfile` and runs profile generation.
+Holds the **selected** `PsychologicalProfile` plus the list of every kept version (`versions`), and runs profile generation. `selectVersion(id)` and `deleteVersion(id)` manage the history; the selected version is the one Context and Chat read.
 
 #### Profile generation
 
-`generateProfile()` (`profileStore.ts:44`) is a five-phase pipeline:
+`generateProfile()` is a six-phase pipeline:
 
-1. **Index unprocessed entries** — delegates to `processAllEntries` (Haiku) to fill in mood, tags, and summary for any entry where `indexed === false`. See [AI entry processing](#ai-entry-processing).
+1. **Index unprocessed entries** — delegates to `processAllEntries` (lightweight model) for any entry in scope where `indexed === false`. See [AI entry processing](#ai-entry-processing).
 2. **Local stats** — `computeLocalStats()` calculates average mood, journaling streak, average entry length, and reflection depth. No API call.
-3. **Narrative profile** — `generateProfileFromEntries()` sends entry summaries to Haiku and returns structured themes, cognitive patterns, strengths, growth areas, and emotional trends. Validated with `ProfileResponseSchema`.
-4. **Full profile** — `generateFullProfile()` sends full entry bodies to Opus 4.6 and returns a 2000–4000 word clinical markdown document. Not validated — the output is a free-form markdown string.
-5. **Persist** — merges everything into `PsychologicalProfile`, writes to `nopy-profile` in IndexedDB, and saves `profiles/profile.json` and `profiles/psychological-profile.md` next to the journal directory.
+3. **Corpus report and summary profile** — `buildCorpusReport()` computes monthly rollups, the people roster, recurring phrases, predictions and safety flags from the records (no call); `generateProfileFromEntries()` then sends that report plus brief records to the lightweight model and returns structured themes, cognitive patterns, strengths, growth areas, and emotional trends. Validated with `ProfileResponseSchema`.
+4. **Full profile** — `generateFullProfile()` sends the corpus report and rendered index records (never entry bodies) to the main model and returns a 2000–3500 word clinical markdown document; in incremental mode it sends the selected prior profile and only the records that profile has not seen. Not validated — the output is a free-form markdown string. The record tiers and budget fitting are described in [`llm-pipeline.md`](llm-pipeline.md#profile-generation).
+5. **Persist** — merges everything into a new `PsychologicalProfile` version (with `id`, `createdAt`, the `scope` it was generated from, and `basedOn` when it revised the selected version), keeps it under `nopy-profile-version:<id>` and `profiles/history/<id>.json` (+ `.md`), adds it to `nopy-profile-history`, then selects it: `nopy-profile`, `profiles/profile.json` and `profiles/psychological-profile.md` always hold the selected version, which is what Context and Chat inject. Earlier versions are never overwritten; the Profile page can put any of them back in use or delete the ones not in use.
+
+   Before step 1 the entry list is narrowed by the Profile page's **scope** setting (all entries, newest N, or last N months), so indexing, stats, the corpus report and both LLM passes see the same scoped list. A revision is only attempted when the selected version was generated under the same scope.
 
 Each phase updates `phase` and `progress` in the store so the UI can show a progress bar. The whole pipeline respects an `AbortSignal` for cancellation.
 
@@ -230,7 +238,7 @@ Steps:
 
 1. Load all entries from disk via [`loadEntriesFromDisk`](#reading-entries).
 2. Index both sides by `id`, and disk entries also by `title.toLowerCase()`.
-3. For each disk entry matched by id to a memory entry, **disk wins when `disk.updatedAt >= memory.updatedAt`.** Disk entries with no memory match are added. Memory entries not found by id or title on disk are removed.
+3. If two files carry the same frontmatter `id` (a copied file, or a rename whose old file survived), only the most recently updated one is loaded, no write-back is attempted for that id, and `lastError` names both files so the writer can delete one. Otherwise, for each disk entry matched by id to a memory entry, **disk wins when `disk.updatedAt >= memory.updatedAt`.** Disk entries with no memory match are added. Memory entries not found by id or title on disk are removed.
 4. Sort the merged result by `createdAt` descending and write it to IndexedDB.
 5. **Write-back pass:** any disk entry that originally lacked an `id` in its frontmatter (typically a plain-markdown import that was just assigned a fresh UUID by [`loadEntriesFromDisk`](#reading-entries)) is saved back to disk so it gains full frontmatter for next time.
 6. Return `{ added, updated, removed }` counts for the UI to show.
@@ -241,36 +249,44 @@ Disk wins on timestamp ties. External edits to a `.md` file are picked up on the
 
 ### AI entry processing
 
-When the user clicks "Update Index", unprocessed entries are sent to Haiku one at a time:
+When the user clicks "Update Index" (or Re-index on an entry, or "Re-index un-indexed entries" in Settings), the selected entries are sent to the lightweight model one at a time, oldest first:
 
 ```
-processAllEntries(entries, apiKey, force=false)
-  ├─ filter to !indexed (unless force=true)
+processAllEntries(entries, config, mode, onProgress, signal)
+  ├─ mode: 'unindexed' | 'stale' | 'needed' | 'all'
   └─ for each entry sequentially:
-       processEntry(entry, apiKey, signal)
-         ├─ Anthropic API (Haiku, max 500 tokens)
-         ├─ strip markdown code fences from the response
-         ├─ JSON.parse(cleaned)
-         └─ EntryMetadataCoercedSchema.parse(...)   ← coercive Zod
-       journalStore.updateEntry(id, { ...metadata, indexed: true })
+       hints = buildIndexHints(...)                 ← stated mood, people roster, recurring phrases
+       processEntry(entry, config, signal, hints)
+         ├─ provider call (lightweight slot, max 2500 output tokens)
+         ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant Zod
+         ├─ finaliseRecord(...)                                ← vocabularies, verbatim quotes, roster, confidence floor
+         └─ findRecordProblems(...) → repair retry (max 3)
+       journalStore.applyProcessedMetadata(results)
+         ├─ writer-rated mood kept; indexer mood refreshed
+         ├─ tags ← domains, summary, insight, indexVersion, indexModel
          ├─ IndexedDB write
-         └─ disk write
+         └─ disk write (frontmatter)
 ```
 
-Entries are processed **sequentially, not in parallel**, to keep token usage predictable and avoid rate limits. A thrown error on one entry is logged and the loop continues — one bad entry does not block the rest.
+Entries are processed **sequentially, not in parallel**, so the roster and recurring phrases accumulate in the order the writer lived them and rate limits stay predictable. A thrown error on one entry is logged and the loop continues — one bad entry does not block the rest.
+
+The full record shape, the hints, the guards and the repair loop are described in [`llm-pipeline.md`](llm-pipeline.md#entry-indexing).
 
 #### Coercion rules
 
-`EntryMetadataCoercedSchema` (`src/schemas/journal.ts`) is deliberately forgiving with AI output. If the model drifts, the schema repairs common shapes rather than rejecting the whole response:
+`EntryRecordCoercedSchema` (`src/schemas/journal.ts`) is deliberately forgiving with AI output. Where the model drifts, the schema falls back rather than rejecting the whole response, and the local guards decide what survives:
 
 | Field | Drift | Repair |
 |---|---|---|
 | `mood.value` | Out of range (e.g. `99`) or non-numeric string | Coerce to number, clamp to 1–10, fall back to `5` |
-| `mood.label` | Unknown label (e.g. `"excellent"`) | Fall back to `"neutral"` |
-| `tags` | Bare string instead of array | Wrap in `[string]`, then enforce 1–10 items |
-| `summary` | Missing or empty | Throws — no safe fallback |
+| `mood.label` | Unknown label | Fall back to `"neutral"` |
+| `domains`, `revelations`, `unclassified` | Bare string instead of array | Wrap in `[string]`; anything unparseable becomes `[]` |
+| Any enum-valued field (emotions, interaction, coping, …) | Term outside the closed list | Routed by `applyVocabularies`: near-miss → canonical term, else `other` or dropped, and the raw term is kept in `unclassified` |
+| `states.<key>` | Missing or malformed | `{ value: null, confidence: null, evidence: null }`; every one of the seven keys is always present |
+| Any nested object (`focalEvent`, `prediction`, `body`, `safety`) | Missing or malformed | Null / empty defaults |
+| `summary` | Missing or empty | Accepted by the schema, then flagged by `findRecordProblems` so the model is asked again |
 
-Structurally broken responses (missing required fields, unparseable JSON) throw a `ZodError` that propagates through the existing `console.error` + throw pattern in `entryProcessor.ts:44`.
+Unparseable JSON throws an `LLMParseError`; the indexer feeds the zod issues (as `path: message` lines) back to the model in the repair prompt.
 
 ### AI profile generation
 
@@ -372,6 +388,8 @@ Nopy does not watch the journal directory for external changes. If the user edit
 |---|---|
 | Markdown serialisation and disk I/O | `src/services/fs.ts` |
 | AI entry and profile processing | `src/services/entryProcessor.ts` |
+| Record guards, corpus report, record rendering, scope | `src/services/entryRecords.ts` |
+| Insights time series | `src/services/insightSeries.ts`, `src/utils/timeSeries.ts` |
 | Frontmatter Zod schema | `src/schemas/frontmatter.ts` |
 | AI response Zod schemas | `src/schemas/journal.ts`, `src/schemas/profile.ts` |
 | Journal state and reconciliation | `src/stores/journalStore.ts` |

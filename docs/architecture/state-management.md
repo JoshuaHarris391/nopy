@@ -103,7 +103,7 @@ These rules keep stores decoupled and mutations auditable:
 | Store | Mechanism | Key(s) |
 |---|---|---|
 | `journalStore` | `idb-keyval` (manual `get`/`set` in actions) + Tauri `writeTextFile` | `nopy-entries` + `.md` files on disk |
-| `profileStore` | `idb-keyval` (manual) + Tauri `writeTextFile` | `nopy-profile` + `profiles/profile.json` + `profiles/psychological-profile.md` on disk |
+| `profileStore` | `idb-keyval` (manual) + Tauri `writeTextFile` | Selected version: `nopy-profile` + `profiles/profile.json` + `profiles/psychological-profile.md`. History: `nopy-profile-history` (meta list) + `nopy-profile-version:<id>` per version, mirrored as `profiles/history/<id>.json` (+ `.md`) |
 | `chatStore` | `idb-keyval` (manual) | `chat:meta` + `chat:session:{id}` per session |
 | `settingsStore` | Zustand `persist` middleware | `nopy-settings` |
 | `journalNavStore` | None (session only) | — |
