@@ -1,5 +1,7 @@
 # 02 — Profile Generation Token Overflow
 
+> **Status: Resolved.** Profile generation no longer sends entry bodies. Each entry is indexed once into a structured record; the profile steps read a computed corpus report plus tiered records fitted to the model's context window, and revise the selected profile incrementally. See [`../architecture/llm-pipeline.md`](../architecture/llm-pipeline.md#profile-generation). The analysis below is kept for the reasoning.
+
 ## Problem
 
 Both profile generation functions send unbounded entry data to the AI model. At scale (e.g., 1,825 entries for 5 years of daily journaling), the input exceeds the model's context window and the API call fails outright.

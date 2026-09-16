@@ -106,13 +106,14 @@ Nopy separates cleanly into two layers, and we'd rather be upfront about both th
 **What stays fully local, always**
 
 - Your journal entries — stored as `.md` files in the folder you pick (desktop app) or in browser IndexedDB (web).
-- Your psychological profile and entry index — stored as JSON on disk, never synced anywhere.
+- Your entry index — stored in each entry's own `.md` frontmatter, so it travels with the journal.
+- Your psychological profiles — every generated version kept as JSON on disk under `profiles/`, never synced anywhere.
 - Your AI provider API key (Anthropic or OpenAI) or local server URL — saved locally, used only to make calls directly from your machine to the provider you picked.
 - App state, preferences, session history — all on-device.
 
 **What gets sent to your AI provider, and only then**
 
-When you use the AI chat, generate a profile, or index an entry, nopy sends the relevant text (the entries or message in scope) to your chosen provider's API using your key. Nothing is sent otherwise — not when you type, not when you save, not in the background. You can use nopy as a plain Markdown journal and never send a single byte anywhere.
+When you use the AI chat or index an entry, nopy sends the relevant text (that entry, or your message and chat context) to your chosen provider's API using your key. Generating a profile sends only the index records and a report computed from them, never entry text. Nothing is sent otherwise — not when you type, not when you save, not in the background. You can use nopy as a plain Markdown journal and never send a single byte anywhere.
 
 You pick the provider: **Anthropic**, **OpenAI**, or a **local model via LM Studio** — and a local model makes no network calls at all, so your text never leaves the machine. For the cloud providers, each one's own data policies apply to that slice of traffic. The notes below cover Anthropic, the default; if you use OpenAI, see [OpenAI's policies](https://openai.com/policies/) instead.
 
@@ -140,9 +141,10 @@ If any of this ever changes upstream, the source of truth is Anthropic's policy 
 - **Multiple AI providers** — use Anthropic, OpenAI, or a local model via LM Studio — or none at all
 - **Context Workspace** — curate exactly what gets injected into the AI prompt (profile, index, and custom notes) with a live context-window budget
 - **Journal Launcher** — open a recent journal or create a new one on every app start
-- **Psychological profile** — auto-generated insights from your journal entries
-- **Entry indexing** — mood tracking, theme extraction, and a searchable index
-- **Local-first storage** — entries saved as `.md` files to a directory you choose; profile and index as JSON
+- **Psychological profile** — a clinical-style formulation generated from your index records, with a scope selector (all entries, newest N, or last N months), incremental revisions, and a version history in which nothing is overwritten
+- **Insights** — mood, inferred states, emotions, sleep, body and domain charts computed locally from the index, no AI calls
+- **Entry indexing** — one structured record per entry (mood, states, emotions, people, verbatim quotes, coping, body, safety) stored in the entry's own frontmatter, with a searchable index page
+- **Local-first storage** — entries and their index saved as `.md` files to a directory you choose; profiles as JSON
 - **Privacy by design** — no cloud, no telemetry, no accounts
 
 ## Available scripts
@@ -202,7 +204,7 @@ On first launch, go to **Settings** and configure:
 
 ## Documentation
 
-See the [`docs/`](docs/README.md) folder for detailed project documentation, including the **[noobStack](docs/noobStack/README.md)** guides — a set of docs aimed at contributors who are new to this tech stack (e.g. data engineers coming from Python).
+See the [`docs/`](docs/README.md) folder for the architecture docs (data pipeline, LLM pipeline, filesystem layer, state management, components), design notes and feature specs.
 
 ## License
 

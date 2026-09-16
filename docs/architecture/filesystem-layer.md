@@ -39,16 +39,37 @@ Every journal entry file has a YAML frontmatter block between `---` fences, foll
 
 ```yaml
 ---
-id: "5f8b-..."
-title: "Morning pages"
-createdAt: "2026-04-10T09:00:00.000Z"
-updatedAt: "2026-04-10T09:15:00.000Z"
-tags: ["focus", "planning"]
+id: 3f2a9c1e-...
+title: Sunday, again
+createdAt: 2025-03-14T20:00:00.000Z
+updatedAt: 2025-03-14T20:05:12.000Z
+tags:
+  - relationship
+  - housing
 indexed: true
+indexVersion: 2
 mood:
-  value: 7
-  label: "good"
-summary: "Short AI-generated summary"
+  value: 4
+  label: low
+moodSource: writer
+summary: Argued with Maya about the move after she found the unopened contract; went quiet rather than answer.
+indexModel: <lightweight model id>
+insight:
+  inferredMood: 4
+  states:
+    anxiety: { value: 7, confidence: 0.8, evidence: tight chest, could not answer her }
+    # … irritability, sadness, calm, agency, connection, meaning
+  emotions: [{ label: anxious, intensity: 8 }]
+  people: [{ name: Maya, role: partner, interaction: conflict, feltAfter: depleted, note: pushed for a decision }]
+  quotes: [{ text: I dont think I have ever chosen something without checking someones face first, category: self_judgement, matchesRecent: null }]
+  focalEvent: { trigger: Maya found the unopened contract, interpretation: I have let her down again, emotionBody: anxiety, behaviour: went silent, outcome: null, alternativeView: null }
+  revelations: [I need to answer her before Friday, even if the answer is no]
+  prediction: null
+  coping: [{ strategy: avoidance, effect: -1, evidence: went quiet }]
+  body: { sleepHours: 4, sleepQuality: null, movement: null, substances: [{ type: alcohol, quantity: 2 glasses }], symptoms: [chest_tightness], notes: null }
+  safety: { flag: none, evidence: null }
+  observations: [{ text: may withdraw into silence when pressed for a decision, kind: coping, basis: inferred }]
+  unclassified: []
 ---
 
 The actual thing the user wrote goes here.
@@ -64,7 +85,7 @@ After parsing, the raw object is validated by `FrontmatterEntrySchema` (`src/sch
 
 ### What gets written
 
-`entryToMarkdown()` always writes: `id`, `title`, `createdAt`, `updatedAt`, `tags`, `indexed`. `mood` and `summary` are written only when present.
+`entryToMarkdown()` always writes: `id`, `title`, `createdAt`, `updatedAt`, `tags`, `indexed`, `indexVersion`. `mood` (with `moodSource`), `summary`, `indexModel` and the nested `insight` record are written only when present. The index therefore travels with the journal: copy the folder and the index comes with it, and a hand-edited frontmatter changes what the app sees on the next sync.
 
 ---
 
@@ -76,7 +97,7 @@ After parsing, the raw object is validated by `FrontmatterEntrySchema` (`src/sch
 2. For each `.md` file, `readTextFile` loads the contents.
 3. `parseMarkdown()` splits the file into `{ frontmatter, content }` using the regex `/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/` and `yaml.parse()`.
 4. `FrontmatterEntrySchema.safeParse(frontmatter)` validates. On failure, a warning is logged and the entry is treated as plain markdown (body preserved, metadata discarded).
-5. Missing fields get fallbacks: `id` → fresh UUID, timestamps → date from filename or `now()`, `tags` → `[]`, `indexed` → `false`.
+5. Missing fields get fallbacks: `id` → fresh UUID, timestamps → date from filename or `now()`, `tags` → `[]`, `indexed` → `false`, `indexVersion` → `1` if indexed else `0`. An `insight` block that fails validation is dropped to `null` with a warning naming the file and the failing fields; the entry then shows as needing re-indexing.
 6. Result sorted by `createdAt` descending.
 
 **Plain markdown imports work transparently.** A `.md` file with no frontmatter passes the all-optional schema and gets assigned defaults.

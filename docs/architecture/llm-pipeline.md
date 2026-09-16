@@ -1,93 +1,132 @@
 # LLM Pipeline
 
-How nopy uses Claude (or a local LM Studio model) to index journal entries, extract themes, and generate psychological profiles.
+How nopy uses Claude, OpenAI, or a local LM Studio model to index journal entries and generate psychological profiles, and how the Insights page and the chat's context are built from those results without further calls.
 
 **Contents**
 
-- [Overview](#overview) — the three AI operations
-- [Provider routing](#provider-routing) — Anthropic vs. local LM Studio
-- [Entry metadata extraction](#entry-metadata-extraction) — indexing individual entries via Haiku
-- [Theme extraction](#theme-extraction) — identifying cross-entry patterns
-- [Profile generation](#profile-generation) — the five-phase pipeline
+- [Overview](#overview) — where the model is called, and where it is not
+- [Provider routing](#provider-routing) — Anthropic vs. OpenAI vs. local LM Studio
+- [Entry indexing](#entry-indexing) — one structured record per entry, the only place raw text is read
+- [Profile generation](#profile-generation) — corpus report, record tiers, incremental revisions, versions
+- [Insights](#insights) — local time-series over the index, no model involved
 - [Chat context assembly](#chat-context-assembly) — building the system prompt for conversations
 - [Therapy agent selection](#therapy-agent-selection) — swapping the chat agent's therapeutic frame (CBT, ACT, …)
-- [Shared utilities](#shared-utilities) — `parseLLMJson`, model IDs, prompt templates
+- [Shared utilities](#shared-utilities) — `parseLLMJson`, token limits, prompt templates
 - [File reference](#file-reference)
 
 ---
 
 ## Overview
 
-Nopy makes three categories of AI calls:
+The guiding split is **instrument versus analyst**:
 
-| Operation | Model (Anthropic mode) | Trigger | Output |
-|---|---|---|---|
-| Entry metadata extraction | Haiku | "Update Index" button | mood, tags, summary per entry |
-| Theme extraction | Haiku | Profile generation (step 3) | themes, cognitive patterns, strengths, growth areas |
-| Full profile generation | Opus 4.6 | Profile generation (step 4) | 2000-4000 word clinical markdown document |
+- The **indexer** is an instrument. It reads one entry's raw text, once, and writes a fixed-schema record into that entry's frontmatter. It measures what is on the page; it does not diagnose.
+- The **profile generator** is the analyst. It reads only index records and a deterministic report computed from them. Raw journal text never reaches it, which is what keeps generation affordable as a journal grows.
 
-All calls flow through the dispatcher at `src/services/llm.ts`, which routes to either `src/services/anthropic.ts` or `src/services/localServer.ts` based on `settings.provider`.
+| Operation | Model slot | Trigger | Reads | Writes |
+|---|---|---|---|---|
+| Entry indexing | lightweight | "Update Index", per-entry Re-index, Settings "Re-index un-indexed", or profile generation (for entries in scope that were never indexed) | one entry's raw text + hints | mood, domains, summary and the `insight` record in the entry's frontmatter |
+| Summary profile | lightweight | profile generation | corpus report + brief records | themes, patterns, strengths, growth areas, trends (JSON) |
+| Full profile | main | profile generation | corpus report + standard/digest records (+ the selected prior profile in incremental mode) | a 2000–3500 word clinical markdown document |
+| Chat | main | each message | assembled context (below) | streamed reply |
+
+The Insights page makes no calls at all. Everything on it is computed from the stored records.
+
+All calls flow through the dispatcher at `src/services/llm.ts`, which routes to `src/services/anthropic.ts`, `src/services/openai.ts` or `src/services/localServer.ts` based on `settings.provider`.
 
 ## Provider routing
 
-The dispatcher (`src/services/llm.ts`) takes an `LlmConfig` slice from `settingsStore` (`{ provider, apiKey, localBaseUrl, localModel }`) and routes every call. Two important rules:
+The dispatcher takes an `LlmConfig` slice from `settingsStore` and resolves a **role** (`main` or `lightweight`) to a configured model id per provider (`resolveModel`). Two rules:
 
-- **All-or-nothing scope.** When `settings.provider === 'local'`, *every* AI call (chat, title generation, entry indexing, profile narrative, full profile) goes to LM Studio. There is no "mixed" mode where indexing stays on Anthropic — that would silently leak journal data to Anthropic while the user thought they were running everything locally.
-- **Model resolution.** In Anthropic mode, the dispatcher passes the caller's `requestedModel` through unchanged (so callers can pick `HAIKU_MODEL` for cheap one-shots and `OPUS_MODEL` for high-quality work). In local mode, the dispatcher ignores `requestedModel` and uses `config.localModel` — LM Studio loads one model at a time and will 404 on any model name it doesn't have loaded.
+- **All-or-nothing scope.** With `provider === 'local'`, *every* AI call goes to LM Studio. There is no mixed mode where indexing stays on a hosted provider, which would silently send journal data elsewhere.
+- **Blank lightweight slots fall back to the main slot** for OpenAI and local providers, so a single-model setup works with no extra configuration.
 
-For the user-facing walk-through of local mode (setup, security guarantees, troubleshooting), see [`local-llm-integration.md`](./local-llm-integration.md).
-
----
-
-## Entry metadata extraction
-
-When the user clicks "Update Index", unprocessed entries are sent to Haiku one at a time via `processAllEntries()` in `src/services/entryProcessor.ts`.
-
-```
-processAllEntries(entries, apiKey, force, onProgress, signal)
-  ├─ filter to !indexed (unless force=true)
-  └─ for each entry sequentially:
-       processEntry(entry, apiKey, signal)
-         ├─ Anthropic API (Haiku, max 500 tokens)
-         ├─ parseLLMJson(response, EntryMetadataCoercedSchema)
-         └─ returns { mood, tags, summary }
-       journalStore.updateEntry(id, { ...metadata, indexed: true })
-```
-
-Entries are processed **sequentially** for rate-limit safety. A thrown error on one entry is logged and the loop continues.
-
-### The coercion schema
-
-`EntryMetadataCoercedSchema` (`src/schemas/journal.ts`) is deliberately forgiving with AI output:
-
-| Field | Drift | Repair |
-|---|---|---|
-| `mood.value` | Out of range or non-numeric string | Coerce to number, clamp to 1-10, fall back to 5 |
-| `mood.label` | Unknown label | Fall back to "neutral" |
-| `tags` | Bare string instead of array | Wrap in `[string]`, enforce 1-10 items |
-| `summary` | Missing or empty | Throws — no safe fallback |
-
-This schema is one of the best-designed parts of the codebase. Don't simplify it — the `.catch()` fallbacks are load-bearing.
+For the user-facing walk-through of local mode see [`local-llm-integration.md`](./local-llm-integration.md).
 
 ---
 
-## Theme extraction
+## Entry indexing
 
-`generateProfileFromEntries()` (`entryProcessor.ts`) sends entry summaries to Haiku and returns structured themes, cognitive patterns, strengths, growth areas, and emotional trends. The response is validated with `ProfileResponseSchema` (`src/schemas/profile.ts`).
+Indexing is the only place an entry's body is handed to a model. `processEntry()` in `src/services/entryProcessor.ts` runs one entry; `processAllEntries()` runs a batch, oldest first, sequentially.
+
+```
+processAllEntries(entries, config, mode, onProgress, signal)
+  ├─ mode selects the batch: 'unindexed' | 'stale' | 'needed' (both) | 'all'
+  └─ for each entry, oldest first:
+       hints = buildIndexHints(entries so far, entry)     ← roster, recurring phrases, stated mood
+       processEntry(entry, config, signal, hints)
+         ├─ sendMessage(lightweight, ENTRY_METADATA_SYSTEM, [hints + entry text], 2500 tokens)
+         ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant shape
+         ├─ finaliseRecord(...)                                ← local guards (below)
+         ├─ findRecordProblems(...)  → repair loop, up to 3 retries
+         └─ returns { mood, domains, summary, insight, indexModel }
+     journalStore.applyProcessedMetadata(results)             ← memory → IndexedDB → disk
+```
+
+### The record
+
+Each indexed entry stores, in its frontmatter (`src/schemas/journal.ts`, `EntryInsightSchema`):
+
+| Field | What it holds |
+|---|---|
+| `mood` + `moodSource` | The writer's own rating (`writer`) is never overwritten; otherwise the indexer's estimate (`indexer`). The estimate is also kept as `insight.inferredMood`. |
+| `tags` | Closed **domains** vocabulary (work, family, health, …). |
+| `summary` | 2–4 sentences: what happened, the emotional core, what helped or hindered. |
+| `insight.states` | Seven inferred 0–10 states (anxiety, irritability, sadness, calm, agency, connection, meaning), each with an anchored confidence and a short evidence string. Confidence below 0.3 means the value is null. |
+| `insight.emotions` | Up to four labels from a closed list, with intensity. |
+| `insight.people` | Who appears, their role, the interaction kind and how the writer felt afterwards (closed lists). |
+| `insight.quotes` | Up to four verbatim excerpts with a category, and a link to a recurring phrase when one matches. |
+| `insight.focalEvent` | Trigger → interpretation → emotion/body → behaviour → outcome (→ the writer's own alternative view). |
+| `insight.revelations`, `insight.prediction` | Explicit realisations or decisions in the writer's voice; an explicit expectation with a target date. |
+| `insight.coping`, `insight.body`, `insight.safety` | Coping strategies with reported effect; sleep, substances, symptoms; a `none | monitor | concern` flag with evidence. |
+| `insight.observations` | Up to three hedged hypotheses, each tagged `stated` or `inferred`. The only interpretive field. |
+| `insight.unclassified` | Raw terms that fit no vocabulary, kept for review rather than invented into a category. |
+| `indexVersion`, `indexModel` | Which schema/prompt version and which model produced the record. |
+
+The system prompt (`buildEntryIndexSystemPrompt()` in `src/services/prompts/entryMetadata.ts`) interpolates every vocabulary from the zod enums, so the prompt cannot drift from what the parser accepts. It is byte-identical for every entry; per-entry material goes in the user message.
+
+### Hints
+
+The user message carries, before the entry text: the writer's stated mood (so the model never argues with it), a **known-people roster** (names and roles aggregated from already-indexed entries, spelling reference only), and the **recurring phrases** seen recently, so the model can mark a quote that repeats one with minor drift.
+
+### Local guards
+
+Nothing the model returns is stored unchecked. After parsing, `finaliseRecord()` (`src/services/entryRecords.ts`) applies, in order:
+
+1. **Vocabulary routing** — near-misses land on the canonical term ("Doom scrolling" → `doomscrolling`); unknown terms go to `other` where the list has one, otherwise are dropped, and are recorded in `unclassified`.
+2. **Verbatim quotes** — a quote is kept only if it appears in the entry (whitespace and curly quotes folded) and has at least four words.
+3. **Recurring-phrase links** — `matchesRecent` must name a phrase that was actually in the hints.
+4. **Roster leakage** — a person is dropped unless their name or role phrase appears in the entry.
+5. **Confidence floor** — state values below 0.3 confidence are nulled.
+
+### Repair loop
+
+If the response is not JSON, fails the tolerant schema, or is degenerate (no summary, no domains, or mostly off-vocabulary), the model is asked to fix it: the conversation is extended with its own output and the specific problems, up to `MAX_INDEX_RETRIES` (3) times. A still-unusable entry is logged and stays unindexed for that run.
+
+### Versions and re-indexing
+
+`CURRENT_INDEX_VERSION` bumps whenever the schema or the prompt changes. An entry is **stale** when it is indexed under an older version or its stored record could not be read back. Stale entries are never re-read automatically; Settings → "Re-index un-indexed entries (N)" lists and reprocesses them (together with never-indexed entries), the Index page marks them `legacy`, and the Insights page explains which charts they are missing from.
 
 ---
 
 ## Profile generation
 
-The full pipeline is orchestrated by `profileStore.generateProfile()` (`src/stores/profileStore.ts`):
+Orchestrated by `profileStore.generateProfile()` (`src/stores/profileStore.ts`). Before anything runs, the entry list is narrowed by the Profile page's **scope** setting (all entries, newest N, or last N months), and every step below sees that same list.
 
-1. **Index unprocessed entries** — delegates to `processAllEntries` (Haiku).
-2. **Local stats** — `computeLocalStats()` calculates average mood, journaling streak, average entry length, reflection depth. No API call. This function is pure and covered by the existing test suite.
-3. **Narrative profile** — `generateProfileFromEntries()` (Haiku). Returns structured data validated by `ProfileResponseSchema`.
-4. **Full profile** — `generateFullProfile()` (Opus 4.6). Returns a long-form clinical markdown document. Not schema-validated — the output is free-form text.
-5. **Persist** — merges all results into `PsychologicalProfile`, writes to IndexedDB and disk.
+1. **Index** entries in scope that were never indexed (see above).
+2. **Local stats** — `computeLocalStats()`: average mood, journaling streak, entry length, reflection depth. No call.
+3. **Corpus report** — `buildCorpusReport()` (`src/services/entryRecords.ts`) computes deterministic rollups from the records, never re-estimated: per month, the writer's mood mean/min/max, the indexer's mood, each state's mean over confident values, top emotions, domains, people with how the writer felt afterwards, coping with mean effect, sleep and substances, safety flags; plus a people roster with first/last-seen dates, recurring verbatim phrases with counts, the predictions made, and every safety flag with its date. Rendered as compact markdown. No call.
+4. **Summary profile** — `generateProfileFromEntries()` (lightweight): the corpus report plus **brief** records (summary, realisations, safety) for the recent window and one-line **digests** for older entries, fitted to the lightweight model's context window. Output validated by `ProfileResponseSchema`.
+5. **Full profile** — `generateFullProfile()` (main): the corpus report plus **standard** records (summary, people, quotes, focal chain, realisations, prediction, safety, observations) for the recent window (last 90 days or newest 60 entries) and digests for the rest, fitted to the main model's window; oldest records are omitted first and the prompt says how many. In **incremental** mode (the default setting) the selected prior profile is sent too and the model revises it with only the records it has not seen; a scope change forces a full write. The evidence rules in `src/services/prompts/fullProfile.ts` tell the analyst how to weigh each field: the writer's mood is primary, quotes are the only verbatim material, observations are leads to confirm by convergence, safety flags are never averaged away.
+6. **Persist** — the result becomes a new **version** (`id`, `createdAt`, `scope`, `basedOn`, `isRevision`). Every version is kept; the newest is selected automatically, and the selected version is what Context and Chat inject. See [`data-pipeline.md`](./data-pipeline.md#profile-generation) for storage.
 
-Each phase updates `phase` and `progress` in the store for the UI progress bar. The pipeline respects an `AbortSignal` for cancellation.
+Each phase updates `phase` and `progress` for the UI, and the pipeline respects an `AbortSignal`. A failed full-profile step keeps the prior full profile rather than dropping it.
+
+---
+
+## Insights
+
+`src/services/insightSeries.ts` turns the stored records into time series for the Insights page: mood points (writer-rated vs inferred) with bucket means, state means at confidence ≥ 0.5, emotion and domain counts with a top-N-plus-other rule, sleep and body events, a window summary and the safety rows. Buckets come from `src/utils/timeSeries.ts` (week → days, month → weeks, year and all-time → months). No model is involved; the page works offline and in private mode is hidden along with the other AI-derived surfaces.
 
 ---
 
@@ -96,16 +135,15 @@ Each phase updates `phase` and `progress` in the store for the UI progress bar. 
 `assembleContext()` (`src/services/contextAssembler.ts`) builds the system prompt and message history for chat sessions. It is a **pure function** with clean ordering:
 
 1. **Base system prompt** — the active therapy agent's system prompt (see [Therapy agent selection](#therapy-agent-selection)) plus today's date.
-2. **Psychological profile** — the full profile markdown (or summary fallback) if available.
-3. **Themes** — structured theme data from the profile.
-4. **Journal index** — a markdown table of indexed entries (title, date, mood, tags, summary), capped at 30 entries.
-5. **Focused entry context** — if the user navigated to chat from a specific entry, that entry's full content is injected.
-6. **Session summary** — if the session has a rolling summary and the message count is high, the summary is prepended as synthetic user/assistant messages.
-7. **Message history** — the session's messages, truncated from the oldest when the token budget is exceeded.
+2. **Psychological profile** — the selected version's full profile markdown (or its summary as a fallback), then its recurring themes.
+3. **Journal index** — a markdown table of indexed entries (title, date, mood, tags, summary), capped by the `journalIndexLimit` setting. The structured `insight` record is not injected into chat.
+4. **Focused entry context** — if the user navigated to chat from a specific entry, that entry's full content is injected.
+5. **Session summary** — if the session has a rolling summary and the message count is high, the summary is prepended as synthetic user/assistant messages.
+6. **Message history** — the session's messages, truncated from the oldest when the token budget is exceeded.
 
 The function has explicit **token budgeting** — it estimates token usage and drops the oldest messages first when the history exceeds the budget. The token estimator is at `src/utils/tokenEstimator.ts`.
 
-This function is well-tested (14 tests in `src/__tests__/services/contextAssembler.test.ts`). Don't split it up — it is a single logical operation. If it feels verbose, it's because context assembly is inherently detailed.
+This function is well-tested (`src/__tests__/services/contextAssembler.test.ts`). Don't split it up — it is a single logical operation.
 
 ---
 
@@ -121,19 +159,16 @@ src/services/prompts/therapists/
 └─ act.ts     → ACT_SYSTEM_PROMPT  (psychological flexibility, defusion, values, workability)
 ```
 
-The selection is persisted on the `therapyType` field of the Zustand settings store (`src/stores/settingsStore.ts`, localStorage key `nopy-settings`). When the field is absent — for example on first install or for users who upgraded before the feature shipped — `getTherapyPrompt(undefined)` falls back to `DEFAULT_THERAPY` (`'cbt'`), so existing behaviour is preserved.
+The selection is persisted on the `therapyType` field of the settings store. When the field is absent, `getTherapyPrompt(undefined)` falls back to `DEFAULT_THERAPY` (`'cbt'`).
 
-The UI control lives in `src/components/settings/sections/TherapySection.tsx` and renders a `<select>` populated from `listTherapies()`. Only the live chat agent prompt swaps; the profile generator (`fullProfile.ts`) remains framework-neutral and does not change when the therapy type is switched.
+The UI control lives in `src/components/settings/sections/TherapySection.tsx`. Only the live chat agent prompt swaps; the profile generator remains framework-neutral.
 
 ### Adding a new therapy type
 
-1. Create `src/services/prompts/therapists/<name>.ts` exporting a `<NAME>_SYSTEM_PROMPT` constant (template literal with the full system prompt).
-2. In `src/services/prompts/therapists/index.ts`:
-   - Import the new constant.
-   - Widen the `TherapyType` union with the new key (e.g. `'dbt'`).
-   - Add an entry to the `THERAPIES` record with `id`, `label`, `shortLabel`, `description`, and `systemPrompt`.
-3. Add a corresponding test case to `src/__tests__/services/therapyRegistry.test.ts` (content smoke test for the new prompt + membership assertion).
-4. No other files need to change — `ChatView`, the settings store, the UI dropdown, and the settings type (`TherapyType`) pick up the new entry automatically.
+1. Create `src/services/prompts/therapists/<name>.ts` exporting a `<NAME>_SYSTEM_PROMPT` constant.
+2. In `src/services/prompts/therapists/index.ts`: import it, widen the `TherapyType` union, add a `THERAPIES` entry with `id`, `label`, `shortLabel`, `description`, and `systemPrompt`.
+3. Add a test case to `src/__tests__/services/therapyRegistry.test.ts`.
+4. Nothing else changes — the settings UI and store pick up the new entry automatically.
 
 ---
 
@@ -143,43 +178,25 @@ The UI control lives in `src/components/settings/sections/TherapySection.tsx` an
 
 **File**: `src/services/parseLLMJson.ts`
 
-A single function that handles the full parse pipeline for structured LLM responses:
+Strips markdown fences and trailing prose, `JSON.parse`s, pipes through `schema.safeParse()`, and throws `LLMParseError` (carrying the raw text and the zod issues) on failure. Every structured call site uses it; the indexer's repair loop reads the issues off the error to tell the model what to fix.
 
-1. Strips markdown ```` ```json ``` ```` fences and trailing prose.
-2. `JSON.parse`s the cleaned string.
-3. Pipes through `schema.safeParse()`.
-4. Returns typed data on success; throws `LLMParseError` on failure.
-
-Every call site that extracts structured data from Claude uses this function. Don't bypass it with inline `JSON.parse` — the fence-stripping is always needed.
-
-### Model IDs and token limits
+### Token limits and context windows
 
 **File**: `src/services/models.ts`
 
-```typescript
-export const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
-export const OPUS_MODEL = 'claude-opus-4-6'
-export const TOKEN_LIMITS = { entryMetadata: 500, themeExtraction: 4000, ... }
-```
-
-This is the single place to see what models the app talks to and what token budgets each operation uses.
+`TOKEN_LIMITS` holds the output caps per operation (`entryMetadata: 2500`, `profileNarrative: 4000`, `fullProfile: 10000`, `titleGeneration: 50`). `getModelContextWindow()` resolves the active model's context window (manual override → LM Studio's reported window → catalog → static map → provider default); the profile steps use it to decide how many records fit.
 
 ### Prompt templates
 
 **Directory**: `src/services/prompts/`
 
-Each AI operation has its prompt template in a dedicated file:
-
 | File | Operation |
 |---|---|
-| `entryMetadata.ts` | Entry metadata extraction system prompt |
-| `profileNarrative.ts` | Theme extraction system prompt |
-| `fullProfile.ts` | Full profile generation system prompt |
-| `therapists/index.ts` | Chat agent registry (see [Therapy agent selection](#therapy-agent-selection)) |
-| `therapists/cbt.ts` | CBT chat agent system prompt |
-| `therapists/act.ts` | ACT chat agent system prompt |
-
-Each file exports a named constant (e.g. `FULL_PROFILE_SYSTEM`, `CBT_SYSTEM_PROMPT`).
+| `entryMetadata.ts` | `buildEntryIndexSystemPrompt()` and `buildEntryIndexUserMessage()` for indexing |
+| `profileNarrative.ts` | Summary profile system prompt |
+| `fullProfile.ts` | `FULL_PROFILE_SYSTEM` (first write) and `FULL_PROFILE_REVISE_SYSTEM` (incremental revision), sharing one set of evidence rules |
+| `voice.ts` | Tone preamble shared by the human-facing prompts (not the indexer) |
+| `therapists/*` | Chat agent registry and prompts |
 
 ---
 
@@ -187,16 +204,15 @@ Each file exports a named constant (e.g. `FULL_PROFILE_SYSTEM`, `CBT_SYSTEM_PROM
 
 | Concern | File |
 |---|---|
-| Anthropic SDK wrapper | `src/services/anthropic.ts` |
-| Entry and profile processing | `src/services/entryProcessor.ts` |
+| Provider dispatcher and role resolution | `src/services/llm.ts` |
+| Provider wrappers | `src/services/anthropic.ts`, `src/services/openai.ts`, `src/services/localServer.ts` |
+| Indexing, repair loop, both profile generators, local stats | `src/services/entryProcessor.ts` |
+| Record guards, roster, recurring phrases, corpus report, record rendering and budget fitting, scope | `src/services/entryRecords.ts` |
+| Insights time series | `src/services/insightSeries.ts`, `src/utils/timeSeries.ts` |
 | Context assembly | `src/services/contextAssembler.ts` |
 | LLM JSON parser | `src/services/parseLLMJson.ts` |
-| Model IDs and token limits | `src/services/models.ts` |
+| Token limits and context windows | `src/services/models.ts` |
 | Prompt templates | `src/services/prompts/*.ts` |
-| Therapy agent registry | `src/services/prompts/therapists/index.ts` |
-| Therapy settings UI | `src/components/settings/sections/TherapySection.tsx` |
-| Token estimator | `src/utils/tokenEstimator.ts` |
-| AI response schemas | `src/schemas/journal.ts`, `src/schemas/profile.ts` |
-| Profile generation orchestration | `src/stores/profileStore.ts` |
-| Entry processing test suite | `src/__tests__/services/entryProcessor.test.ts` |
-| Context assembly test suite | `src/__tests__/services/contextAssembler.test.ts` |
+| Index and profile schemas | `src/schemas/journal.ts`, `src/schemas/profile.ts` |
+| Profile generation orchestration and version history | `src/stores/profileStore.ts` |
+| Tests | `src/__tests__/services/{entryProcessor,entryRecords,structuredIndex,insightSeries,contextAssembler}.test.ts`, `src/__tests__/stores/profileHistory.test.ts` |

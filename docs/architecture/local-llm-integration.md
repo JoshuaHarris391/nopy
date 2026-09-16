@@ -2,7 +2,7 @@
 
 Run nopy entirely on your own Mac, with no data leaving the machine.
 
-**Audience:** technical users and contributors. For the high-level pipeline (Anthropic-side), see [`llm-pipeline.md`](./llm-pipeline.md). For the design/spec context, see [`../tasks/10-gemma4-local-integration.md`](../tasks/10-gemma4-local-integration.md).
+**Audience:** technical users and contributors. For the high-level pipeline (Anthropic-side), see [`llm-pipeline.md`](./llm-pipeline.md).
 
 **Contents**
 
@@ -158,8 +158,7 @@ Combined with the dispatcher's unit tests in `src/__tests__/services/llm.test.ts
 
 - **One model at a time.** LM Studio's constraint, not nopy's. Switching models requires unloading and loading in LM Studio.
 - **No automatic Ollama support yet.** The OpenAI-compatible client in `services/localServer.ts` *can* point at Ollama (`http://localhost:11434/v1`) — just paste that URL into the Base URL field. There's no in-app Backend dropdown yet because LM Studio is the only one we onboard non-technical users into.
-- **No embedded inference.** Plan B in [`../tasks/10-gemma4-local-integration.md`](../tasks/10-gemma4-local-integration.md) discusses moving inference into the Tauri Rust sidecar so nopy is one tidy install. That's future work.
+- **No embedded inference.** Moving inference into the Tauri Rust sidecar, so nopy is one tidy install, has been discussed but is future work; the spec that described it is no longer in the repo.
 - **Quality vs. Anthropic Opus.** The full-profile pipeline uses Opus 4.6 in Anthropic mode (~10k tokens of clinical analysis). On Gemma 4 E4B Q4 the same prompt produces a notably shorter and less nuanced profile. If profile quality matters and privacy doesn't, stay on Anthropic for that step. v1 doesn't allow per-feature provider overrides; that's on the v2 list.
 - **Multi-byte streaming**. SSE chunks split mid-codepoint occasionally; `services/localServer.ts` uses `TextDecoder({ stream: true })` and is unit-tested for this case. If you see corrupted CJK or emoji in streamed responses, file an issue with the model id and prompt — it's almost certainly a parser regression.
 
-For the broader roadmap (Plans B, C, D and rationale), see [`../tasks/10-gemma4-local-integration.md`](../tasks/10-gemma4-local-integration.md).
