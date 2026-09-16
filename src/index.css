@@ -132,21 +132,6 @@ body::before {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Page turn: the incoming leaf settles flat. Forward is hinged on the spine
-   (left) with the fore-edge lifted toward the reader; back is the mirror. */
-@keyframes pageTurn {
-  from { opacity: 0; transform: perspective(1200px) translateX(28px) rotateY(-5deg); }
-  to { opacity: 1; transform: perspective(1200px) translateX(0) rotateY(0deg); }
-}
-
-@keyframes pageTurnBack {
-  from { opacity: 0; transform: perspective(1200px) translateX(-28px) rotateY(5deg); }
-  to { opacity: 1; transform: perspective(1200px) translateX(0) rotateY(0deg); }
-}
-
-.page-enter-forward { animation: pageTurn var(--transition-slow) both; transform-origin: left center; }
-.page-enter-back { animation: pageTurnBack var(--transition-slow) both; transform-origin: right center; }
-
 /* Returning to a marked page: a brief amber accent on the card you came from,
    then it settles. No fill-mode so the inline hover styles take over again. */
 @keyframes accentPulse {

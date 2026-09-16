@@ -10,12 +10,16 @@ import { usePageSwipe } from '../../hooks/usePageSwipe'
 function setup() {
   const host = document.createElement('div')
   document.body.appendChild(host)
-  const onNext = vi.fn()
-  const onPrev = vi.fn()
-  renderHook(() => usePageSwipe({ current: host }, { onNext, onPrev }))
+  const onCommit = vi.fn()
+  const onProgress = vi.fn()
+  const onCancel = vi.fn()
+  const { rerender } = renderHook(
+    ({ locked }: { locked: boolean }) => usePageSwipe({ current: host }, { onCommit, onProgress, onCancel, locked }),
+    { initialProps: { locked: false } },
+  )
   const wheel = (deltaX: number, deltaY = 0, deltaMode = 0) =>
     host.dispatchEvent(new WheelEvent('wheel', { deltaX, deltaY, deltaMode, bubbles: true }))
-  return { host, onNext, onPrev, wheel }
+  return { host, onCommit, onProgress, onCancel, wheel, setLocked: (locked: boolean) => rerender({ locked }) }
 }
 
 describe('usePageSwipe: two-finger swipe turns the page once per gesture', () => {
@@ -29,35 +33,71 @@ describe('usePageSwipe: two-finger swipe turns the page once per gesture', () =>
     document.body.innerHTML = ''
   })
 
-  it('swiping left fires next once, ignores momentum, then accepts a new gesture', () => {
+  it('reports progress, commits next once, ignores momentum, then accepts a new gesture', () => {
     /**
      * A real swipe is a ramp of small deltas followed by a long momentum tail
-     * after the fingers lift. The page must turn exactly once per gesture:
-     * fire when the accumulated distance crosses the threshold, swallow the
-     * tail, and only listen again after 200ms of silence.
+     * after the fingers lift. The page follows the fingers via progress
+     * callbacks, turns exactly once when the accumulated distance crosses the
+     * threshold, swallows the tail, and only listens again after 200ms of
+     * silence.
      *
      * Input: three events of +50px, then more +50px events with no pause,
-     * then 250ms of silence, then another +150px burst.
-     * Expected: onNext called once after the first burst, still once after
-     * the tail, twice after the second gesture.
+     * then 400ms of silence, then another +160px burst.
+     * Expected: progress reported at 50 and 100; onCommit('next') once after
+     * the first burst, still once after the tail, twice after the second.
      */
-    const { onNext, onPrev, wheel } = setup()
+    const { onCommit, onProgress, wheel } = setup()
 
     wheel(50)
     wheel(50)
-    expect(onNext).not.toHaveBeenCalled()
+    expect(onProgress.mock.calls.map((c) => c[0])).toEqual([50, 100])
+    expect(onCommit).not.toHaveBeenCalled()
     wheel(50)
-    expect(onNext).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenLastCalledWith('next')
 
     wheel(50)
     wheel(50)
-    expect(onNext).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledTimes(1)
 
-    vi.advanceTimersByTime(250)
+    vi.advanceTimersByTime(400)
     wheel(80)
     wheel(80)
-    expect(onNext).toHaveBeenCalledTimes(2)
-    expect(onPrev).not.toHaveBeenCalled()
+    expect(onCommit).toHaveBeenCalledTimes(2)
+  })
+
+  it('a turn in progress spends the swipe rather than starting the next one', () => {
+    /**
+     * The glide to the next card takes about half a second, during which the
+     * trackpad is still streaming the momentum tail of the swipe that caused
+     * it. If the tracker forgot the gesture during the glide, that tail would
+     * read as a fresh swipe and the pages would run on card after card. While
+     * locked, events keep the gesture alive but can never fire; a new swipe
+     * is accepted only after the lock lifts and the trackpad goes quiet.
+     *
+     * Input: commit a turn; lock; a stream of +60px events every 100ms for
+     * 600ms; unlock; more +60px events with no pause; then 400ms of silence
+     * and a fresh +200px burst.
+     * Expected: onCommit called once until the silence, then twice.
+     */
+    const { onCommit, wheel, setLocked } = setup()
+    wheel(200)
+    expect(onCommit).toHaveBeenCalledTimes(1)
+
+    setLocked(true)
+    for (let i = 0; i < 6; i++) {
+      vi.advanceTimersByTime(100)
+      wheel(60)
+    }
+    setLocked(false)
+    wheel(60)
+    wheel(60)
+    wheel(60)
+    expect(onCommit).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(400)
+    wheel(200)
+    expect(onCommit).toHaveBeenCalledTimes(2)
   })
 
   it('swiping right turns back', () => {
@@ -66,35 +106,54 @@ describe('usePageSwipe: two-finger swipe turns the page once per gesture', () =>
      * turns back to the previous page.
      *
      * Input: one -150px event.
-     * Expected: onPrev called once, onNext never.
+     * Expected: onCommit('prev') once.
      */
-    const { onNext, onPrev, wheel } = setup()
+    const { onCommit, wheel } = setup()
     wheel(-150)
-    expect(onPrev).toHaveBeenCalledTimes(1)
-    expect(onNext).not.toHaveBeenCalled()
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('prev')
+  })
+
+  it('cancels a gesture released before the threshold so the page can settle back', () => {
+    /**
+     * A tentative nudge that stops short must not turn the page, and the
+     * carousel needs to know the fingers are gone so it can glide the page
+     * back to centre.
+     *
+     * Input: +40px then +30px, then 200ms of silence.
+     * Expected: no commit; onCancel called once after the silence.
+     */
+    const { onCommit, onCancel, wheel } = setup()
+    wheel(40)
+    wheel(30)
+    expect(onCancel).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(200)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onCommit).not.toHaveBeenCalled()
   })
 
   it('leaves vertical scrolling and mouse wheels alone', () => {
     /**
      * Scrolling the entry text is vertical; it often carries a little sideways
-     * drift that must never turn the page. The axis is locked on the first
+     * drift that must never move the page. The axis is locked on the first
      * significant event of a gesture, so a mostly-vertical gesture ignores
      * all sideways drift until it ends. Mouse wheels report lines, not pixels,
      * and are ignored outright.
      *
      * Input: a vertical gesture with sideways drift totalling 200px; after a
      * pause, a line-mode event of +300.
-     * Expected: neither callback fires.
+     * Expected: no progress, no commit, no cancel.
      */
-    const { onNext, onPrev, wheel } = setup()
+    const { onCommit, onProgress, onCancel, wheel } = setup()
     wheel(30, 80)
     wheel(70, 10)
     wheel(100, 5)
-    expect(onNext).not.toHaveBeenCalled()
-
     vi.advanceTimersByTime(250)
     wheel(300, 0, 1)
-    expect(onNext).not.toHaveBeenCalled()
-    expect(onPrev).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(250)
+
+    expect(onProgress).not.toHaveBeenCalled()
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
   })
 })

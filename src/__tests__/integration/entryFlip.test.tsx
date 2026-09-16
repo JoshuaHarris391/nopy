@@ -55,6 +55,15 @@ function Probe() {
   )
 }
 
+/**
+ * The live editor's fields, by accessible name. Role queries skip the
+ * neighbouring preview cards, which carry the same inputs but sit in inert,
+ * aria-hidden carousel slots.
+ */
+const titleField = () => screen.getByRole('textbox', { name: 'Entry title' })
+const bodyField = () => screen.getByRole('textbox', { name: 'Entry body' })
+const expectTitle = (title: string) => waitFor(() => expect(titleField()).toHaveValue(title))
+
 function renderAt(history: string[]) {
   return render(
     <MemoryRouter initialEntries={history} initialIndex={history.length - 1}>
@@ -101,16 +110,16 @@ describe('Flipping between entries in the editor', () => {
      * Expected: B → A → B → C by title, and Back lands on /journal/books/2026/08.
      */
     renderAt(['/journal/books/2026/08', `/journal/${B}`])
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
 
     fireEvent.click(screen.getByRole('button', { name: /^next entry/i }))
-    await screen.findByDisplayValue('September light')
+    await expectTitle('September light')
     expect(screen.getByTestId('path')).toHaveTextContent(`/journal/${A}`)
 
     fireEvent.click(screen.getByRole('button', { name: /^previous entry/i }))
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
     fireEvent.click(screen.getByRole('button', { name: /^previous entry/i }))
-    await screen.findByDisplayValue('July storm')
+    await expectTitle('July storm')
 
     fireEvent.click(screen.getByRole('button', { name: 'History back' }))
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/journal/books/2026/08'))
@@ -126,13 +135,12 @@ describe('Flipping between entries in the editor', () => {
      * Expected: B's content in the store is the new text, and A is showing.
      */
     renderAt([`/journal/${B}`])
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
 
-    const textarea = screen.getByPlaceholderText('Begin writing...')
-    fireEvent.change(textarea, { target: { value: 'Rewritten on the way out' } })
+    fireEvent.change(bodyField(), { target: { value: 'Rewritten on the way out' } })
     fireEvent.click(screen.getByRole('button', { name: /^next entry/i }))
 
-    await screen.findByDisplayValue('September light')
+    await expectTitle('September light')
     await waitFor(() => {
       expect(useJournalStore.getState().entries.find((e) => e.id === B)?.content).toBe('Rewritten on the way out')
     })
@@ -147,13 +155,13 @@ describe('Flipping between entries in the editor', () => {
      * Expected: Next disabled on A; Previous disabled on C.
      */
     const first = renderAt([`/journal/${A}`])
-    await screen.findByDisplayValue('September light')
+    await expectTitle('September light')
     expect(screen.getByRole('button', { name: /^next entry/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^previous entry/i })).toBeEnabled()
     first.unmount()
 
     renderAt([`/journal/${C}`])
-    await screen.findByDisplayValue('July storm')
+    await expectTitle('July storm')
     expect(screen.getByRole('button', { name: /^previous entry/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^next entry/i })).toBeEnabled()
   })
@@ -167,17 +175,17 @@ describe('Flipping between entries in the editor', () => {
      * Expected: A is showing, then B again.
      */
     renderAt([`/journal/${B}`])
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: ']', metaKey: true }))
     })
-    await screen.findByDisplayValue('September light')
+    await expectTitle('September light')
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: '[', metaKey: true }))
     })
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
   })
 
   it('Close returns to the month of the entry now showing and marks it for reveal', async () => {
@@ -191,10 +199,10 @@ describe('Flipping between entries in the editor', () => {
      * Expected: path is /journal/books/2026/09 and revealEntryId is A.
      */
     renderAt([`/journal/${B}`])
-    await screen.findByDisplayValue('August walk')
+    await expectTitle('August walk')
 
     fireEvent.click(screen.getByRole('button', { name: /^next entry/i }))
-    await screen.findByDisplayValue('September light')
+    await expectTitle('September light')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/journal/books/2026/09'))
