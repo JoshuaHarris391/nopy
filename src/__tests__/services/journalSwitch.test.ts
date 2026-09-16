@@ -68,6 +68,7 @@ import { useContextStore } from '../../stores/contextStore'
 import { useJournalStore } from '../../stores/journalStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useJournalNavStore } from '../../stores/journalNavStore'
 
 const T = '2026-01-01T00:00:00.000Z'
 
@@ -186,5 +187,24 @@ describe('switchJournal — context notes follow the folder, not the cache', () 
     expect(useJournalStore.getState().entries.map((e) => e.id)).toEqual(['eb'])
     expect(result.added).toBe(1)
     expect(result.profileLoaded).toBe(false)
+  })
+
+  it('forgets where the reader was in the old journal', async () => {
+    /**
+     * The journal navigation memory (last month viewed, scroll offset, entry
+     * to reveal) is per journal too. Left alone, switching journals could
+     * scroll the new journal's month to an offset from the old one or try to
+     * reveal an entry that only exists in the old one.
+     *
+     * Input: nav memory holds September 2026 at 300px with an entry to reveal;
+     * switchJournal('/journal-B').
+     * Expected output: nav memory is fully cleared.
+     */
+    useJournalNavStore.getState().rememberScroll({ year: 2026, month: 9 }, 300)
+    useJournalNavStore.getState().setRevealEntry('ea')
+
+    await switchJournal('/journal-B')
+
+    expect(useJournalNavStore.getState()).toMatchObject({ lastMonth: null, scrollTop: 0, revealEntryId: null })
   })
 })

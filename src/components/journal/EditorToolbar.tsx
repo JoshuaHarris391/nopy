@@ -15,6 +15,8 @@ interface EditorToolbarProps {
   canReindex: boolean
   reindexReady: boolean
   onReindex: () => void
+  /** Fade in on mount, e.g. after a page turn reveals the live editor under its preview. */
+  fadeIn?: boolean
 }
 
 export function EditorToolbar({
@@ -28,6 +30,7 @@ export function EditorToolbar({
   canReindex,
   reindexReady,
   onReindex,
+  fadeIn = false,
 }: EditorToolbarProps) {
   const reindexing = reindexState === 'running'
   const reindexDisabled = !canReindex || !reindexReady
@@ -47,6 +50,7 @@ export function EditorToolbar({
       style={{
         background: 'linear-gradient(to top, var(--parchment) 70%, transparent)',
         padding: '20px 0 16px',
+        animation: fadeIn ? 'appIn 700ms ease-out 120ms both' : undefined,
       }}
     >
       <div className="flex items-center gap-4" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>

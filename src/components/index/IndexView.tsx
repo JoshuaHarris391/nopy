@@ -11,14 +11,56 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useIndexingStore } from '../../stores/indexingStore'
+import { useJournalIndex } from '../../hooks/useJournalIndex'
+import { monthLabel, monthOf } from '../../services/journalBooks'
 import { isLlmConfigured } from '../../services/llm'
+
+const filterBoxStyle: React.CSSProperties = {
+  background: 'var(--warm-cream)',
+  border: '1px solid var(--stone)',
+  borderRadius: 'var(--radius-sm)',
+  transition: 'border-color var(--transition-gentle)',
+}
+
+/** A native select dressed like the search box, with the app's chevron. */
+function FilterSelect({ label, value, onChange, children }: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="relative flex items-center" style={filterBoxStyle}>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="cursor-pointer"
+        style={{
+          appearance: 'none', border: 'none', background: 'transparent', outline: 'none',
+          padding: '9px 32px 9px 14px', fontFamily: 'var(--font-ui)', fontSize: 13.5, color: 'var(--ink)',
+        }}
+        onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = 'var(--bark)')}
+        onBlur={(e) => (e.currentTarget.parentElement!.style.borderColor = 'var(--stone)')}
+      >
+        {children}
+      </select>
+      <ChevronDown size={14} strokeWidth={2} className="absolute pointer-events-none" style={{ right: 12, color: 'var(--sage)' }} />
+    </div>
+  )
+}
 
 export function IndexView() {
   const navigate = useNavigate()
   const entries = useJournalStore((s) => s.entries)
   const loaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
+  const index = useJournalIndex()
   const [search, setSearch] = useState('')
+  // '' means every year / every month. Months are offered only for the chosen
+  // year, and only the months that have entries.
+  const [year, setYear] = useState('')
+  const [month, setMonth] = useState('')
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const indexing = useIndexingStore()
@@ -39,22 +81,35 @@ export function IndexView() {
     if (!loaded) loadEntries()
   }, [loaded, loadEntries])
 
+  const selectedBook = year ? index.bookByYear.get(Number(year)) : undefined
   const filtered = useMemo(() => {
-    if (!search) return entries
     const q = search.toLowerCase()
-    return entries.filter((e) =>
-      e.title.toLowerCase().includes(q) ||
-      e.content.toLowerCase().includes(q) ||
-      e.tags.some((t) => t.toLowerCase().includes(q)) ||
-      (e.summary?.toLowerCase().includes(q) ?? false)
-    )
-  }, [entries, search])
+    const y = year ? Number(year) : null
+    const m = month ? Number(month) : null
+    return index.sorted.filter((e) => {
+      if (y !== null) {
+        const ref = monthOf(e.createdAt)
+        if (ref.year !== y) return false
+        if (m !== null && ref.month !== m) return false
+      }
+      if (!q) return true
+      return (
+        e.title.toLowerCase().includes(q) ||
+        e.content.toLowerCase().includes(q) ||
+        e.tags.some((t) => t.toLowerCase().includes(q)) ||
+        (e.summary?.toLowerCase().includes(q) ?? false)
+      )
+    })
+  }, [index, search, year, month])
+  const narrowed = !!search || !!year
+  // With one year chosen the year is implied; otherwise every row states it.
+  const dateFormat = year ? 'd MMM' : 'd MMM yyyy'
 
   return (
     <>
       <MainHeader title="Index">
         <span style={{ fontFamily: 'var(--font-ui)', fontSize: 11.5, color: 'var(--sage)' }}>
-          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+          {narrowed ? `${filtered.length} of ${entries.length}` : entries.length} {entries.length === 1 ? 'entry' : 'entries'}
         </span>
         {ready && (
           <CancellableActionButton
@@ -78,31 +133,40 @@ export function IndexView() {
             />
           ) : (
             <>
-              {/* Search */}
-              <div
-                className="flex items-center gap-2.5"
-                style={{
-                  background: 'var(--warm-cream)',
-                  border: '1px solid var(--stone)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '9px 14px',
-                  marginBottom: 20,
-                  transition: 'border-color var(--transition-gentle)',
-                }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--bark)')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--stone)')}
-              >
-                <Search size={15} strokeWidth={2} style={{ color: 'var(--sage)', flexShrink: 0 }} />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search entries by title, theme, or keyword..."
-                  style={{
-                    flex: 1, border: 'none', background: 'transparent',
-                    fontFamily: 'var(--font-ui)', fontSize: 13.5, color: 'var(--ink)', outline: 'none',
-                  }}
-                />
+              {/* Search + period filters */}
+              <div className="flex flex-wrap items-stretch gap-2.5" style={{ marginBottom: 20 }}>
+                <div
+                  className="flex items-center gap-2.5 flex-1"
+                  style={{ ...filterBoxStyle, padding: '9px 14px', minWidth: 220 }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--bark)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--stone)')}
+                >
+                  <Search size={15} strokeWidth={2} style={{ color: 'var(--sage)', flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search entries by title, theme, or keyword..."
+                    style={{
+                      flex: 1, border: 'none', background: 'transparent',
+                      fontFamily: 'var(--font-ui)', fontSize: 13.5, color: 'var(--ink)', outline: 'none',
+                    }}
+                  />
+                </div>
+                <FilterSelect label="Year" value={year} onChange={(v) => { setYear(v); setMonth('') }}>
+                  <option value="">All years</option>
+                  {index.books.map((b) => (
+                    <option key={b.year} value={String(b.year)}>{b.year}</option>
+                  ))}
+                </FilterSelect>
+                {selectedBook && (
+                  <FilterSelect label="Month" value={month} onChange={setMonth}>
+                    <option value="">All months</option>
+                    {selectedBook.months.map((m) => (
+                      <option key={m.month} value={String(m.month)}>{monthLabel(m.month)}</option>
+                    ))}
+                  </FilterSelect>
+                )}
               </div>
 
               {/* Table */}
@@ -126,7 +190,7 @@ export function IndexView() {
                         className="cursor-pointer transition-colors hover:bg-[var(--warm-cream)]"
                       >
                         <td className="px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--sage)', fontWeight: 500 }}>
-                          {format(new Date(entry.createdAt), 'd MMM')}
+                          {format(new Date(entry.createdAt), dateFormat)}
                         </td>
                         <td className="px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)', fontWeight: 500, color: 'var(--ink)', minWidth: 300 }}>
                           {entry.title || 'Untitled'}
@@ -204,9 +268,10 @@ export function IndexView() {
                 })}
               </table>
 
-              {filtered.length === 0 && search && (
+              {filtered.length === 0 && narrowed && (
                 <div className="py-8 text-center" style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--sage)' }}>
-                  No entries match "{search}"
+                  {search ? `No entries match "${search}"` : 'No entries'}
+                  {year && ` in ${month ? `${monthLabel(Number(month))} ` : ''}${year}`}
                 </div>
               )}
             </>

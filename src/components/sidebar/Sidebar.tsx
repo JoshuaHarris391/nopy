@@ -7,7 +7,7 @@ import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
 import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
 
 const navItems = [
-  { to: '/', icon: BookOpen, label: 'Journal', section: 'Reflect' },
+  { to: '/journal', icon: BookOpen, label: 'Journal', section: 'Reflect' },
   { to: '/chat', icon: MessageCircle, label: 'Chat', section: 'Understand' },
   { to: '/context', icon: Layers, label: 'Context', section: 'Understand' },
   { to: '/profile', icon: Target, label: 'Profile', section: 'Understand' },

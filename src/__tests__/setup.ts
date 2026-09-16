@@ -15,3 +15,9 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   })
 }
+
+// jsdom has no layout, so Element.scrollIntoView is missing. MonthScroll calls
+// it when revealing the entry the reader just came back from.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}
