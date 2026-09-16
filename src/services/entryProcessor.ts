@@ -1,6 +1,6 @@
 import { sendMessage, sendMessageStreaming, resolveModel, type Message } from './llm'
 import { parseLLMJson, LLMParseError } from './parseLLMJson'
-import { TOKEN_LIMITS } from './models'
+import { TOKEN_LIMITS, DEFAULT_CONTEXT_WINDOW } from './models'
 import { ENTRY_METADATA_SYSTEM, buildEntryIndexUserMessage } from './prompts/entryMetadata'
 import { PROFILE_NARRATIVE_SYSTEM } from './prompts/profileNarrative'
 import { FULL_PROFILE_SYSTEM, FULL_PROFILE_REVISE_SYSTEM } from './prompts/fullProfile'
@@ -11,7 +11,7 @@ import type { LocalStatsSchema } from '../schemas/profile'
 import { EntryRecordCoercedSchema, CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { ProfileResponseSchema } from '../schemas/profile'
 import {
-  finaliseRecord, buildIndexHints, isStaleIndex, renderEntryRecord, fitRecordsToBudget, buildCorpusReport,
+  finaliseRecord, buildIndexHints, isStaleIndex, fitRecordsToBudget, buildCorpusReport,
   type EntryRecord, type IndexHints, type CorpusReport,
 } from './entryRecords'
 import { estimateTokens } from '../utils/tokenEstimator'
@@ -168,26 +168,38 @@ export async function processAllEntries(
   return results
 }
 
+export interface NarrativeProfileOptions {
+  /** The corpus report over the whole journal. Built here if omitted. */
+  corpusReport?: CorpusReport
+  /** Lightweight model's context window; records are fitted into what remains. */
+  contextWindowTokens?: number
+  onStreamProgress?: (charsReceived: number) => void
+  signal?: AbortSignal
+}
+
 /**
- * Summary profile (structured JSON) from the corpus report and brief records.
+ * Summary profile (structured JSON) from the corpus report plus brief
+ * records for the recent window and one-line digests for older entries,
+ * fitted to the lightweight model's window. Never reads `entry.content`.
  * Lightweight model, streaming.
  */
 export async function generateProfileFromEntries(
   entries: JournalEntry[],
   config: LlmConfig,
-  onStreamProgress?: (charsReceived: number) => void,
-  signal?: AbortSignal,
-  corpusReport?: CorpusReport,
+  opts: NarrativeProfileOptions = {},
 ): Promise<z.infer<typeof ProfileResponseSchema>> {
   const indexed = entries.filter((e) => e.indexed && e.summary)
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   console.log('[entryProcessor] generateProfileFromEntries: indexed entries', indexed.length)
   if (indexed.length === 0) {
     throw new Error('No indexed entries with summaries available — index entries before generating a profile')
   }
-  const report = corpusReport ?? buildCorpusReport(entries)
-  const records = indexed.map((e) => renderEntryRecord(e, 'brief', report.recurring)).join('\n\n')
-  const content = `${report.text}\n\n# Entry records (${indexed.length}, oldest first)\n\n${records}`
+  const report = opts.corpusReport ?? buildCorpusReport(entries)
+  const windowTokens = opts.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW.local
+  const overhead = estimateTokens(PROFILE_NARRATIVE_SYSTEM) + estimateTokens(report.text) + TOKEN_LIMITS.profileNarrative
+  const budget = Math.max(0, Math.floor(windowTokens * 0.9) - overhead)
+  const fitted = fitRecordsToBudget(indexed, budget, report.recurring, { recentTier: 'brief' })
+  console.log('[entryProcessor] generateProfileFromEntries: budget', budget, 'tokens | brief', fitted.standard, '| digest', fitted.digest, '| omitted', fitted.dropped)
+  const content = `${report.text}\n\n# Entry records (${fitted.included}, oldest first)\n\n${fitted.text}`
 
   console.log('[entryProcessor] generateProfileFromEntries: sending', content.length, 'chars to lightweight model')
   const response = await sendMessageStreaming(
@@ -196,8 +208,8 @@ export async function generateProfileFromEntries(
     PROFILE_NARRATIVE_SYSTEM,
     [{ role: 'user', content }],
     TOKEN_LIMITS.profileNarrative,
-    onStreamProgress ?? (() => {}),
-    signal,
+    opts.onStreamProgress ?? (() => {}),
+    opts.signal,
   )
 
   console.log('[entryProcessor] generateProfileFromEntries: response', response.length, 'chars')

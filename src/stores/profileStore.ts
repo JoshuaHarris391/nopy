@@ -164,16 +164,29 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     // Deterministic rollups over the whole journal; both LLM steps read it.
     const corpusReport = buildCorpusReport(entries)
 
+    // Each step's records are fitted to the window of the model that reads
+    // them. `getModelContextWindow` resolves the main slot, so the
+    // lightweight window is looked up through a config view that puts the
+    // lightweight model id in the main slot.
+    const windowFor = (role: 'main' | 'lightweight'): number => {
+      const modelId = resolveModel(config, role)
+      const view: LlmConfig = role === 'main'
+        ? config
+        : { ...config, anthropicMainModel: modelId, openaiModel: modelId, localModel: modelId }
+      const catalogWindow = config.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(modelId)
+      return getModelContextWindow(view, undefined, useSettingsStore.getState().modelContextWindowOverride, catalogWindow).tokens
+    }
+
     // Generate summary profile via the lightweight model (streaming)
     const sSummary = stepNum('summary')
     setPhase(`Step ${sSummary}/${totalSteps} — Generating summary profile (${lightweightLabel})...`)
     setProgress(0, 0, 'Waiting for response...')
-    const narrative = await generateProfileFromEntries(
-      entries, config,
-      (chars) => setProgress(Math.min(chars, 8000), 8000, `${chars} chars received`),
-      signal,
+    const narrative = await generateProfileFromEntries(entries, config, {
       corpusReport,
-    )
+      contextWindowTokens: windowFor('lightweight'),
+      onStreamProgress: (chars) => setProgress(Math.min(chars, 8000), 8000, `${chars} chars received`),
+      signal,
+    })
     console.log(`[profileStore] Step ${sSummary}/${totalSteps}: summary profile generated`)
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -196,15 +209,10 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
         : `Step ${sFull}/${totalSteps} — Writing full psychological profile (${mainLabel})...`)
       setProgress(0, 0, 'Waiting for response...')
       try {
-        const hostedId = config.provider === 'openai' ? config.openaiModel : config.anthropicMainModel
-        const catalogWindow = config.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
-        const { tokens: contextWindowTokens } = getModelContextWindow(
-          config, undefined, useSettingsStore.getState().modelContextWindowOverride, catalogWindow,
-        )
         fullProfile = await generateFullProfile(selection.entries, config, {
           corpusReport,
           priorProfile: selection.isRevision ? prior?.fullProfile : null,
-          contextWindowTokens,
+          contextWindowTokens: windowFor('main'),
           onStreamProgress: (chars) => setProgress(Math.min(chars, 20000), 20000, `${chars} chars received`),
           signal,
         })

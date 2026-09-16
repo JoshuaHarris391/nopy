@@ -693,11 +693,12 @@ function fmtStateValue(s: { value: number | null; confidence: number | null }): 
 
 /**
  * Compact plain-text rendering of one entry's record for a prompt. Empty
- * lines are omitted. Never includes `entry.content`.
+ * lines are omitted. Never includes `entry.content`; the body is only
+ * counted (not read) for the word count in the `full` and legacy headers.
  */
 export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurring: RecurringQuote[] = []): string {
   const date = day(entry.createdAt)
-  const words = entry.content.split(/\s+/).filter(Boolean).length
+  const words = () => entry.content.split(/\s+/).filter(Boolean).length
   const lines: string[] = []
 
   const moodStr = entry.mood
@@ -706,7 +707,7 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
 
   if (!hasStructuredIndex(entry)) {
     if (tier === 'digest') return `- ${date} · "${entry.title}" · ${moodStr} · legacy index`
-    lines.push(`## ${date} · "${entry.title}" · ${moodStr} · ${words}w`)
+    lines.push(`## ${date} · "${entry.title}" · ${moodStr} · ${words()}w`)
     lines.push(entry.summary || '(no summary)')
     lines.push('[legacy index: summary only]')
     return lines.join('\n')
@@ -732,7 +733,7 @@ export function renderEntryRecord(entry: JournalEntry, tier: RecordTier, recurri
   const full = tier === 'full'
   const states = STATE_KEYS.map((k) => `${STATE_SHORT[k]} ${fmtStateValue(ins.states[k])}`).join(' ')
   lines.push(full
-    ? `## ${date} · "${entry.title}" · ${moodStr} · ${states}${domains} · ${words}w`
+    ? `## ${date} · "${entry.title}" · ${moodStr} · ${states}${domains} · ${words()}w`
     : `## ${date} · "${entry.title}" · ${moodStr}${domains}`)
   lines.push(entry.summary || '')
 
@@ -802,10 +803,12 @@ export function selectEntriesForFullProfile(
 
 export interface FitOptions {
   now?: Date
-  /** Entries this recent get the standard tier. */
+  /** Entries this recent get the recent tier. */
   recentDays?: number
-  /** At least this many newest entries get the standard tier regardless of age. */
+  /** At least this many newest entries get the recent tier regardless of age. */
   recentMin?: number
+  /** Tier for recent entries: `standard` for the full profile, `brief` for the summary step. */
+  recentTier?: 'standard' | 'brief'
 }
 
 /**
@@ -824,12 +827,13 @@ export function fitRecordsToBudget(
   const now = opts.now ?? new Date()
   const recentDays = opts.recentDays ?? 90
   const recentMin = opts.recentMin ?? 60
+  const recentTier: RecordTier = opts.recentTier ?? 'standard'
   const sorted = [...entries].sort(byDateAsc)
   const cutoff = new Date(now.getTime() - recentDays * 86_400_000).getTime()
   const firstRecentByCount = Math.max(0, sorted.length - recentMin)
   const rendered = sorted.map((e, i) => {
     const recent = i >= firstRecentByCount || new Date(e.createdAt).getTime() >= cutoff
-    const tier: RecordTier = recent ? 'standard' : 'digest'
+    const tier: RecordTier = recent ? recentTier : 'digest'
     return { tier, text: renderEntryRecord(e, tier, recurring) }
   })
   let used = 0
@@ -842,7 +846,7 @@ export function fitRecordsToBudget(
   }
   const kept = rendered.slice(start)
   const dropped = start
-  const standard = kept.filter((r) => r.tier === 'standard').length
+  const standard = kept.filter((r) => r.tier !== 'digest').length
   const digest = kept.length - standard
   const parts: string[] = []
   if (dropped > 0) parts.push(`(${dropped} earlier record${dropped === 1 ? '' : 's'} omitted for length; the corpus report above still covers them)`)

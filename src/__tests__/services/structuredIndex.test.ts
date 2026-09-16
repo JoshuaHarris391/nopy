@@ -17,9 +17,10 @@ vi.mock('../../services/llm', () => ({
 
 import { entryToMarkdown, parseMarkdown } from '../../services/fs'
 import { FrontmatterEntrySchema } from '../../schemas/frontmatter'
-import { processEntry, generateFullProfile, MAX_INDEX_RETRIES } from '../../services/entryProcessor'
+import { processEntry, generateFullProfile, generateProfileFromEntries, MAX_INDEX_RETRIES } from '../../services/entryProcessor'
 import { buildCorpusReport } from '../../services/entryRecords'
 import { FULL_PROFILE_REVISE_SYSTEM, FULL_PROFILE_SYSTEM } from '../../services/prompts/fullProfile'
+import { PROFILE_NARRATIVE_SYSTEM } from '../../services/prompts/profileNarrative'
 import type { LlmConfig } from '../../types/settings'
 import { makeEntry, makeInsight } from '../fixtures/insight'
 
@@ -179,6 +180,46 @@ describe('Repairing an unusable index response', () => {
       .rejects.toThrow(/Failed to parse LLM response as JSON/)
     expect(sendMessageMock).toHaveBeenCalledTimes(1 + MAX_INDEX_RETRIES)
     expect(MAX_INDEX_RETRIES).toBe(3)
+  })
+})
+
+describe('Summary profile reads records only', () => {
+  it('sends the corpus report plus fitted brief records, never raw entry text', async () => {
+    /**
+     * The summary (dashboard) profile used to render a brief record for
+     * every entry with no budget. It now gets the same treatment as the
+     * full profile: brief records for the recent window, one-line digests
+     * for older entries, fitted to the lightweight model's window, and no
+     * journal text at all.
+     * Input: two entries whose content carries a sentinel (both inside the
+     * "newest 60" recent window, so both render brief); a small window that
+     * still fits both.
+     * Expected: lightweight role and the narrative prompt; the message has
+     * the corpus report and brief records (summary and Realised, no Quotes)
+     * for both entries, and no sentinel.
+     */
+    const sentinel = 'RAW-JOURNAL-TEXT-MUST-NOT-LEAK'
+    const entries = [
+      makeEntry({ title: 'Long ago', createdAt: '2020-01-01T10:00:00.000Z', content: `${sentinel} old` }),
+      makeEntry({ title: 'Recent', createdAt: new Date().toISOString(), content: `${sentinel} new`, insight: makeInsight({ quotes: [] }) }),
+    ]
+    sendMessageStreamingMock.mockResolvedValue(JSON.stringify({
+      summary: 'A summary.', themes: [{ theme: 'work', frequency: 5, description: 'd' }], cognitivePatterns: [],
+      strengths: [], growthAreas: [], frameworkInsights: [], emotionalTrends: [],
+    }))
+
+    await generateProfileFromEntries(entries, config, { corpusReport: buildCorpusReport(entries), contextWindowTokens: 20_000 })
+
+    const [, role, system, messages] = sendMessageStreamingMock.mock.calls[0]
+    expect(role).toBe('lightweight')
+    expect(system).toBe(PROFILE_NARRATIVE_SYSTEM)
+    const sent = messages[0].content as string
+    expect(sent).toContain('# Corpus report')
+    expect(sent).toContain('## 2020-01-01 · "Long ago" · mood 4/10 (writer-rated)')
+    expect(sent).toContain('"Recent" · mood 4/10 (writer-rated)')
+    expect(sent).toContain('Realised: I need to answer her before Friday')
+    expect(sent).not.toContain('Quotes:')
+    expect(sent).not.toContain(sentinel)
   })
 })
 
