@@ -14,7 +14,7 @@ export interface HeatmapChartProps {
 
 const ROW_H = 26
 const LEFT = 110
-const PAD = { top: 8, right: 16, bottom: 40 }
+const PAD = { top: 8, right: 16, bottom: 52 }
 
 /**
  * Rows = categories, columns = buckets, cell opacity = count / max. Stays
@@ -65,8 +65,8 @@ export function HeatmapChart({ id, data, labels = {}, emptyText = 'Not enough in
               })}
             </g>
           ))}
-          {/* Ramp key: low → high */}
-          <g data-testid="heat-ramp" transform={`translate(${CHART_W - PAD.right - 130}, ${height - 12})`}>
+          {/* Ramp legend on its own row beneath the period labels */}
+          <g data-testid="heat-ramp" transform={`translate(${CHART_W - PAD.right - 130}, ${height - 8})`}>
             <text x={-6} y={4} textAnchor="end" fill="var(--sage)" fontSize={10} fontFamily="var(--font-ui)">fewer</text>
             {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
               <rect key={t} x={i * 18} y={-5} width={16} height={9} rx={2} fill={heatRampColor(t)} />
@@ -74,7 +74,7 @@ export function HeatmapChart({ id, data, labels = {}, emptyText = 'Not enough in
             <text x={5 * 18 + 4} y={4} fill="var(--sage)" fontSize={10} fontFamily="var(--font-ui)">more</text>
           </g>
           {buckets.map((b, ci) => (ci % tickEvery === 0 ? (
-            <text key={b.key} x={LEFT + ci * cellW + cellW / 2} y={height - 8} textAnchor="middle" fill="var(--sage)" fontSize={10} fontFamily="var(--font-ui)">{b.label}</text>
+            <text key={b.key} x={LEFT + ci * cellW + cellW / 2} y={height - 30} textAnchor="middle" fill="var(--sage)" fontSize={10} fontFamily="var(--font-ui)">{b.label}</text>
           ) : null))}
           {hovered && (() => {
             const b = buckets[hovered.col]
