@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -27,6 +27,7 @@ import { ContextNoteEditor } from './ContextNoteEditor'
 import { ContextItemViewer } from './ContextItemViewer'
 import { IndexLimitInput } from '../ui/IndexLimitInput'
 import { useContextStore } from '../../stores/contextStore'
+import { useRememberedScroll } from '../../hooks/usePageMemory'
 import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useJournalStore } from '../../stores/journalStore'
@@ -208,6 +209,8 @@ export function ContextView() {
   }
 
   const activeItem = activeId ? byId.get(activeId) : null
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef, loaded)
 
   return (
     <>
@@ -217,7 +220,7 @@ export function ContextView() {
         </span>
       </MainHeader>
 
-      <div className="flex-1 overflow-y-auto" style={{ padding: '24px 44px 48px' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: '24px 44px 48px' }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
           <ContextBudgetBar
             baseTokens={baseTokens}

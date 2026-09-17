@@ -82,6 +82,21 @@ Session-only memory of where the reader is in the journal: the last month scroll
 
 The sorted, year/month-bucketed view of `entries` is not stored; it is derived by `src/services/journalBooks.ts` and memoised per entries-array identity (`getJournalIndex`).
 
+### `navigationStore`
+
+Session-only mirror of the router's history, so the UI can tell whether history Back stays inside the app and which page it lands on. The router is the back stack; this store only watches it (`src/app/HistoryMirror.tsx`, mounted first in `AppShell`, calls `sync(location, navigationType)` on every route change).
+
+| Field | Type | Description |
+|---|---|---|
+| `entries` | `{ key, pathname, root }[]` | One per history entry the session has seen |
+| `index` | `number` | Position of the current page in `entries` |
+
+`root` marks a page chosen from the Sidebar or BottomNav (their `NavLink`s navigate with `ROOT_STATE`) or the page the session started on; a redirect (`REPLACE`) inherits it. A root page never shows the back arrow. Selectors: `selectCanGoBack`, `selectPrevious`. A `PUSH` after a Back discards the forward entries and their page memory, like the browser does. `clear()` (on journal switch) keeps only the current page, as a root.
+
+### `pageMemoryStore`
+
+Session-only memory of what a page looked like when the reader left it, keyed by the router's `location.key`: a scroll offset and named values. Because each history entry has its own key, history Back restores the page exactly as it was, while a fresh visit (a new push) starts clean. Components use it through `useRememberedState` and `useRememberedScroll` (`src/hooks/usePageMemory.ts`); nothing subscribes to `pages`, so scroll-time writes never re-render. Index remembers search, year, month, the expanded row and scroll; Insights remembers range, offset and scroll; the other pages remember scroll. The month scroll keeps its own month-keyed memory in `journalNavStore`.
+
 ---
 
 ## Boundary rules
@@ -107,6 +122,8 @@ These rules keep stores decoupled and mutations auditable:
 | `chatStore` | `idb-keyval` (manual) | `chat:meta` + `chat:session:{id}` per session |
 | `settingsStore` | Zustand `persist` middleware | `nopy-settings` |
 | `journalNavStore` | None (session only) | — |
+| `navigationStore` | None (session only) | — |
+| `pageMemoryStore` | None (session only) | — |
 
 Every mutation writes the full value back. There is no partial update, batching, or lazy flush.
 
@@ -136,5 +153,7 @@ See `docs/tasks/refactor/01-surface-fs-errors.md` for the implementation plan.
 | Chat sessions store | `src/stores/chatStore.ts` |
 | Settings store | `src/stores/settingsStore.ts` |
 | Journal navigation memory | `src/stores/journalNavStore.ts` |
+| History mirror (back arrow) | `src/stores/navigationStore.ts`, `src/app/HistoryMirror.tsx` |
+| Per-page memory (filters, scroll) | `src/stores/pageMemoryStore.ts`, `src/hooks/usePageMemory.ts` |
 | Journal books index (derived) | `src/services/journalBooks.ts` |
 | Store types | `src/types/journal.ts`, `src/types/profile.ts`, `src/types/chat.ts`, `src/types/settings.ts` |

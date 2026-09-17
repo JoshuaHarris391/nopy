@@ -15,6 +15,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { isLlmConfigured } from '../../services/llm'
 import { isStaleIndex, applyProfileScope, describeScope } from '../../services/entryRecords'
+import { useRememberedScroll } from '../../hooks/usePageMemory'
 
 /**
  * The AI-generated profile and its controls only. Locally computed charts
@@ -37,6 +38,8 @@ export function ProfileView() {
   const [showFullProfile, setShowFullProfile] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [profileHovered, setProfileHovered] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef, loaded && journalLoaded)
   const staleCount = useMemo(() => entries.filter(isStaleIndex).length, [entries])
   const inScope = useMemo(() => applyProfileScope(entries, scope).filter((e) => e.indexed).length, [entries, scope])
   const indexedTotal = useMemo(() => entries.filter((e) => e.indexed).length, [entries])
@@ -107,7 +110,7 @@ export function ProfileView() {
           </>
         )}
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: generating && !profile ? 0 : '36px 44px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: generating && !profile ? 0 : '36px 44px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
         {ready && !generating && (
           <div
             data-testid="scope-count"

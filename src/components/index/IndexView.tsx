@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Search, BookOpen, Sparkles, ChevronDown } from 'lucide-react'
@@ -13,9 +13,14 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useIndexingStore } from '../../stores/indexingStore'
+import { useJournalNavStore } from '../../stores/journalNavStore'
 import { useJournalIndex } from '../../hooks/useJournalIndex'
+import { useRememberedState, useRememberedScroll } from '../../hooks/usePageMemory'
 import { monthLabel, monthOf } from '../../services/journalBooks'
 import { isLlmConfigured } from '../../services/llm'
+
+/** How long the row of the entry just closed stays tinted on return. */
+const HIGHLIGHT_MS = 1600
 
 const filterBoxStyle: React.CSSProperties = {
   background: 'var(--warm-cream)',
@@ -58,14 +63,31 @@ export function IndexView() {
   const loaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const index = useJournalIndex()
-  const [search, setSearch] = useState('')
+  // Filters, the open row and the scroll offset are remembered per history
+  // entry: opening an entry and coming Back finds the index as it was, while
+  // a fresh visit from the rail starts clean.
+  const [search, setSearch] = useRememberedState('search', '')
   // '' means every year / every month. Months are offered only for the chosen
   // year, and only the months that have entries.
-  const [year, setYear] = useState('')
-  const [month, setMonth] = useState('')
+  const [year, setYear] = useRememberedState('year', '')
+  const [month, setMonth] = useRememberedState('month', '')
   const llmConfig = useSettingsStore(useShallow(selectLlmConfig))
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useRememberedState<string | null>('expandedId', null)
   const indexing = useIndexingStore()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef, loaded)
+
+  // Coming Back from an entry: tint its row so the eye lands on it. Decided
+  // once at mount and consumed, so a later visit does not repeat it.
+  const [highlightId, setHighlightId] = useState<string | null>(() => useJournalNavStore.getState().revealEntryId)
+  useLayoutEffect(() => {
+    if (highlightId) useJournalNavStore.getState().setRevealEntry(null)
+  }, [highlightId])
+  useEffect(() => {
+    if (!highlightId || !loaded) return
+    const t = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS)
+    return () => clearTimeout(t)
+  }, [highlightId, loaded])
 
   // Hide the Update button until the active provider is configured,
   // otherwise the dispatcher would throw.
@@ -125,7 +147,7 @@ export function IndexView() {
           />
         )}
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div>
           {loaded && entries.length === 0 ? (
             <EmptyState
@@ -189,8 +211,9 @@ export function IndexView() {
                   return (
                     <tbody key={entry.id}>
                       <tr
+                        data-entry-id={entry.id}
                         onClick={() => navigate(`/journal/${entry.id}`)}
-                        className="cursor-pointer transition-colors hover:bg-[var(--warm-cream)]"
+                        className={`cursor-pointer transition-colors hover:bg-[var(--warm-cream)]${highlightId === entry.id ? ' entry-card--returned' : ''}`}
                       >
                         <td className="px-3 py-2.5 align-top" style={{ borderBottom: isExpanded ? 'none' : '1px solid rgba(212, 201, 184, 0.35)', color: 'var(--sage)', fontWeight: 500 }}>
                           {format(new Date(entry.createdAt), dateFormat)}

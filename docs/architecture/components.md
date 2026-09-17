@@ -21,7 +21,8 @@ All shared presentational components live in `src/components/ui/`. These are sma
 | `MoodDot` | `MoodDot.tsx` | `value: number` | Colored circle indicating mood level |
 | `ProgressBar` | `ProgressBar.tsx` | `current: number`, `total: number` | Horizontal progress indicator |
 | `EmptyState` | `EmptyState.tsx` | `title: string`, `description: string` | Centered message for empty views |
-| `MainHeader` | `MainHeader.tsx` | `title: string`, `actions?: ReactNode` | Page-level header bar |
+| `MainHeader` | `MainHeader.tsx` | `title?`, `leading?` (replaces the title, e.g. a breadcrumb), `back?: { label, onBack }` (always show the arrow, run this), `hideBack?`, `children` (right-side actions) | Page-level header bar. Shows the back arrow itself on pages reached from inside content (see `navigationStore`) |
+| `BackButton` | `BackButton.tsx` | `label: string`, `onClick` | Icon-only `ArrowLeft` labelled "Back to {label}"; rendered by `MainHeader` |
 | `Tag` | `Tag.tsx` | `label: string` | Inline tag chip |
 | `MoodBar` | `MoodBar.tsx` | `value: number \| null`, `onChange: (v: number \| null) => void` | 10-segment mood picker |
 | `ConfirmDialog` | `ConfirmDialog.tsx` | `open`, `title`, `body`, `confirmLabel`, `danger`, `onConfirm`, `onCancel` | Accessible confirmation modal with focus trap |
@@ -44,6 +45,8 @@ All custom hooks live in `src/hooks/`. Each hook encapsulates a single reusable 
 | `useAutoResizeTextarea` | `useAutoResizeTextarea.ts` | `ref: RefObject<HTMLTextAreaElement>`, `content: string`, `fontSize: number` | `{ resize: () => void }` | Auto-resize a textarea to fit its content |
 | `useAnthropicModels` | `useAnthropicModels.ts` | `apiKey: string` | `{ models, loading }` | Fetch available Claude models for the settings model picker |
 | `useCancellableTask` | `useCancellableTask.ts` | `resultTimeout?: number` | `{ state, progress, result, error, run, abort }` | State machine for async tasks with AbortSignal support |
+| `useRememberedState` | `usePageMemory.ts` | `name: string`, `initial: T` | `[value, setValue]` | `useState` remembered per history entry, so history Back finds it and a fresh visit starts from `initial` |
+| `useRememberedScroll` | `usePageMemory.ts` | `ref: RefObject<HTMLElement>`, `ready?: boolean` | `{ onScroll }` | Restore a page's scroll container on Back (before paint, once `ready`); save on scroll and unmount |
 
 ### When to create a hook
 

@@ -59,7 +59,8 @@ export function BookView() {
 
   return (
     <>
-      <MainHeader leading={<Breadcrumb crumbs={crumbs} />}>
+      {/* The breadcrumb already climbs back; an arrow beside it would say the same thing twice. */}
+      <MainHeader leading={<Breadcrumb crumbs={crumbs} />} hideBack>
         <JournalHeaderActions />
       </MainHeader>
       {!wide && tabs('horizontal')}

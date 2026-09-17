@@ -331,6 +331,7 @@ Icons appear:
 - In navigation (small, Sage-colored)
 - Inside buttons (paired with a label, never alone unless the function is unambiguous)
 - As metadata prefixes (word count, read time)
+- As the header's back arrow (`ArrowLeft`, icon-only, named "Back to X" in its tooltip and aria-label). Chevrons stay reserved for stepping prev/next; a breadcrumb, where one exists, replaces the arrow rather than sitting beside it.
 
 Icons do not appear:
 - As decoration

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, fireEvent, screen, waitFor, act, cleanup } from '@testing-library/react'
-import { MemoryRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 
 /**
  * In-memory mock of idb-keyval. journalStore persists entries through these
@@ -18,8 +18,11 @@ vi.mock('idb-keyval', () => ({
 }))
 
 import { EntryEditor } from '../../components/journal/EntryEditor'
+import { HistoryMirror } from '../../app/HistoryMirror'
 import { useJournalStore } from '../../stores/journalStore'
 import { useJournalNavStore } from '../../stores/journalNavStore'
+import { useNavigationStore } from '../../stores/navigationStore'
+import { usePageMemoryStore } from '../../stores/pageMemoryStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { JournalEntry } from '../../types/journal'
 
@@ -42,16 +45,31 @@ function seed(id: string, title: string, local: Date): JournalEntry {
   }
 }
 
-/** Shows where the router is and offers a real history Back, like the browser's. */
+/**
+ * Shows where the router is and offers a real history Back, like the
+ * browser's. Mirrors history into navigationStore as AppShell does, so the
+ * editor knows whether it was drilled into from another page.
+ */
 function Probe() {
   const location = useLocation()
   const navigate = useNavigate()
   return (
     <>
+      <HistoryMirror />
       <div data-testid="path">{location.pathname}</div>
       <button onClick={() => navigate(-1)}>History back</button>
       <Outlet />
     </>
+  )
+}
+
+/** Stands in for the month scroll: a card that opens entry A, like EntryCard does. */
+function MonthStub() {
+  return (
+    <div>
+      Month scroll
+      <Link to={`/journal/${A}`}>Open September light</Link>
+    </div>
   )
 }
 
@@ -70,7 +88,7 @@ function renderAt(history: string[]) {
       <Routes>
         <Route element={<Probe />}>
           <Route path="/journal/:id" element={<EntryEditor />} />
-          <Route path="/journal/books/:year/:month" element={<div>Month scroll</div>} />
+          <Route path="/journal/books/:year/:month" element={<MonthStub />} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -82,6 +100,8 @@ describe('Flipping between entries in the editor', () => {
     idbStore.clear()
     useSettingsStore.setState({ journalPath: '/test/journal' })
     useJournalNavStore.getState().clear()
+    useNavigationStore.setState({ entries: [], index: -1 })
+    usePageMemoryStore.getState().clear()
     useJournalStore.setState({
       entries: [
         seed(B, 'August walk', new Date(2026, 7, 12, 9, 0)),
@@ -188,24 +208,51 @@ describe('Flipping between entries in the editor', () => {
     await expectTitle('August walk')
   })
 
-  it('Close returns to the month of the entry now showing and marks it for reveal', async () => {
+  it('Back returns to the month of the entry now showing and marks it for reveal', async () => {
     /**
      * After flipping across a month boundary, "back to the journal" should
      * mean the month of the page currently open, scrolled to that entry, not
      * the month the reader started in. The editor records the entry to reveal
-     * and navigates to its month; MonthScroll then scrolls to it.
+     * and navigates to its month; MonthScroll then scrolls to it. With no
+     * page behind the editor (opened cold) the arrow is labelled with that
+     * month, since that is where it goes.
      *
-     * Input: open B (August), flip Next to A (September), click Close.
-     * Expected: path is /journal/books/2026/09 and revealEntryId is A.
+     * Input: open B (August) cold, flip Next to A (September), click the
+     * header arrow.
+     * Expected: the arrow reads "Back to September 2026"; path becomes
+     * /journal/books/2026/09 and revealEntryId is A.
      */
     renderAt([`/journal/${B}`])
     await expectTitle('August walk')
+    expect(screen.getByRole('button', { name: 'Back to August 2026' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /^next entry/i }))
     await expectTitle('September light')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to September 2026' }))
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/journal/books/2026/09'))
     expect(useJournalNavStore.getState().revealEntryId).toBe(A)
+  })
+
+  it('Back from an entry opened from its month steps back through history rather than pushing', async () => {
+    /**
+     * The common case: a card in the month scroll opens the entry, and the
+     * header arrow takes the reader back to that very page. It uses history
+     * Back so the month scroll restores its position, and it still marks the
+     * entry so its card pulses. Nothing is pushed, so the history is exactly
+     * as it was before the entry was opened.
+     *
+     * Input: start on September; click the card for A; click the arrow.
+     * Expected: the arrow reads "Back to September 2026"; path returns to
+     * the month; revealEntryId is A; the history mirror is back at index 0.
+     */
+    renderAt(['/journal/books/2026/09'])
+    fireEvent.click(screen.getByRole('link', { name: 'Open September light' }))
+    await expectTitle('September light')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to September 2026' }))
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/journal/books/2026/09'))
+    expect(useJournalNavStore.getState().revealEntryId).toBe(A)
+    expect(useNavigationStore.getState().index).toBe(0)
   })
 })

@@ -80,21 +80,27 @@ export function MonthScroll({ month: monthProp, entries, isCurrentMonth, journal
   }, [highlightId])
 
   // Save position: rAF-throttled while scrolling, and a final write on unmount.
+  const lastScrollRef = useRef(restore.scrollTop)
   const rafRef = useRef<number | null>(null)
   const handleScroll = () => {
+    const el = containerRef.current
+    if (el) lastScrollRef.current = el.scrollTop
     if (rafRef.current !== null) return
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null
-      const el = containerRef.current
-      if (el) useJournalNavStore.getState().rememberScroll(month, el.scrollTop)
+      useJournalNavStore.getState().rememberScroll(month, lastScrollRef.current)
     })
   }
-  useEffect(() => {
-    // Capture now: the ref is detached by the time cleanup runs.
+  // A layout effect's cleanup runs while the panel is still in the DOM; a
+  // passive one would find it removed and reading 0. Capture the element
+  // now: the ref is null by then.
+  useLayoutEffect(() => {
     const el = containerRef.current
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      if (el) useJournalNavStore.getState().rememberScroll(month, el.scrollTop)
+      if (!el) return
+      const scrollTop = el.isConnected ? el.scrollTop : lastScrollRef.current
+      useJournalNavStore.getState().rememberScroll(month, scrollTop)
     }
   }, [month])
 

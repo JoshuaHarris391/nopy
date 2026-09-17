@@ -30,7 +30,7 @@ export function EntryNav({ prev, next, location, disabled = false, onPrev, onNex
       {location && (
         <Link
           to={monthPath(location)}
-          title="Back to this month"
+          title="Open this month"
           className="nopy-focus no-underline"
           style={{
             fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 500, color: 'var(--sage)',

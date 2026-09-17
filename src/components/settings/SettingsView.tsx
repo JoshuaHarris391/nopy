@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { MainHeader } from '../ui/MainHeader'
+import { useRememberedScroll } from '../../hooks/usePageMemory'
 import { AppearanceSection } from './sections/AppearanceSection'
 import { PrivateModeSection } from './sections/PrivateModeSection'
 import { TherapySection } from './sections/TherapySection'
@@ -10,11 +12,13 @@ import { useSettingsStore } from '../../stores/settingsStore'
 export function SettingsView() {
   // Private mode hides every AI-related section; the toggle itself always shows.
   const privateMode = useSettingsStore((s) => s.privateMode)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef)
 
   return (
     <>
       <MainHeader title="Settings" />
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <AppearanceSection />
           <PrivateModeSection />

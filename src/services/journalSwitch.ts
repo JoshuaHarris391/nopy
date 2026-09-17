@@ -6,6 +6,8 @@ import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useContextStore } from '../stores/contextStore'
 import { useJournalNavStore } from '../stores/journalNavStore'
+import { usePageMemoryStore } from '../stores/pageMemoryStore'
+import { useNavigationStore } from '../stores/navigationStore'
 
 export interface JournalSwitchResult {
   added: number
@@ -36,6 +38,10 @@ export async function switchJournal(path: string): Promise<JournalSwitchResult> 
   await useContextStore.getState().clear()
   // Where the reader was in the old journal means nothing in the new one.
   useJournalNavStore.getState().clear()
+  // Likewise the pages behind them: a remembered filter or a Back into the
+  // old journal's entries would point at things that no longer exist.
+  usePageMemoryStore.getState().clear()
+  useNavigationStore.getState().clear()
 
   useSettingsStore.getState().setJournalPath(path)
   await grantFsScope(path)

@@ -4,6 +4,7 @@ import { Sidebar } from '../components/sidebar/Sidebar'
 import { BottomNav } from '../components/sidebar/BottomNav'
 import { NotificationCard, type NotificationAccent } from '../components/ui/NotificationCard'
 import { JournalLauncher } from '../components/launcher/JournalLauncher'
+import { HistoryMirror } from './HistoryMirror'
 import { hasFileSystem } from '../services/fs'
 import { useIndexingStore } from '../stores/indexingStore'
 import { useProfileStore } from '../stores/profileStore'
@@ -37,6 +38,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen" style={{ animation: 'appIn 700ms ease-out 150ms forwards', opacity: 0 }}>
+      <HistoryMirror />
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet />

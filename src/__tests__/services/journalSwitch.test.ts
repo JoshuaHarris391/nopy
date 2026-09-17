@@ -69,6 +69,8 @@ import { useJournalStore } from '../../stores/journalStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useJournalNavStore } from '../../stores/journalNavStore'
+import { usePageMemoryStore } from '../../stores/pageMemoryStore'
+import { useNavigationStore } from '../../stores/navigationStore'
 
 const T = '2026-01-01T00:00:00.000Z'
 
@@ -202,9 +204,16 @@ describe('switchJournal — context notes follow the folder, not the cache', () 
      */
     useJournalNavStore.getState().rememberScroll({ year: 2026, month: 9 }, 300)
     useJournalNavStore.getState().setRevealEntry('ea')
+    // The same goes for the pages behind the reader and what they remembered:
+    // a Back into the old journal's entry would open nothing.
+    useNavigationStore.getState().sync({ key: 'k0', pathname: '/index', state: null }, 'POP')
+    useNavigationStore.getState().sync({ key: 'k1', pathname: '/journal/ea', state: null }, 'PUSH')
+    usePageMemoryStore.getState().rememberValue('k0', 'search', 'rain')
 
     await switchJournal('/journal-B')
 
     expect(useJournalNavStore.getState()).toMatchObject({ lastMonth: null, scrollTop: 0, revealEntryId: null })
+    expect(usePageMemoryStore.getState().pages).toEqual({})
+    expect(useNavigationStore.getState()).toMatchObject({ entries: [{ key: 'k1', pathname: '/journal/ea', root: true }], index: 0 })
   })
 })

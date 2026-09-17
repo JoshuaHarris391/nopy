@@ -14,22 +14,42 @@ import { MoodBar } from '../ui/MoodBar'
 import { DateTimePicker } from '../ui/DateTimePicker'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { RenameEntryDialog } from '../ui/RenameEntryDialog'
-import { Button } from '../ui/Button'
 import { EditorToolbar, TEXT_SIZES } from './EditorToolbar'
 import { EntryNav } from './EntryNav'
 import { PageCarousel, type PageCarouselHandle } from './PageCarousel'
 import { PagePreview } from './PagePreview'
 import { useJournalStore } from '../../stores/journalStore'
 import { useJournalNavStore } from '../../stores/journalNavStore'
+import { useNavigationStore, selectCanGoBack, selectPrevious, type NavigationState } from '../../stores/navigationStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { moodValueToLabel } from '../../utils/mood'
 import { isLlmConfigured } from '../../services/llm'
 import { FilenameExistsError, hasFileSystem, revealEntryOnDisk } from '../../services/fs'
 import { getJournalIndex, getNeighbours, monthOf, monthPath } from '../../services/journalBooks'
+import { labelForPath } from '../../services/routeLabels'
 import type { JournalEntry, MoodScore } from '../../types/journal'
 
 /** How long the page takes to settle after a turn: toolbar fade and textarea height glide. */
 const PAGE_SETTLE_MS = 700
+
+const isMonthPage = (pathname: string) => /^\/journal\/books\/\d{4}\/\d{1,2}$/.test(pathname)
+
+/**
+ * Where leaving this entry goes. If the reader drilled in from somewhere in
+ * the app (Index, a month, Insights, Chat), history Back returns them there
+ * with that page's state intact. The one exception is a month other than the
+ * entry's own: after flipping across a month boundary, "back to the journal"
+ * means the month of the page now open, so that month is pushed instead.
+ * With no in-app origin (a cold start on an entry) the month is the only
+ * sensible destination.
+ */
+function resolveReturn(nav: NavigationState, month: string): { viaHistory: boolean; pathname: string } {
+  const previous = selectPrevious(nav)
+  if (selectCanGoBack(nav) && previous && (!isMonthPage(previous.pathname) || previous.pathname === month)) {
+    return { viaHistory: true, pathname: previous.pathname }
+  }
+  return { viaHistory: false, pathname: month }
+}
 
 export function EntryEditor() {
   const { id } = useParams<{ id: string }>()
@@ -268,12 +288,27 @@ export function EntryEditor() {
     navigate(monthPath(monthOf(createdAt)))
   }, [createdAt, navigate])
 
+  /** Leave the editor: Back to where the reader came from, or the entry's month (see resolveReturn). */
+  const returnFromEntry = useCallback((reveal: boolean) => {
+    const month = monthPath(monthOf(createdAt))
+    const target = resolveReturn(useNavigationStore.getState(), month)
+    if (!target.viaHistory) {
+      leaveToMonth(reveal)
+      return
+    }
+    // Only the pages that list this entry know what to do with a reveal.
+    if (reveal && entryIdRef.current && (target.pathname === month || target.pathname === '/index')) {
+      useJournalNavStore.getState().setRevealEntry(entryIdRef.current)
+    }
+    navigate(-1)
+  }, [createdAt, navigate, leaveToMonth])
+
   const handleDelete = useCallback(async () => {
     const entryId = entryIdRef.current
     if (!entryId) return
     await deleteEntry(entryId)
-    leaveToMonth(false)
-  }, [deleteEntry, leaveToMonth])
+    returnFromEntry(false)
+  }, [deleteEntry, returnFromEntry])
 
   const handleClose = useCallback(async () => {
     // Don't let the user wander off leaving a cache-only entry that never made
@@ -285,19 +320,26 @@ export function EntryEditor() {
     }
     await autosave.flush()
     if (!entryIdRef.current) {
-      navigate('/journal')
+      // Nothing was written: a blank page that was never saved.
+      if (selectCanGoBack(useNavigationStore.getState())) navigate(-1)
+      else navigate('/journal')
       return
     }
-    leaveToMonth(true)
+    returnFromEntry(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unsavedToDisk, navigate, leaveToMonth])
+  }, [unsavedToDisk, navigate, returnFromEntry])
 
   const handleDiscardAndLeave = useCallback(async () => {
     setShowLeavePrompt(false)
     const entryId = entryIdRef.current
     if (entryId) await deleteEntry(entryId)
-    leaveToMonth(false)
-  }, [deleteEntry, leaveToMonth])
+    returnFromEntry(false)
+  }, [deleteEntry, returnFromEntry])
+
+  // The header arrow names where it goes; the store is subscribed so the
+  // label follows the mirror once it has recorded this page.
+  const backTarget = useNavigationStore((s) => resolveReturn(s, monthPath(monthOf(createdAt))).pathname)
+  const backLabel = labelForPath(backTarget)
 
   const handleStartSession = useCallback(async () => {
     await autosave.flush()
@@ -320,7 +362,7 @@ export function EntryEditor() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <MainHeader title={isNew ? 'New Entry' : 'Edit Entry'}>
+      <MainHeader title={isNew ? 'New Entry' : 'Edit Entry'} back={{ label: backLabel, onBack: () => { void handleClose() } }}>
         {saving && (
           <div className="flex items-center gap-1.5" style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--sage)' }}>
             <Loader2 size={14} strokeWidth={2} className="animate-spin" />
@@ -343,7 +385,6 @@ export function EntryEditor() {
             onNext={() => { void flip('next') }}
           />
         )}
-        <Button variant="secondary" onClick={() => { void handleClose() }}>Close</Button>
         {!isNew && entryIdRef.current && hasFileSystem() && (() => {
           const current = entries.find((e) => e.id === entryIdRef.current)
           const canReveal = !unsavedToDisk && !!current?.sourceFilename

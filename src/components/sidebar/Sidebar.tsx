@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Layers, Target, List, BarChart3, Settings, ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { ROOT_STATE } from '../../stores/navigationStore'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import nopyLogo from '../../assets/nopy_logo_v2_detail.png'
 import nopyLogoDark from '../../assets/nopy_logo_v2_detail_white.png'
@@ -279,6 +280,7 @@ function NavItem({
   return (
     <NavLink
       to={to}
+      state={ROOT_STATE}
       end={to === '/'}
       className="flex items-center no-underline select-none cursor-pointer"
       style={({ isActive }) => ({
@@ -320,6 +322,7 @@ function SettingsCogButton({ reducedMotion }: { reducedMotion: boolean }) {
   return (
     <NavLink
       to="/settings"
+      state={ROOT_STATE}
       aria-label="Settings"
       className="flex items-center justify-center no-underline cursor-pointer"
       onMouseEnter={() => setHovered(true)}

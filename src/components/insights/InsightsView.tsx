@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { MainHeader } from '../ui/MainHeader'
 import { EmptyState } from '../ui/EmptyState'
 import { ProfileSection } from '../ui/ProfileSection'
@@ -7,6 +7,7 @@ import {
   MetricCards, MoodDistribution, MoodTimeline, StatesChart, EmotionsHeatmap, SleepChart, BodyChart, DomainsChart, SafetyTable, CoverageHint,
 } from './InsightsSections'
 import { useJournalStore } from '../../stores/journalStore'
+import { useRememberedState, useRememberedScroll } from '../../hooks/usePageMemory'
 import { bucketEntries, windowSummary, safetyRows } from '../../services/insightSeries'
 import { computeJournalingStreak } from '../../services/entryProcessor'
 import { getWindow, granularityFor, windowLabel, type Range } from '../../utils/timeSeries'
@@ -21,8 +22,12 @@ export function InsightsView() {
   const entries = useJournalStore((s) => s.entries)
   const loaded = useJournalStore((s) => s.loaded)
   const loadEntries = useJournalStore((s) => s.loadEntries)
-  const [range, setRange] = useState<Range>('month')
-  const [offset, setOffset] = useState(0)
+  // Remembered per history entry, so coming Back from an entry finds the
+  // same period; a fresh visit from the rail starts on this month.
+  const [range, setRange] = useRememberedState<Range>('range', 'month')
+  const [offset, setOffset] = useRememberedState('offset', 0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef, loaded)
 
   useEffect(() => {
     if (!loaded) loadEntries()
@@ -46,7 +51,7 @@ export function InsightsView() {
           {summary.entryCount} {summary.entryCount === 1 ? 'entry' : 'entries'} in this period
         </span>
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div style={{ maxWidth: 760, margin: '0 auto', width: '100%' }}>
           {loaded && entries.length === 0 ? (
             <EmptyState

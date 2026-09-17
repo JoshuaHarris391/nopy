@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Plus } from 'lucide-react'
 import { MainHeader } from '../../ui/MainHeader'
@@ -6,6 +7,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { useMediaQuery } from '../../../hooks/useMediaQuery'
 import { useJournalIndex } from '../../../hooks/useJournalIndex'
 import { useEnsureEntriesLoaded } from '../../../hooks/useEnsureEntriesLoaded'
+import { useRememberedScroll } from '../../../hooks/usePageMemory'
 import { BookCover, COVER_W } from './BookCover'
 import { JournalHeaderActions } from './JournalHeaderActions'
 
@@ -17,13 +19,15 @@ export function BookshelfView() {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const books = index.books
   const years = books.length
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { onScroll } = useRememberedScroll(scrollRef, loaded)
 
   return (
     <>
       <MainHeader title="Journal">
         <JournalHeaderActions />
       </MainHeader>
-      <div className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto" style={{ padding: '36px 44px' }}>
         <div className="flex items-baseline" style={{ gap: 10, marginBottom: 28 }}>
           <h1 style={{ fontFamily: 'var(--font-title)', fontSize: 26, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em', lineHeight: 1.2, margin: 0 }}>
             Shelf

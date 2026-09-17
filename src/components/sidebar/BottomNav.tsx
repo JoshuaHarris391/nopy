@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { BookOpen, MessageCircle, Layers, Target, List, BarChart3, Settings } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { ROOT_STATE } from '../../stores/navigationStore'
 
 /** Items that stay while private mode hides the AI half of the app. */
 const PRIVATE_ITEMS = new Set(['/journal', '/settings'])
@@ -34,6 +35,7 @@ export function BottomNav() {
           <NavLink
             key={item.to}
             to={item.to}
+            state={ROOT_STATE}
             end={item.to === '/'}
             className="flex flex-col items-center gap-1 no-underline"
             style={({ isActive }) => ({

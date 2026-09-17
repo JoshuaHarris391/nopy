@@ -15,6 +15,7 @@ vi.mock('idb-keyval', () => ({
 
 import { InsightsView } from '../../components/insights/InsightsView'
 import { useJournalStore } from '../../stores/journalStore'
+import { usePageMemoryStore } from '../../stores/pageMemoryStore'
 import { makeEntry, makeInsight } from '../fixtures/insight'
 
 /** Dates inside the current year so the Year range always contains them. */
@@ -24,6 +25,9 @@ const at = (month: number, day: number) => new Date(year, month - 1, day, 10).to
 describe('Insights page', () => {
   beforeEach(() => {
     idbStore.clear()
+    // The range is remembered per location; MemoryRouter reuses one key, so
+    // each test starts from a blank memory.
+    usePageMemoryStore.getState().clear()
   })
   afterEach(() => {
     cleanup()

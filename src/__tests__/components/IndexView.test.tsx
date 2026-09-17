@@ -15,6 +15,7 @@ vi.mock('idb-keyval', () => ({
 
 import { IndexView } from '../../components/index/IndexView'
 import { useJournalStore } from '../../stores/journalStore'
+import { usePageMemoryStore } from '../../stores/pageMemoryStore'
 import type { JournalEntry } from '../../types/journal'
 
 function seed(id: string, title: string, local: Date): JournalEntry {
@@ -33,6 +34,9 @@ const rowTitles = () =>
 describe('Index page: narrowing to a year and month', () => {
   beforeEach(() => {
     idbStore.clear()
+    // Filters are remembered per location; MemoryRouter reuses one key, so
+    // each test starts from a blank memory.
+    usePageMemoryStore.getState().clear()
     useJournalStore.setState({
       entries: [
         seed('a', 'March morning', new Date(2025, 2, 10)),
