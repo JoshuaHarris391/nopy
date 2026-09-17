@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0](https://github.com/JoshuaHarris391/nopy/compare/v0.9.0...v0.10.0) (2026-09-17)
+
+
+### Features
+
+* add a back arrow that returns to the previous page as it was left ([df9c1d3](https://github.com/JoshuaHarris391/nopy/commit/df9c1d3e836b5f70f7ae455ac0aefd6c8ac39791))
+* choose incremental or full profile build from the Profile page ([337236f](https://github.com/JoshuaHarris391/nopy/commit/337236f61b293fa6ca4f9abfb2058c3134a5e06c))
+* prioritise writer mood and tier profile records ([810f1eb](https://github.com/JoshuaHarris391/nopy/commit/810f1eb1bbf81d39de0ef57d79837850161babf8))
+* split Profile into Profile and Insights with scope and version history ([be74ee1](https://github.com/JoshuaHarris391/nopy/commit/be74ee141e6a3956754819c56f78df39c0e240df))
+* structured entry index and summaries-only profile generation ([7bed5ed](https://github.com/JoshuaHarris391/nopy/commit/7bed5eddd70f756e765598560d44f50353ee1c1a))
+
+
+### Bug Fixes
+
+* keep the emotions heatmap ramp legend clear of the period labels ([172a0c2](https://github.com/JoshuaHarris391/nopy/commit/172a0c2d8838800d6e3e6107d59d165009f67faf))
+
+
+### Performance Improvements
+
+* fit the summary profile input to the lightweight model's window ([e63229e](https://github.com/JoshuaHarris391/nopy/commit/e63229e2f29f19a589d4630b482abd062b2e85a3))
+
 ## [0.9.0](https://github.com/JoshuaHarris391/nopy/compare/v0.8.0...v0.9.0) (2026-09-16)
 
 
