@@ -57,7 +57,9 @@ export function ChatMessageList({
                   ? 'Pick a local model in Settings to begin chatting.'
                   : provider === 'openai'
                     ? 'Add your OpenAI API key and pick a model in Settings to begin chatting.'
-                    : 'Add your Anthropic API key in Settings to begin chatting.'}
+                    : provider === 'venice'
+                      ? 'Add your Venice API key and pick a model in Settings to begin chatting.'
+                      : 'Add your Anthropic API key in Settings to begin chatting.'}
             </p>
             {ready && (
               <button

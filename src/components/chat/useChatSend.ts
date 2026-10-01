@@ -7,7 +7,7 @@ import { useContextStore } from '../../stores/contextStore'
 import { useModelCatalogStore } from '../../stores/modelCatalogStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { streamChatResponse, sendMessage, LlmError, LLM_ERROR_MESSAGES, type LlmConfig } from '../../services/llm'
-import { TOKEN_LIMITS, getModelContextWindow } from '../../services/models'
+import { TOKEN_LIMITS, getModelContextWindow, resolveHostedModelId } from '../../services/models'
 import { assembleContext } from '../../services/contextAssembler'
 import { resolveContextItems, toInjectedItems } from '../../services/contextResolver'
 import { useLocalModels } from '../../hooks/useLocalModels'
@@ -128,7 +128,7 @@ export function useChatSend({
     const journalIndexLimit = useSettingsStore.getState().journalIndexLimit
     const resolved = resolveContextItems(ctx.notes, ctx.injection, profile, entries, journalIndexLimit)
     const injectedItems = toInjectedItems(resolved)
-    const hostedId = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
+    const hostedId = resolveHostedModelId(llmConfig)
     const catalogWindow = llmConfig.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(hostedId)
     const { tokens: window } = getModelContextWindow(
       llmConfig,

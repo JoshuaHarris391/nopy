@@ -10,7 +10,7 @@ import type { LlmConfig } from '../../types/settings'
  * vi.hoisted is required because vi.mock factories run before regular
  * top-level consts are initialized.
  */
-const { anthropicMocks, localMocks, openaiMocks } = vi.hoisted(() => ({
+const { anthropicMocks, localMocks, openaiMocks, veniceMocks } = vi.hoisted(() => ({
   anthropicMocks: {
     streamChatResponse: vi.fn(async () => {}),
     sendMessage: vi.fn(async () => 'anthropic-result'),
@@ -29,11 +29,18 @@ const { anthropicMocks, localMocks, openaiMocks } = vi.hoisted(() => ({
     sendMessageStreaming: vi.fn(async () => 'openai-streamed'),
     fetchModels: vi.fn(async () => [{ id: 'gpt-4o', displayName: 'gpt-4o' }]),
   },
+  veniceMocks: {
+    streamChatResponse: vi.fn(async () => {}),
+    sendMessage: vi.fn(async () => 'venice-result'),
+    sendMessageStreaming: vi.fn(async () => 'venice-streamed'),
+    fetchModels: vi.fn(async () => [{ id: 'claude-opus-4-8', displayName: 'claude-opus-4-8' }]),
+  },
 }))
 
 vi.mock('../../services/anthropic', () => anthropicMocks)
 vi.mock('../../services/localServer', () => localMocks)
 vi.mock('../../services/openai', () => openaiMocks)
+vi.mock('../../services/venice', () => veniceMocks)
 
 import { streamChatResponse, sendMessage, sendMessageStreaming, fetchModels, resolveModel, isLlmConfigured, LlmError } from '../../services/llm'
 
@@ -48,6 +55,9 @@ const ANTHROPIC: LlmConfig = {
   openaiApiKey: '',
   openaiModel: '',
   openaiLightweightModel: '',
+  veniceApiKey: '',
+  veniceModel: '',
+  veniceLightweightModel: '',
 }
 const LOCAL: LlmConfig = {
   provider: 'local',
@@ -60,6 +70,9 @@ const LOCAL: LlmConfig = {
   openaiApiKey: '',
   openaiModel: '',
   openaiLightweightModel: '',
+  veniceApiKey: '',
+  veniceModel: '',
+  veniceLightweightModel: '',
 }
 const OPENAI: LlmConfig = {
   provider: 'openai',
@@ -72,12 +85,31 @@ const OPENAI: LlmConfig = {
   openaiApiKey: 'sk-openai-x',
   openaiModel: 'gpt-4o',
   openaiLightweightModel: 'gpt-4o-mini',
+  veniceApiKey: '',
+  veniceModel: '',
+  veniceLightweightModel: '',
+}
+const VENICE: LlmConfig = {
+  provider: 'venice',
+  apiKey: '',
+  anthropicMainModel: '',
+  anthropicLightweightModel: '',
+  localBaseUrl: '',
+  localModel: '',
+  localLightweightModel: '',
+  openaiApiKey: '',
+  openaiModel: '',
+  openaiLightweightModel: '',
+  veniceApiKey: 'vk-x',
+  veniceModel: 'claude-opus-4-8',
+  veniceLightweightModel: 'deepseek-v4-1-flash',
 }
 
 beforeEach(() => {
   for (const fn of Object.values(anthropicMocks)) fn.mockClear()
   for (const fn of Object.values(localMocks)) fn.mockClear()
   for (const fn of Object.values(openaiMocks)) fn.mockClear()
+  for (const fn of Object.values(veniceMocks)) fn.mockClear()
 })
 
 describe('resolveModel role mapping', () => {
@@ -94,6 +126,8 @@ describe('resolveModel role mapping', () => {
     expect(resolveModel(LOCAL, 'lightweight')).toBe('gemma-mini')
     expect(resolveModel(OPENAI, 'main')).toBe('gpt-4o')
     expect(resolveModel(OPENAI, 'lightweight')).toBe('gpt-4o-mini')
+    expect(resolveModel(VENICE, 'main')).toBe('claude-opus-4-8')
+    expect(resolveModel(VENICE, 'lightweight')).toBe('deepseek-v4-1-flash')
   })
 
   it('falls back to the main slot when openai/local lightweight slot is blank', () => {
@@ -106,6 +140,7 @@ describe('resolveModel role mapping', () => {
      */
     expect(resolveModel({ ...LOCAL, localLightweightModel: '' }, 'lightweight')).toBe('gemma')
     expect(resolveModel({ ...OPENAI, openaiLightweightModel: '' }, 'lightweight')).toBe('gpt-4o')
+    expect(resolveModel({ ...VENICE, veniceLightweightModel: '' }, 'lightweight')).toBe('claude-opus-4-8')
   })
 
   it('throws NO_MODEL_CONFIGURED when the main slot is empty (no fallback possible)', () => {
@@ -119,6 +154,8 @@ describe('resolveModel role mapping', () => {
     expect(() => resolveModel({ ...LOCAL, localModel: '' }, 'main'))
       .toThrow(expect.objectContaining({ code: 'NO_MODEL_CONFIGURED' }))
     expect(() => resolveModel({ ...OPENAI, openaiModel: '' }, 'main'))
+      .toThrow(expect.objectContaining({ code: 'NO_MODEL_CONFIGURED' }))
+    expect(() => resolveModel({ ...VENICE, veniceModel: '' }, 'main'))
       .toThrow(expect.objectContaining({ code: 'NO_MODEL_CONFIGURED' }))
   })
 
@@ -175,6 +212,21 @@ describe('streamChatResponse routing', () => {
     const args = openaiMocks.streamChatResponse.mock.calls[0] as unknown[]
     expect(args[0]).toBe('sk-openai-x')   // openaiApiKey
     expect(args[1]).toBe('gpt-4o')        // resolved main slot
+  })
+
+  it('routes to venice with config.veniceModel for role="main"', async () => {
+    /**
+     * Venice is OpenAI-compatible but routed independently — the dispatcher
+     * must read veniceApiKey + veniceModel, never the OpenAI slots. Catches a
+     * regression where the Venice branch falls through to the OpenAI one.
+     */
+    await streamChatResponse(VENICE, 'main', 'sys', [{ role: 'user', content: 'hi' }], 100, () => {}, () => {}, () => {})
+    expect(veniceMocks.streamChatResponse).toHaveBeenCalledTimes(1)
+    expect(openaiMocks.streamChatResponse).not.toHaveBeenCalled()
+    expect(anthropicMocks.streamChatResponse).not.toHaveBeenCalled()
+    const args = veniceMocks.streamChatResponse.mock.calls[0] as unknown[]
+    expect(args[0]).toBe('vk-x')                 // veniceApiKey
+    expect(args[1]).toBe('claude-opus-4-8')      // resolved main slot
   })
 
   it('reports NO_MODEL_CONFIGURED via onError when openai + empty openaiModel', async () => {
@@ -235,6 +287,11 @@ describe('sendMessage / sendMessageStreaming routing', () => {
     expect(o).toBe('openai-result')
     expect((openaiMocks.sendMessage.mock.calls[0] as unknown[])[0]).toBe('sk-openai-x')
     expect((openaiMocks.sendMessage.mock.calls[0] as unknown[])[1]).toBe('gpt-4o-mini')
+
+    const v = await sendMessage(VENICE, 'lightweight', 'sys', [], 100)
+    expect(v).toBe('venice-result')
+    expect((veniceMocks.sendMessage.mock.calls[0] as unknown[])[0]).toBe('vk-x')
+    expect((veniceMocks.sendMessage.mock.calls[0] as unknown[])[1]).toBe('deepseek-v4-1-flash')
   })
 
   it('sendMessage throws NO_MODEL_CONFIGURED synchronously in local mode without a model', async () => {
@@ -257,6 +314,8 @@ describe('sendMessage / sendMessageStreaming routing', () => {
     expect(await sendMessageStreaming(ANTHROPIC, 'main', 'sys', [], 1000, () => {})).toBe('anthropic-streamed')
     expect(await sendMessageStreaming(LOCAL, 'main', 'sys', [], 1000, () => {})).toBe('local-streamed')
     expect((localMocks.sendMessageStreaming.mock.calls[0] as unknown[])[1]).toBe('gemma')
+    expect(await sendMessageStreaming(VENICE, 'main', 'sys', [], 1000, () => {})).toBe('venice-streamed')
+    expect((veniceMocks.sendMessageStreaming.mock.calls[0] as unknown[])[1]).toBe('claude-opus-4-8')
   })
 })
 
@@ -280,6 +339,10 @@ describe('fetchModels routing', () => {
     const o = await fetchModels(OPENAI)
     expect(o).toEqual([{ id: 'gpt-4o', displayName: 'gpt-4o' }])
     expect(openaiMocks.fetchModels).toHaveBeenCalledWith('sk-openai-x')
+
+    const v = await fetchModels(VENICE)
+    expect(v).toEqual([{ id: 'claude-opus-4-8', displayName: 'claude-opus-4-8' }])
+    expect(veniceMocks.fetchModels).toHaveBeenCalledWith('vk-x')
   })
 })
 
@@ -296,11 +359,14 @@ describe('isLlmConfigured readiness gate', () => {
     expect(isLlmConfigured(ANTHROPIC)).toBe(true)
     expect(isLlmConfigured(OPENAI)).toBe(true)
     expect(isLlmConfigured(LOCAL)).toBe(true)
+    expect(isLlmConfigured(VENICE)).toBe(true)
 
     expect(isLlmConfigured({ ...ANTHROPIC, apiKey: '' })).toBe(false)
     expect(isLlmConfigured({ ...OPENAI, openaiApiKey: '' })).toBe(false)
     expect(isLlmConfigured({ ...OPENAI, openaiModel: '' })).toBe(false)
     expect(isLlmConfigured({ ...LOCAL, localModel: '' })).toBe(false)
+    expect(isLlmConfigured({ ...VENICE, veniceApiKey: '' })).toBe(false)
+    expect(isLlmConfigured({ ...VENICE, veniceModel: '' })).toBe(false)
   })
 
   it('ignores other providers\' missing config when judging the active one', () => {

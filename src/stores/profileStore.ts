@@ -305,7 +305,7 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
       const modelId = resolveModel(config, role)
       const view: LlmConfig = role === 'main'
         ? config
-        : { ...config, anthropicMainModel: modelId, openaiModel: modelId, localModel: modelId }
+        : { ...config, anthropicMainModel: modelId, openaiModel: modelId, veniceModel: modelId, localModel: modelId }
       const catalogWindow = config.provider === 'local' ? undefined : useModelCatalogStore.getState().contextWindowFor(modelId)
       return getModelContextWindow(view, undefined, useSettingsStore.getState().modelContextWindowOverride, catalogWindow).tokens
     }

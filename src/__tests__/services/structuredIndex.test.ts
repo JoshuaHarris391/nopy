@@ -27,6 +27,7 @@ import { makeEntry, makeInsight } from '../fixtures/insight'
 const config: LlmConfig = {
   provider: 'anthropic', apiKey: 'sk-test', anthropicMainModel: 'main', anthropicLightweightModel: 'light',
   localBaseUrl: '', localModel: '', localLightweightModel: '', openaiApiKey: '', openaiModel: '', openaiLightweightModel: '',
+  veniceApiKey: '', veniceModel: '', veniceLightweightModel: '',
 }
 
 beforeEach(() => {

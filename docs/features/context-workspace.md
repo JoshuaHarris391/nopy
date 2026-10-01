@@ -129,7 +129,7 @@ and how your choices fill it:
 The bar tells you where the window size comes from:
 
 - **Local (LM Studio / Ollama):** read live from the loaded model when LM Studio reports it.
-- **Anthropic / OpenAI:** looked up from a built-in table of known model windows.
+- **Anthropic / OpenAI / Venice:** read from the provider's own model list where it reports a window (Venice does, at `model_spec.availableContextTokens`), otherwise from a built-in table of known model windows plus the public LiteLLM catalog.
 - **Manual:** if detection is missing or wrong, set the window yourself and your value wins.
 
 Add cards, remove cards, reorder them, and watch the bar respond. That's the whole loop:
