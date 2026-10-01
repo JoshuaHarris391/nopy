@@ -117,6 +117,90 @@ describe('streamChatResponse', () => {
       ],
       max_tokens: 512,
       stream: true,
+      stream_options: { include_usage: true },
+    })
+  })
+
+  it('omits prompt_cache_key when no routing hint is given', async () => {
+    /**
+     * The hint is optional; sending an empty/undefined key would be worse than
+     * sending none (it'd pin the conversation to an arbitrary backend).
+     */
+    mockState.createImpl = vi.fn(async () => streamOf([]))
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, () => {}, () => {})
+
+    const body = mockState.instances[0].createCalls[0][0] as Record<string, unknown>
+    expect('prompt_cache_key' in body).toBe(false)
+  })
+
+  it('forwards a prompt_cache_key as the ninth argument for cache affinity', async () => {
+    mockState.createImpl = vi.fn(async () => streamOf([]))
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, () => {}, () => {}, 'session-42')
+
+    const body = mockState.instances[0].createCalls[0][0] as Record<string, unknown>
+    expect(body.prompt_cache_key).toBe('session-42')
+  })
+
+  it('maps the trailing usage chunk to cache-adjusted ChatUsage', async () => {
+    /**
+     * Venice reports the prompt as a TOTAL (cache reads and writes included), so
+     * the full-price input we hand the header is the remainder. The numbers here
+     * mirror Venice's own caching docs table (prompt 11,031 = 62 uncached +
+     * 10,938 read + 31 write) — getting this wrong would make every cached turn
+     * look like it cost the whole prompt.
+     */
+    mockState.createImpl = vi.fn(async () =>
+      streamOf([
+        delta('hi'),
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 11031,
+            completion_tokens: 40,
+            prompt_tokens_details: { cached_tokens: 10938, cache_creation_input_tokens: 31 },
+          },
+        },
+      ]),
+    )
+    const onComplete = vi.fn()
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, onComplete, () => {})
+
+    expect(onComplete).toHaveBeenCalledWith('hi', {
+      inputTokens: 62,
+      outputTokens: 40,
+      cacheReadTokens: 10938,
+      cacheWriteTokens: 31,
+    })
+  })
+
+  it('passes usage as undefined when the provider returns none', async () => {
+    /**
+     * Older/other models may not emit the usage chunk at all; the header must
+     * then stay hidden rather than render a bogus "0 tokens billed".
+     */
+    mockState.createImpl = vi.fn(async () => streamOf([delta('hi')]))
+    const onComplete = vi.fn()
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, onComplete, () => {})
+
+    expect(onComplete).toHaveBeenCalledWith('hi', undefined)
+  })
+
+  it('treats a usage chunk without prompt_tokens_details as plain uncached input', async () => {
+    /**
+     * OpenAI-shaped usage with no cache breakdown: the whole prompt is
+     * full-price, and the cache counters must be 0 (not NaN/undefined).
+     */
+    mockState.createImpl = vi.fn(async () =>
+      streamOf([{ choices: [], usage: { prompt_tokens: 100, completion_tokens: 5 } }]),
+    )
+    const onComplete = vi.fn()
+    await mod.streamChatResponse('k', 'm', 's', [], 1, () => {}, onComplete, () => {})
+
+    expect(onComplete).toHaveBeenCalledWith('', {
+      inputTokens: 100,
+      outputTokens: 5,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
     })
   })
 

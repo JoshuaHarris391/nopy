@@ -142,6 +142,12 @@ export async function streamChatResponse(
   onChunk: (fullText: string) => void,
   onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
+  /**
+   * Optional provider routing hint. Only Venice uses it (`prompt_cache_key`):
+   * repeating one key across a conversation's turns biases the service toward
+   * the backend that already holds the cached prefix. Other providers ignore it.
+   */
+  promptCacheKey?: string,
 ): Promise<void> {
   let model: string
   try {
@@ -165,7 +171,7 @@ export async function streamChatResponse(
   if (config.provider === 'venice') {
     return venice.streamChatResponse(
       config.veniceApiKey, model, system, messages, maxTokens,
-      onChunk, onComplete, onError,
+      onChunk, onComplete, onError, promptCacheKey,
     )
   }
   return anthropic.streamChatResponse(

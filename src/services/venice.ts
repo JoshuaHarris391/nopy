@@ -82,6 +82,39 @@ function buildMessages(system: string, messages: Message[]) {
   return out
 }
 
+/**
+ * The `usage` object Venice returns on an OpenAI-shaped completion: `prompt_tokens`
+ * is the TOTAL input (cache reads and writes included), and the split lives in
+ * `prompt_tokens_details`. `cached_tokens` is typed by the OpenAI SDK;
+ * `cache_creation_input_tokens` is a Venice extension, hence the local shape.
+ */
+interface VeniceUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number } | null
+}
+
+/**
+ * Map Venice's `usage` onto our `ChatUsage`, which expects `inputTokens` to be
+ * the *uncached* full-price portion (cache reads/writes are tracked separately
+ * so the header's cost estimate stays accurate). Venice reports the prompt as a
+ * total — its caching docs table shows prompt = uncached + cache read + cache
+ * write (11,031 = 62 uncached + 10,938 read + 31 write) — so the uncached part is
+ * the remainder, clamped at zero in case a provider double-counts.
+ */
+function toChatUsage(raw: VeniceUsage | null | undefined): ChatUsage | undefined {
+  if (!raw) return undefined
+  const prompt = raw.prompt_tokens ?? 0
+  const cacheRead = raw.prompt_tokens_details?.cached_tokens ?? 0
+  const cacheWrite = raw.prompt_tokens_details?.cache_creation_input_tokens ?? 0
+  return {
+    inputTokens: Math.max(prompt - cacheRead - cacheWrite, 0),
+    outputTokens: raw.completion_tokens ?? 0,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+  }
+}
+
 export async function streamChatResponse(
   apiKey: string,
   model: string,
@@ -89,13 +122,17 @@ export async function streamChatResponse(
   messages: Message[],
   maxTokens: number,
   onChunk: (fullText: string) => void,
-  // Accepts an optional `usage` arg for provider-signature parity with the
-  // dispatcher; Venice streaming doesn't surface billed usage today, so this
-  // provider never passes it (the chat header's usage stat stays hidden).
+  // Venice reports real billed usage — including cache reads/writes — once
+  // `stream_options.include_usage` is set (see `toChatUsage`), so the chat
+  // header can show the same cache-adjusted figure as Anthropic.
   onComplete: (fullText: string, usage?: ChatUsage) => void,
   onError: (error: Error) => void,
+  // Routing hint: the turns of one conversation share a key so Venice prefers
+  // the same backend, keeping the warm prefix cache alive. Optional — omitting
+  // it only lowers the hit rate (requests may land on a cold server).
+  promptCacheKey?: string,
 ): Promise<void> {
-  console.log('[venice] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens)
+  console.log('[venice] streamChatResponse: model', model, '| messages', messages.length, '| maxTokens', maxTokens, '| cacheKey', promptCacheKey ? 'yes' : 'none')
   let fullText = ''
   try {
     const client = getClient(apiKey)
@@ -104,16 +141,31 @@ export async function streamChatResponse(
       messages: buildMessages(system, messages),
       max_tokens: maxTokens,
       stream: true,
+      // Ask for the trailing usage chunk; without it a streaming Venice reply
+      // carries no token/cache statistics at all.
+      stream_options: { include_usage: true },
+      ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     })
+    let usage: ChatUsage | undefined
     for await (const chunk of stream) {
+      // The final chunk has empty `choices` and the whole request's usage.
+      if (chunk.usage) usage = toChatUsage(chunk.usage)
       const delta = chunk.choices[0]?.delta?.content
       if (delta) {
         fullText += delta
         onChunk(fullText)
       }
     }
+    if (usage) {
+      console.log(
+        '[venice] streamChatResponse: cache —',
+        'read', usage.cacheReadTokens,
+        '| write', usage.cacheWriteTokens,
+        '| uncached input', usage.inputTokens,
+      )
+    }
     console.log('[venice] streamChatResponse: complete —', fullText.length, 'chars received')
-    onComplete(fullText)
+    onComplete(fullText, usage)
   } catch (error) {
     console.error('[venice] streamChatResponse: stream error —', error instanceof Error ? error.message : String(error))
     onError(toLlmError(error))

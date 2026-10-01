@@ -43,6 +43,8 @@ The dispatcher takes an `LlmConfig` slice from `settingsStore` and resolves a **
 
 Venice is OpenAI-compatible — same `{ model, messages, stream }` request and SSE response shape — so `src/services/venice.ts` is a thin specialisation of `src/services/openai.ts` that only pins the base URL (`https://api.venice.ai/api/v1`) and the provider-name error copy. Its dropdown merges a small curated model list into whatever the live `/models` response returns, so the supported models always appear even if the API listing omits them.
 
+**Prompt caching.** Anthropic caches only what we mark, so `anthropic.ts` places explicit `cache_control` breakpoints on the system block and the last message. Venice caches automatically for supported models and injects Anthropic's own markers server-side, so `venice.ts` needs no equivalent — it only sends `prompt_cache_key` (the chat session id, threaded through the dispatcher as an optional trailing argument) so the turns of one conversation keep landing on the backend that holds the warm prefix. Cached usage is read back the same way in both providers and accumulated onto `ChatSession.usage`: Venice requests set `stream_options: { include_usage: true }` and the trailing chunk's `usage` is mapped to `ChatUsage`, with `inputTokens` reduced to the *uncached* remainder because Venice (like OpenAI) reports `prompt_tokens` as a total that already includes cache reads and writes.
+
 For the user-facing walk-through of local mode see [`local-llm-integration.md`](./local-llm-integration.md).
 
 ---

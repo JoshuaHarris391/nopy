@@ -229,6 +229,21 @@ describe('streamChatResponse routing', () => {
     expect(args[1]).toBe('claude-opus-4-8')      // resolved main slot
   })
 
+  it('forwards the promptCacheKey routing hint to venice only', async () => {
+    /**
+     * The ninth argument carries the conversation id used as Venice's
+     * prompt_cache_key. Dropping it here silently costs cache hits on every
+     * follow-up turn, and passing it to a provider that ignores the concept
+     * would be dead weight — so it must reach Venice and stop there.
+     */
+    await streamChatResponse(VENICE, 'main', 'sys', [], 100, () => {}, () => {}, () => {}, 'session-42')
+    const veniceArgs = veniceMocks.streamChatResponse.mock.calls[0] as unknown[]
+    expect(veniceArgs[8]).toBe('session-42')
+
+    await streamChatResponse(OPENAI, 'main', 'sys', [], 100, () => {}, () => {}, () => {}, 'session-42')
+    expect((openaiMocks.streamChatResponse.mock.calls[0] as unknown[]).length).toBe(8)
+  })
+
   it('reports NO_MODEL_CONFIGURED via onError when openai + empty openaiModel', async () => {
     /**
      * The user toggled to OpenAI mode and entered an API key but hasn't
