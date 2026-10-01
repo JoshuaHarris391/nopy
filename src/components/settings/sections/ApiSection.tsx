@@ -6,11 +6,12 @@ import { ProviderToggle } from './api/ProviderToggle'
 import { AnthropicBlock } from './api/AnthropicBlock'
 import { LocalBlock } from './api/LocalBlock'
 import { OpenaiBlock } from './api/OpenaiBlock'
+import { VeniceBlock } from './api/VeniceBlock'
 import { selectStyle } from './styles'
 
 /**
  * Top-level API/AI settings. The provider toggle determines which of the
- * three provider blocks (Local LM Studio, OpenAI, Anthropic) is shown
+ * provider blocks (Local LM Studio, OpenAI, Venice, Anthropic) is shown
  * beneath it. Max output tokens and context budget apply to whichever
  * provider is active and live below the per-provider block.
  */
@@ -31,6 +32,7 @@ export function ApiSection() {
 
       {provider === 'anthropic' ? <AnthropicBlock />
         : provider === 'openai' ? <OpenaiBlock />
+        : provider === 'venice' ? <VeniceBlock />
         : <LocalBlock />}
 
       <SettingsRow label="Max Output Tokens" description="Maximum length of each AI response (default: 4,096)">

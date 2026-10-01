@@ -1,11 +1,11 @@
 # LLM Pipeline
 
-How nopy uses Claude, OpenAI, or a local LM Studio model to index journal entries and generate psychological profiles, and how the Insights page and the chat's context are built from those results without further calls.
+How nopy uses Claude, OpenAI, Venice, or a local LM Studio model to index journal entries and generate psychological profiles, and how the Insights page and the chat's context are built from those results without further calls.
 
 **Contents**
 
 - [Overview](#overview) — where the model is called, and where it is not
-- [Provider routing](#provider-routing) — Anthropic vs. OpenAI vs. local LM Studio
+- [Provider routing](#provider-routing) — Anthropic vs. OpenAI vs. Venice vs. local LM Studio
 - [Entry indexing](#entry-indexing) — one structured record per entry, the only place raw text is read
 - [Profile generation](#profile-generation) — corpus report, record tiers, incremental revisions, versions
 - [Insights](#insights) — local time-series over the index, no model involved
@@ -32,14 +32,16 @@ The guiding split is **instrument versus analyst**:
 
 The Insights page makes no calls at all. Everything on it is computed from the stored records.
 
-All calls flow through the dispatcher at `src/services/llm.ts`, which routes to `src/services/anthropic.ts`, `src/services/openai.ts` or `src/services/localServer.ts` based on `settings.provider`.
+All calls flow through the dispatcher at `src/services/llm.ts`, which routes to `src/services/anthropic.ts`, `src/services/openai.ts`, `src/services/venice.ts` or `src/services/localServer.ts` based on `settings.provider`.
 
 ## Provider routing
 
 The dispatcher takes an `LlmConfig` slice from `settingsStore` and resolves a **role** (`main` or `lightweight`) to a configured model id per provider (`resolveModel`). Two rules:
 
 - **All-or-nothing scope.** With `provider === 'local'`, *every* AI call goes to LM Studio. There is no mixed mode where indexing stays on a hosted provider, which would silently send journal data elsewhere.
-- **Blank lightweight slots fall back to the main slot** for OpenAI and local providers, so a single-model setup works with no extra configuration.
+- **Blank lightweight slots fall back to the main slot** for OpenAI, Venice and local providers, so a single-model setup works with no extra configuration.
+
+Venice is OpenAI-compatible — same `{ model, messages, stream }` request and SSE response shape — so `src/services/venice.ts` is a thin specialisation of `src/services/openai.ts` that only pins the base URL (`https://api.venice.ai/api/v1`) and the provider-name error copy. Its dropdown merges a small curated model list into whatever the live `/models` response returns, so the supported models always appear even if the API listing omits them.
 
 For the user-facing walk-through of local mode see [`local-llm-integration.md`](./local-llm-integration.md).
 
@@ -184,7 +186,9 @@ Strips markdown fences and trailing prose, `JSON.parse`s, pipes through `schema.
 
 **File**: `src/services/models.ts`
 
-`TOKEN_LIMITS` holds the output caps per operation (`entryMetadata: 2500`, `profileNarrative: 4000`, `fullProfile: 10000`, `titleGeneration: 50`). `getModelContextWindow()` resolves the active model's context window (manual override → LM Studio's reported window → catalog → static map → provider default); the profile steps use it to decide how many records fit.
+`TOKEN_LIMITS` holds the output caps per operation (`entryMetadata: 2500`, `profileNarrative: 4000`, `fullProfile: 10000`, `titleGeneration: 50`). `getModelContextWindow()` resolves the active model's context window (manual override → LM Studio's reported window → provider-reported window → LiteLLM catalog → static map → provider default); the profile steps use it to decide how many records fit.
+
+The provider-reported layer matters for Venice: its `/models` response carries each text model's real usable window at `model_spec.availableContextTokens` (e.g. 1M for the Kimi models), which LiteLLM doesn't index under Venice's ids. `useVeniceModels` records those windows into `modelCatalogStore` on fetch, so the Context budget bar and message budgeting use the true number instead of the conservative Venice default.
 
 ### Prompt templates
 
@@ -205,7 +209,7 @@ Strips markdown fences and trailing prose, `JSON.parse`s, pipes through `schema.
 | Concern | File |
 |---|---|
 | Provider dispatcher and role resolution | `src/services/llm.ts` |
-| Provider wrappers | `src/services/anthropic.ts`, `src/services/openai.ts`, `src/services/localServer.ts` |
+| Provider wrappers | `src/services/anthropic.ts`, `src/services/openai.ts`, `src/services/venice.ts`, `src/services/localServer.ts` |
 | Indexing, repair loop, both profile generators, local stats | `src/services/entryProcessor.ts` |
 | Record guards, roster, recurring phrases, corpus report, record rendering and budget fitting, scope | `src/services/entryRecords.ts` |
 | Insights time series | `src/services/insightSeries.ts`, `src/utils/timeSeries.ts` |

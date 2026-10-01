@@ -32,12 +32,18 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   'gpt-4o-mini': 128_000,
   'gpt-4.1': 1_000_000,
   'gpt-4.1-mini': 1_000_000,
+  // Venice (representative — extend as new models ship)
+  'deepseek-v4-1-flash': 128_000,
+  'deepseek-v4-pro-0813': 128_000,
+  'claude-opus-4-8': 200_000,
+  'openai-gpt-6-luna': 200_000,
 }
 
 /** Fallback windows when a hosted model id isn't in the map above. */
 export const DEFAULT_CONTEXT_WINDOW = {
   anthropic: 200_000,
   openai: 128_000,
+  venice: 32_000, // conservative; most Venice text models are 32k–128k
   local: 8_192, // conservative; LM Studio usually reports the real value
 } as const
 
@@ -49,12 +55,39 @@ export interface LocalModelWindow {
 }
 
 /**
+ * A model option rendered in a provider dropdown. `contextTokens` is the
+ * provider-reported *usable* window when the provider surfaces one — Venice
+ * returns `model_spec.availableContextTokens` — and is undefined for providers
+ * that don't report it (Anthropic, OpenAI), where the window resolves from the
+ * LiteLLM catalog / static map instead.
+ */
+export interface ProviderModel {
+  id: string
+  displayName: string
+  contextTokens?: number
+}
+
+/**
+ * The configured *main* model id for whichever hosted provider is active.
+ * Used where callers need the id for a context-window lookup and don't care
+ * which provider supplied it (the catalog/static-map lookup is provider
+ * agnostic). Local mode is not handled here — callers skip the lookup for
+ * local, which reports its own loaded window.
+ */
+export function resolveHostedModelId(config: LlmConfig): string {
+  if (config.provider === 'openai') return config.openaiModel
+  if (config.provider === 'venice') return config.veniceModel
+  return config.anthropicMainModel
+}
+
+/**
  * Resolve the active model's context window (in tokens) for the budget bar and
  * the window-aware message budget. Priority:
  *   1. `override` — the user's manual value always wins.
  *   2. local mode — the loaded window LM Studio reports.
- *   3. `catalogWindow` — the real window from the LiteLLM dataset (see
- *      `modelCatalogStore`), resolved by the caller for the active hosted model.
+ *   3. `catalogWindow` — the real window from the LiteLLM dataset or a
+ *      provider's live `/models` response (see `modelCatalogStore`), resolved by
+ *      the caller for the active hosted model.
  *   4. the static `MODEL_CONTEXT_WINDOWS` map — offline / pre-fetch fallback.
  *   5. a safe provider default.
  */
@@ -74,7 +107,7 @@ export function getModelContextWindow(
 
   if (catalogWindow && catalogWindow > 0) return { tokens: catalogWindow, source: 'detected' }
 
-  const id = config.provider === 'openai' ? config.openaiModel : config.anthropicMainModel
+  const id = resolveHostedModelId(config)
   const t = MODEL_CONTEXT_WINDOWS[id]
   return t ? { tokens: t, source: 'detected' } : { tokens: DEFAULT_CONTEXT_WINDOW[config.provider], source: 'default' }
 }

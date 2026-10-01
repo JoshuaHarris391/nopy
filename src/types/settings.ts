@@ -1,7 +1,7 @@
 import type { TherapyType } from '../services/prompts/therapists'
 import type { ProfileScope } from './profile'
 
-export type LlmProvider = 'anthropic' | 'local' | 'openai'
+export type LlmProvider = 'anthropic' | 'local' | 'openai' | 'venice'
 
 /**
  * Which slot the dispatcher should resolve.
@@ -48,6 +48,9 @@ export interface LlmConfig {
   openaiApiKey: string
   openaiModel: string
   openaiLightweightModel: string
+  veniceApiKey: string
+  veniceModel: string
+  veniceLightweightModel: string
 }
 
 export interface UserSettings {
@@ -109,4 +112,7 @@ export interface UserSettings {
   openaiApiKey: string
   openaiModel: string
   openaiLightweightModel: string
+  veniceApiKey: string
+  veniceModel: string
+  veniceLightweightModel: string
 }

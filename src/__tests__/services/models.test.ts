@@ -14,6 +14,9 @@ function cfg(overrides: Partial<LlmConfig>): LlmConfig {
     openaiApiKey: '',
     openaiModel: '',
     openaiLightweightModel: '',
+    veniceApiKey: '',
+    veniceModel: '',
+    veniceLightweightModel: '',
     ...overrides,
   }
 }
@@ -106,6 +109,32 @@ describe('getModelContextWindow', () => {
      */
     expect(getModelContextWindow(cfg({ provider: 'openai', openaiModel: 'gpt-4o' }), undefined, null, undefined))
       .toEqual({ tokens: 128_000, source: 'detected' })
+  })
+
+  it('detects a curated Venice model window and falls back for an unmapped one', () => {
+    /**
+     * Venice ships in the static map (LiteLLM rarely carries Venice ids), so a
+     * curated id resolves to its real window while an unknown Venice id falls
+     * back to the conservative Venice default — the budget bar must never
+     * crash on a model we haven't listed.
+     */
+    expect(getModelContextWindow(cfg({ provider: 'venice', veniceModel: 'claude-opus-4-8' })))
+      .toEqual({ tokens: 200_000, source: 'detected' })
+    expect(getModelContextWindow(cfg({ provider: 'venice', veniceModel: 'some-new-venice-model' })))
+      .toEqual({ tokens: 32_000, source: 'default' })
+  })
+
+  it('prefers the LiteLLM catalog window for Venice too when present', () => {
+    /**
+     * If the catalog does carry a Venice id, it wins over the static map like
+     * any other hosted provider.
+     */
+    expect(getModelContextWindow(
+      cfg({ provider: 'venice', veniceModel: 'claude-opus-4-8' }),
+      undefined,
+      null,
+      1_000_000,
+    )).toEqual({ tokens: 1_000_000, source: 'detected' })
   })
 
   it('ignores the catalog window for local mode (native ping is authoritative)', () => {

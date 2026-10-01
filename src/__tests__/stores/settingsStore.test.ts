@@ -32,6 +32,9 @@ const DEFAULTS = {
   openaiApiKey: '',
   openaiModel: '',
   openaiLightweightModel: '',
+  veniceApiKey: '',
+  veniceModel: '',
+  veniceLightweightModel: '',
 }
 
 beforeEach(() => {
@@ -87,6 +90,9 @@ describe('useSettingsStore', () => {
       { call: () => useSettingsStore.getState().setOpenaiApiKey('sk-openai-x'), expectField: 'openaiApiKey', expectValue: 'sk-openai-x' },
       { call: () => useSettingsStore.getState().setOpenaiModel('gpt-4o-mini'), expectField: 'openaiModel', expectValue: 'gpt-4o-mini' },
       { call: () => useSettingsStore.getState().setOpenaiLightweightModel('gpt-4o-mini'), expectField: 'openaiLightweightModel', expectValue: 'gpt-4o-mini' },
+      { call: () => useSettingsStore.getState().setVeniceApiKey('vk-x'), expectField: 'veniceApiKey', expectValue: 'vk-x' },
+      { call: () => useSettingsStore.getState().setVeniceModel('claude-opus-4-8'), expectField: 'veniceModel', expectValue: 'claude-opus-4-8' },
+      { call: () => useSettingsStore.getState().setVeniceLightweightModel('deepseek-v4-1-flash'), expectField: 'veniceLightweightModel', expectValue: 'deepseek-v4-1-flash' },
     ]
 
     for (const { call, expectField, expectValue } of cases) {
@@ -457,6 +463,34 @@ describe('multi-provider settings', () => {
     expect(state.apiKey).toBe('sk-existing')
   })
 
+  it('migrates a v10 persisted blob (no Venice fields) to v11 defaults of blank strings', async () => {
+    /**
+     * The Venice provider is opt-in. Existing users on v10 have no venice*
+     * fields; the v10→v11 step must seed all three blank so the provider
+     * starts unconfigured (the dispatcher falls back to the main model for
+     * the lightweight slot) and nobody is silently switched onto a new
+     * provider after an update — and their other settings stay untouched.
+     */
+    localStorage.setItem(
+      'nopy-settings',
+      JSON.stringify({
+        state: { apiKey: 'sk-existing', theme: 'dark', provider: 'anthropic' },
+        version: 10,
+      }),
+    )
+
+    vi.resetModules()
+    const fresh = await import('../../stores/settingsStore')
+    const state = fresh.useSettingsStore.getState()
+
+    expect(state.veniceApiKey).toBe('')
+    expect(state.veniceModel).toBe('')
+    expect(state.veniceLightweightModel).toBe('')
+    expect(state.provider).toBe('anthropic')
+    expect(state.apiKey).toBe('sk-existing')
+    expect(state.theme).toBe('dark')
+  })
+
   it('selectLlmConfig returns only the LLM-routing fields with the symmetric anthropicMainModel name', () => {
     /**
      * The dispatcher in services/llm.ts needs provider + all six per-provider
@@ -475,6 +509,9 @@ describe('multi-provider settings', () => {
       openaiApiKey: 'sk-openai-x',
       openaiModel: 'gpt-4o',
       openaiLightweightModel: 'gpt-4o-mini',
+      veniceApiKey: 'vk-x',
+      veniceModel: 'claude-opus-4-8',
+      veniceLightweightModel: 'deepseek-v4-1-flash',
       theme: 'dark', // not in the slice
     })
 
@@ -490,11 +527,15 @@ describe('multi-provider settings', () => {
       openaiApiKey: 'sk-openai-x',
       openaiModel: 'gpt-4o',
       openaiLightweightModel: 'gpt-4o-mini',
+      veniceApiKey: 'vk-x',
+      veniceModel: 'claude-opus-4-8',
+      veniceLightweightModel: 'deepseek-v4-1-flash',
     })
     expect(Object.keys(config).sort()).toEqual([
       'anthropicLightweightModel', 'anthropicMainModel', 'apiKey',
       'localBaseUrl', 'localLightweightModel', 'localModel',
       'openaiApiKey', 'openaiLightweightModel', 'openaiModel', 'provider',
+      'veniceApiKey', 'veniceLightweightModel', 'veniceModel',
     ])
   })
 })

@@ -35,7 +35,7 @@ import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { useLocalModels } from '../../hooks/useLocalModels'
 import { resolveContextItems } from '../../services/contextResolver'
 import { renderProfileBlock, renderIndexBlock } from '../../services/contextAssembler'
-import { getModelContextWindow } from '../../services/models'
+import { getModelContextWindow, resolveHostedModelId } from '../../services/models'
 import { getTherapyPrompt } from '../../services/prompts/therapists'
 import { estimateTokens } from '../../utils/tokenEstimator'
 import type { ContextNote, ResolvedContextItem } from '../../types/context'
@@ -87,6 +87,7 @@ export function ContextView() {
   const { models: localModels } = useLocalModels(llmConfig.provider === 'local' ? localBaseUrl : '')
   const ensureCatalog = useModelCatalogStore((s) => s.ensure)
   const catalogWindows = useModelCatalogStore((s) => s.windows)
+  const liveWindows = useModelCatalogStore((s) => s.liveWindows)
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<ContextNote | null>(null)
@@ -118,13 +119,15 @@ export function ContextView() {
   const [activeOrigin, setActiveOrigin] = useState<'shelf' | 'grid' | null>(null)
   const containers = override ?? derived
 
-  // Real context window for the active hosted model, from the LiteLLM catalog
-  // (undefined for local, which uses its own native ping).
+  // Real context window for the active hosted model: a provider-reported window
+  // (Venice) wins, then the LiteLLM catalog. Undefined for local, which uses
+  // its own native ping.
   const catalogWindow = useMemo(() => {
     if (llmConfig.provider === 'local') return undefined
-    const id = llmConfig.provider === 'openai' ? llmConfig.openaiModel : llmConfig.anthropicMainModel
-    return catalogWindows[id] ?? catalogWindows[id.replace(/-\d{8}$/, '')]
-  }, [llmConfig, catalogWindows])
+    const id = resolveHostedModelId(llmConfig)
+    const stripped = id.replace(/-\d{8}$/, '')
+    return liveWindows[id] ?? liveWindows[stripped] ?? catalogWindows[id] ?? catalogWindows[stripped]
+  }, [llmConfig, catalogWindows, liveWindows])
 
   const window = useMemo(
     () => getModelContextWindow(llmConfig, localModels, windowOverride, catalogWindow),

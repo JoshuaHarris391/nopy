@@ -36,6 +36,9 @@ interface SettingsState extends UserSettings {
   setOpenaiApiKey: (key: string) => void
   setOpenaiModel: (model: string) => void
   setOpenaiLightweightModel: (model: string) => void
+  setVeniceApiKey: (key: string) => void
+  setVeniceModel: (model: string) => void
+  setVeniceLightweightModel: (model: string) => void
 }
 
 const DEFAULT_LOCAL_BASE_URL = 'http://localhost:1234/v1'
@@ -68,6 +71,9 @@ export const useSettingsStore = create<SettingsState>()(
       openaiApiKey: '',
       openaiModel: '',
       openaiLightweightModel: '',
+      veniceApiKey: '',
+      veniceModel: '',
+      veniceLightweightModel: '',
 
       setApiKey: (key) => set({ apiKey: key }),
       setPreferredModel: (model) => set({ preferredModel: model }),
@@ -97,10 +103,13 @@ export const useSettingsStore = create<SettingsState>()(
       setOpenaiApiKey: (key) => set({ openaiApiKey: key }),
       setOpenaiModel: (model) => set({ openaiModel: model }),
       setOpenaiLightweightModel: (model) => set({ openaiLightweightModel: model }),
+      setVeniceApiKey: (key) => set({ veniceApiKey: key }),
+      setVeniceModel: (model) => set({ veniceModel: model }),
+      setVeniceLightweightModel: (model) => set({ veniceLightweightModel: model }),
     }),
     {
       name: 'nopy-settings',
-      version: 10,
+      version: 11,
       // v0 → v1 added the local-LLM fields (provider/localBaseUrl/localModel).
       // v1 → v2 added the OpenAI fields (openaiApiKey/openaiModel).
       // v2 → v3 added per-provider lightweight model slots. Anthropic seeds
@@ -124,6 +133,9 @@ export const useSettingsStore = create<SettingsState>()(
       // full psychological profile). Seeds to 'incremental', the new default.
       // v9 → v10 added profileScope (which index records feed generation).
       // Seeds to every entry, which is what generation always did before.
+      // v10 → v11 added the Venice provider fields (veniceApiKey/veniceModel
+      // /veniceLightweightModel). Seeds blank — the provider is opt-in and
+      // the dispatcher's fallback keeps single-model setups working.
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<UserSettings> & Record<string, unknown>
         let next = state
@@ -193,6 +205,14 @@ export const useSettingsStore = create<SettingsState>()(
             profileScope: next.profileScope ?? { kind: 'all' },
           }
         }
+        if (version < 11) {
+          next = {
+            ...next,
+            veniceApiKey: next.veniceApiKey ?? '',
+            veniceModel: next.veniceModel ?? '',
+            veniceLightweightModel: next.veniceLightweightModel ?? '',
+          }
+        }
         return next
       },
     }
@@ -229,4 +249,7 @@ export const selectLlmConfig = (s: SettingsState): LlmConfig => ({
   openaiApiKey: s.openaiApiKey,
   openaiModel: s.openaiModel,
   openaiLightweightModel: s.openaiLightweightModel,
+  veniceApiKey: s.veniceApiKey,
+  veniceModel: s.veniceModel,
+  veniceLightweightModel: s.veniceLightweightModel,
 })

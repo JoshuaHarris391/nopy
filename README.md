@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>A quiet, local-first journal that thinks with you.</strong><br/>
-  <sub>Your words live on your machine as plain Markdown. The AI features run through your own API key from the provider you choose — Anthropic, OpenAI, or a local model — nothing in between, no accounts, no servers of ours.</sub>
+  <sub>Your words live on your machine as plain Markdown. The AI features run through your own API key from the provider you choose — Anthropic, OpenAI, Venice, or a local model — nothing in between, no accounts, no servers of ours.</sub>
 </p>
 
 <h3 align="center">
@@ -108,20 +108,22 @@ Nopy separates cleanly into two layers, and we'd rather be upfront about both th
 - Your journal entries — stored as `.md` files in the folder you pick (desktop app) or in browser IndexedDB (web).
 - Your entry index — stored in each entry's own `.md` frontmatter, so it travels with the journal.
 - Your psychological profiles — every generated version kept as JSON on disk under `profiles/`, never synced anywhere.
-- Your AI provider API key (Anthropic or OpenAI) or local server URL — saved locally, used only to make calls directly from your machine to the provider you picked.
+- Your AI provider API key (Anthropic, OpenAI, or Venice) or local server URL — saved locally, used only to make calls directly from your machine to the provider you picked.
 - App state, preferences, session history — all on-device.
 
 **What gets sent to your AI provider, and only then**
 
 When you use the AI chat or index an entry, nopy sends the relevant text (that entry, or your message and chat context) to your chosen provider's API using your key. Generating a profile sends only the index records and a report computed from them, never entry text. Nothing is sent otherwise — not when you type, not when you save, not in the background. You can use nopy as a plain Markdown journal and never send a single byte anywhere.
 
-You pick the provider: **Anthropic**, **OpenAI**, or a **local model via LM Studio** — and a local model makes no network calls at all, so your text never leaves the machine. For the cloud providers, each one's own data policies apply to that slice of traffic. The notes below cover Anthropic, the default; if you use OpenAI, see [OpenAI's policies](https://openai.com/policies/) instead.
+You pick the provider: **Anthropic**, **OpenAI**, **Venice**, or a **local model via LM Studio** — and a local model makes no network calls at all, so your text never leaves the machine. For the cloud providers, each one's own data policies apply to that slice of traffic. The notes below cover Anthropic, the default; if you use OpenAI, see [OpenAI's policies](https://openai.com/policies/); if you use Venice, see [Venice's privacy architecture](https://venice.ai/privacy#privacy-architecture).
 
 - **Not used for training.** Under Anthropic's Commercial Terms, API inputs and outputs are not used to train their models. ([Commercial Terms](https://www.anthropic.com/legal/commercial-terms))
 - **Short retention by default.** Anthropic retains API inputs and outputs for up to **30 days**, after which they are deleted, unless flagged by their automated trust & safety systems (in which case retention may extend up to 2 years for safety review). ([Privacy Policy](https://www.anthropic.com/legal/privacy))
 - **Zero Data Retention available.** Qualifying organisations can enable **Zero Data Retention (ZDR)** on their Anthropic account, which means API inputs and outputs are not retained past the response. If you have ZDR enabled on your Anthropic account, nopy's AI features automatically inherit it — nopy doesn't override anything. ([ZDR details](https://privacy.anthropic.com/en/articles/10440198-what-is-zero-retention-mode))
 
 If any of this ever changes upstream, the source of truth is Anthropic's policy pages linked above — not this README.
+
+For **Venice**, [Venice's privacy architecture](https://venice.ai/privacy#privacy-architecture) is the source of truth for what it logs, retains or processes; nopy makes no additional claims about it, and the same "only the text you send" rule above applies.
 
 **Want zero AI involvement?** Leave the API key blank. Nopy still works as a markdown journal with mood tracking and the writing surface, with no network calls at all.
 
@@ -132,13 +134,13 @@ If any of this ever changes upstream, the source of truth is Anthropic's policy 
 - **Tailwind CSS** — utility-first styling
 - **Tauri** — lightweight desktop shell (Rust) for native file system access
 - **Zustand** — state management with IndexedDB + filesystem persistence
-- **AI providers** — bring your own: Anthropic (defaults to Claude Sonnet 4.5 for chat, Claude Haiku 4.5 for indexing), OpenAI, or a local model via LM Studio. Uses the `@anthropic-ai/sdk` and `openai` SDKs.
+- **AI providers** — bring your own: Anthropic (defaults to Claude Sonnet 4.5 for chat, Claude Haiku 4.5 for indexing), OpenAI, Venice, or a local model via LM Studio. Uses the `@anthropic-ai/sdk` and `openai` SDKs; Venice is OpenAI-compatible, so it reuses the `openai` SDK pointed at Venice's base URL.
 
 ## Features
 
 - **Structured journaling** — simple markdown editor with manual save
 - **AI psychologist chat** — conversational agent with streaming responses and session continuity, in selectable therapy modes (CBT, ACT, or breakup support)
-- **Multiple AI providers** — use Anthropic, OpenAI, or a local model via LM Studio — or none at all
+- **Multiple AI providers** — use Anthropic, OpenAI, Venice, or a local model via LM Studio — or none at all
 - **Context Workspace** — curate exactly what gets injected into the AI prompt (profile, index, and custom notes) with a live context-window budget
 - **Journal Launcher** — open a recent journal or create a new one on every app start
 - **Psychological profile** — a clinical-style formulation generated from your index records, with a scope selector (all entries, newest N, or last N months), incremental revisions, and a version history in which nothing is overwritten
@@ -186,6 +188,7 @@ Tests live in `src/__tests__/`, mirroring the source tree:
 | `services/contextAssembler.test.ts` | Context assembly — token budgeting, message truncation, profile injection |
 | `services/llm.test.ts` | Provider-agnostic LLM request dispatch |
 | `services/localServer.test.ts` | LM Studio local server client |
+| `services/venice.test.ts` | Venice provider client (OpenAI-compatible) |
 | `services/chatPersistence.test.ts` | Chat history persistence (NDJSON) |
 | `services/therapyRegistry.test.ts` | Therapy agent registry (CBT / ACT / breakup) |
 | `stores/settingsStore.test.ts` | Settings store and per-provider model selection |
@@ -199,7 +202,7 @@ Tests live in `src/__tests__/`, mirroring the source tree:
 
 On first launch, go to **Settings** and configure:
 
-1. **AI provider** — choose Anthropic, OpenAI, or Local (LM Studio), then enter the API key (Anthropic/OpenAI) or local server URL (LM Studio needs only a URL — no key). Required for AI chat and entry indexing; your key stays local.
+1. **AI provider** — choose Anthropic, OpenAI, Venice, or Local (LM Studio), then enter the API key (Anthropic/OpenAI/Venice) or local server URL (LM Studio needs only a URL — no key). Required for AI chat and entry indexing; your key stays local.
 2. **Journal location** — choose where to save your entries as Markdown files (desktop app only).
 
 ## Documentation

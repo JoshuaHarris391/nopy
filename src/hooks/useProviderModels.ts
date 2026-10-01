@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useModelCatalogStore } from '../stores/modelCatalogStore'
+import type { ProviderModel } from '../services/models'
 
-type ProviderModule = Promise<{ fetchModels: (apiKey: string) => Promise<{ id: string; displayName: string }[]> }>
+type ProviderModule = Promise<{ fetchModels: (apiKey: string) => Promise<ProviderModel[]> }>
 
 /**
  * Shared model-list loader for hosted providers. The provider module is
@@ -10,7 +12,7 @@ type ProviderModule = Promise<{ fetchModels: (apiKey: string) => Promise<{ id: s
  * self-documenting.
  */
 function useProviderModels(loadProvider: () => ProviderModule, apiKey: string) {
-  const [models, setModels] = useState<{ id: string; displayName: string }[]>([])
+  const [models, setModels] = useState<ProviderModel[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,7 +25,19 @@ function useProviderModels(loadProvider: () => ProviderModule, apiKey: string) {
     setError(null)
     loadProvider().then(({ fetchModels }) =>
       fetchModels(apiKey)
-        .then(setModels)
+        .then((list) => {
+          setModels(list)
+          // Providers that report their own usable window (Venice returns
+          // `model_spec.availableContextTokens`) feed it to the catalog store, so
+          // the Context budget bar and message budgeting use the real number
+          // instead of the per-provider fallback. Providers that don't report a
+          // window contribute nothing and keep the LiteLLM/static behaviour.
+          const windows: Record<string, number> = {}
+          for (const m of list) if (m.contextTokens) windows[m.id] = m.contextTokens
+          if (Object.keys(windows).length > 0) {
+            useModelCatalogStore.getState().recordLiveWindows(windows)
+          }
+        })
         .catch(() => setError('Failed to load models'))
         .finally(() => setLoading(false))
     )
@@ -40,4 +54,8 @@ export function useAnthropicModels(apiKey: string) {
 
 export function useOpenaiModels(apiKey: string) {
   return useProviderModels(() => import('../services/openai'), apiKey)
+}
+
+export function useVeniceModels(apiKey: string) {
+  return useProviderModels(() => import('../services/venice'), apiKey)
 }

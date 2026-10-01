@@ -12,15 +12,17 @@ import { render, fireEvent, screen, cleanup, within, waitFor } from '@testing-li
  * vi.hoisted is required because vi.mock factories run before regular
  * top-level consts are initialized.
  */
-const { useAnthropicModelsMock, useOpenaiModelsMock, probeMock, openUrlMock } = vi.hoisted(() => ({
+const { useAnthropicModelsMock, useOpenaiModelsMock, useVeniceModelsMock, probeMock, openUrlMock } = vi.hoisted(() => ({
   useAnthropicModelsMock: vi.fn(),
   useOpenaiModelsMock: vi.fn(),
+  useVeniceModelsMock: vi.fn(),
   probeMock: vi.fn(),
   openUrlMock: vi.fn(async () => {}),
 }))
 vi.mock('../../hooks/useProviderModels', () => ({
   useAnthropicModels: useAnthropicModelsMock,
   useOpenaiModels: useOpenaiModelsMock,
+  useVeniceModels: useVeniceModelsMock,
 }))
 vi.mock('../../services/localServer', async () => {
   const actual = await vi.importActual<typeof import('../../services/localServer')>('../../services/localServer')
@@ -46,12 +48,16 @@ const DEFAULT_SETTINGS = {
   openaiApiKey: '',
   openaiModel: '',
   openaiLightweightModel: '',
+  veniceApiKey: '',
+  veniceModel: '',
+  veniceLightweightModel: '',
 }
 
 beforeEach(() => {
   useSettingsStore.setState(DEFAULT_SETTINGS)
   useAnthropicModelsMock.mockReturnValue({ models: [], loading: false, error: null })
   useOpenaiModelsMock.mockReturnValue({ models: [], loading: false, error: null })
+  useVeniceModelsMock.mockReturnValue({ models: [], loading: false, error: null })
   probeMock.mockResolvedValue({ ok: false, reason: 'connection-refused' })
   openUrlMock.mockClear()
   // Pretend we're in the Tauri webview so LocalOnboardingCard takes the
@@ -530,5 +536,70 @@ describe('ApiSection — OpenAI mode', () => {
 
     fireEvent.change(modelSelect, { target: { value: 'gpt-4o' } })
     expect(useSettingsStore.getState().openaiModel).toBe('gpt-4o')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Venice mode
+// ---------------------------------------------------------------------------
+
+describe('ApiSection — Venice mode', () => {
+  it('toggling to Venice mounts VeniceBlock without losing the Anthropic key', () => {
+    /**
+     * Venice is the newest provider and must slot into the same toggle
+     * contract as the others: switching mounts its block, and the previously
+     * active provider's saved state is untouched.
+     */
+    useSettingsStore.setState({ apiKey: 'sk-ant-saved' })
+    render(<ApiSection />)
+    expect(screen.getByPlaceholderText('sk-ant-...')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: /venice/i }))
+
+    expect(useSettingsStore.getState().provider).toBe('venice')
+    expect(useSettingsStore.getState().apiKey).toBe('sk-ant-saved')
+    expect(screen.queryByPlaceholderText('sk-ant-...')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('venice-...')).toBeInTheDocument()
+  })
+
+  it('Venice API key input is masked and writes the trimmed value on blur', () => {
+    /**
+     * Same security/ergonomics contract as the other hosted keys: password by
+     * default, blur trims whitespace from a pasted key.
+     */
+    useSettingsStore.setState({ provider: 'venice' })
+    render(<ApiSection />)
+
+    const input = screen.getByPlaceholderText('venice-...') as HTMLInputElement
+    expect(input.type).toBe('password')
+
+    fireEvent.change(input, { target: { value: '  vk-trimmed  ' } })
+    fireEvent.blur(input)
+    expect(useSettingsStore.getState().veniceApiKey).toBe('vk-trimmed')
+  })
+
+  it('model dropdown populates from the Venice hook and writes selection through to setVeniceModel', () => {
+    /**
+     * The Venice dropdown is fed by useVeniceModels (which merges the curated
+     * model list with the live response) — this pins the data flow and the
+     * controlled write-back.
+     */
+    useSettingsStore.setState({ provider: 'venice', veniceApiKey: 'vk-x', veniceModel: 'claude-opus-4-8' })
+    useVeniceModelsMock.mockReturnValue({
+      models: [
+        { id: 'claude-opus-4-8', displayName: 'claude-opus-4-8' },
+        { id: 'deepseek-v4-1-flash', displayName: 'deepseek-v4-1-flash' },
+      ],
+      loading: false,
+      error: null,
+    })
+    render(<ApiSection />)
+
+    const modelSelect = document.querySelectorAll('select')[0] as HTMLSelectElement
+    expect(modelSelect).not.toBeDisabled()
+    expect(within(modelSelect).getByText('deepseek-v4-1-flash')).toBeInTheDocument()
+
+    fireEvent.change(modelSelect, { target: { value: 'deepseek-v4-1-flash' } })
+    expect(useSettingsStore.getState().veniceModel).toBe('deepseek-v4-1-flash')
   })
 })

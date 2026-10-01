@@ -1,8 +1,10 @@
 import * as anthropic from './anthropic'
 import * as localServer from './localServer'
 import * as openai from './openai'
+import * as venice from './venice'
 import type { LlmConfig, LlmModelRole } from '../types/settings'
 import type { ChatUsage } from '../types/chat'
+import type { ProviderModel } from './models'
 
 export type { LlmConfig, LlmModelRole } from '../types/settings'
 
@@ -76,6 +78,7 @@ export type Message = { role: 'user' | 'assistant'; content: string }
 export function isLlmConfigured(config: LlmConfig): boolean {
   if (config.provider === 'anthropic') return !!config.apiKey
   if (config.provider === 'openai') return !!config.openaiApiKey && !!config.openaiModel
+  if (config.provider === 'venice') return !!config.veniceApiKey && !!config.veniceModel
   return !!config.localModel
 }
 
@@ -97,6 +100,11 @@ export function resolveModel(config: LlmConfig, role: LlmModelRole): string {
   }
   if (config.provider === 'openai') {
     const m = role === 'main' ? config.openaiModel : (config.openaiLightweightModel || config.openaiModel)
+    if (!m) throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
+    return m
+  }
+  if (config.provider === 'venice') {
+    const m = role === 'main' ? config.veniceModel : (config.veniceLightweightModel || config.veniceModel)
     if (!m) throw new LlmError('NO_MODEL_CONFIGURED', LLM_ERROR_MESSAGES.NO_MODEL_CONFIGURED)
     return m
   }
@@ -154,6 +162,12 @@ export async function streamChatResponse(
       onChunk, onComplete, onError,
     )
   }
+  if (config.provider === 'venice') {
+    return venice.streamChatResponse(
+      config.veniceApiKey, model, system, messages, maxTokens,
+      onChunk, onComplete, onError,
+    )
+  }
   return anthropic.streamChatResponse(
     config.apiKey, model, system, messages, maxTokens,
     onChunk, onComplete, onError,
@@ -175,6 +189,9 @@ export async function sendMessage(
   if (config.provider === 'openai') {
     return openai.sendMessage(config.openaiApiKey, model, system, messages, maxTokens, signal)
   }
+  if (config.provider === 'venice') {
+    return venice.sendMessage(config.veniceApiKey, model, system, messages, maxTokens, signal)
+  }
   return anthropic.sendMessage(config.apiKey, model, system, messages, maxTokens, signal)
 }
 
@@ -194,15 +211,21 @@ export async function sendMessageStreaming(
   if (config.provider === 'openai') {
     return openai.sendMessageStreaming(config.openaiApiKey, model, system, messages, maxTokens, onProgress, signal)
   }
+  if (config.provider === 'venice') {
+    return venice.sendMessageStreaming(config.veniceApiKey, model, system, messages, maxTokens, onProgress, signal)
+  }
   return anthropic.sendMessageStreaming(config.apiKey, model, system, messages, maxTokens, onProgress, signal)
 }
 
-export async function fetchModels(config: LlmConfig): Promise<{ id: string; displayName: string }[]> {
+export async function fetchModels(config: LlmConfig): Promise<ProviderModel[]> {
   if (config.provider === 'local') {
     return localServer.fetchModels(config.localBaseUrl)
   }
   if (config.provider === 'openai') {
     return openai.fetchModels(config.openaiApiKey)
+  }
+  if (config.provider === 'venice') {
+    return venice.fetchModels(config.veniceApiKey)
   }
   return anthropic.fetchModels(config.apiKey)
 }

@@ -2,18 +2,19 @@ import { Cloud, HardDrive, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../../../../stores/settingsStore'
 import type { LlmProvider } from '../../../../types/settings'
 
-const OPTIONS: { value: LlmProvider; label: string; Icon: typeof Cloud }[] = [
+const OPTIONS: { value: LlmProvider; label: string; Icon?: typeof Cloud }[] = [
   { value: 'local', label: 'Local (LM Studio)', Icon: HardDrive },
   { value: 'openai', label: 'OpenAI API', Icon: Sparkles },
+  { value: 'venice', label: 'Venice AI' },
   { value: 'anthropic', label: 'Anthropic API', Icon: Cloud },
 ]
 
 /**
- * Segmented two-button picker for the LLM provider. Visual pattern copied
+ * Segmented button picker for the LLM provider. Visual pattern copied
  * from `AppearanceSection` so the settings page reads as one design system.
  * Selecting a provider only updates `settings.provider` — the per-provider
- * config (apiKey vs localBaseUrl/localModel) stays preserved so toggling
- * back and forth doesn't clobber either one's setup.
+ * config stays preserved so toggling back and forth doesn't clobber either
+ * one's setup. Entries without an `Icon` render as a label only.
  */
 export function ProviderToggle() {
   const provider = useSettingsStore((s) => s.provider)
@@ -45,7 +46,7 @@ export function ProviderToggle() {
               transition: 'all var(--transition-gentle)',
             }}
           >
-            <Icon size={13} strokeWidth={1.8} />
+            {Icon && <Icon size={13} strokeWidth={1.8} />}
             {label}
           </button>
         )

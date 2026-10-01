@@ -15,10 +15,11 @@ vi.mock('idb-keyval', () => ({
 import { useModelCatalogStore, parseLiteLLMWindows } from '../../stores/modelCatalogStore'
 
 const IDB_KEY = 'nopy-litellm-windows'
+const LIVE_IDB_KEY = 'nopy-provider-windows'
 
 beforeEach(() => {
   idbStore.clear()
-  useModelCatalogStore.setState({ windows: {}, loaded: false, fetching: false })
+  useModelCatalogStore.setState({ windows: {}, liveWindows: {}, loaded: false, fetching: false })
   vi.restoreAllMocks()
 })
 
@@ -112,5 +113,51 @@ describe('useModelCatalogStore', () => {
     expect(contextWindowFor('gpt-4o')).toBe(128000)
     expect(contextWindowFor('claude-sonnet-4-5-20250514')).toBe(200000)
     expect(contextWindowFor('unknown-model')).toBeUndefined()
+  })
+})
+
+describe('provider-reported windows', () => {
+  it('records provider windows, persists them, and prefers them over the catalog', () => {
+    /**
+     * Venice reports its own usable window (e.g. 1M for Kimi), which LiteLLM
+     * doesn't carry. The provider value must win for that id, and it must be
+     * written to idb so later sessions budget correctly without a re-fetch.
+     * Input: catalog says 128k, provider says 1M for the same id
+     * Expected output: contextWindowFor returns 1M; idb holds the provider map
+     */
+    useModelCatalogStore.setState({ windows: { 'kimi-k2-thinking': 128000 }, loaded: true })
+    useModelCatalogStore.getState().recordLiveWindows({ 'kimi-k2-thinking': 1_000_000 })
+
+    expect(useModelCatalogStore.getState().contextWindowFor('kimi-k2-thinking')).toBe(1_000_000)
+    expect(idbStore.get(LIVE_IDB_KEY)).toEqual({ 'kimi-k2-thinking': 1_000_000 })
+  })
+
+  it('hydrates provider windows from idb during ensure', async () => {
+    /**
+     * The recorded window must survive a reload: ensure() restores it before the
+     * Context budget bar reads it, so a previously-fetched Venice model keeps
+     * its real window even when the settings dropdown hasn't been opened yet.
+     * Input: a provider-window map already in idb
+     * Expected output: liveWindows populated after ensure()
+     */
+    idbStore.set(LIVE_IDB_KEY, { 'kimi-k2-thinking': 1_000_000 })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as unknown as Response)
+
+    await useModelCatalogStore.getState().ensure()
+
+    expect(useModelCatalogStore.getState().liveWindows).toEqual({ 'kimi-k2-thinking': 1_000_000 })
+  })
+
+  it('matches a dated provider id by stripping the date suffix', () => {
+    /**
+     * Venice ids are undated today, but a provider may return a dated id that
+     * the catalog keys undated — the suffix-strip must apply to provider
+     * windows too, or the budget bar silently falls back to the default.
+     */
+    useModelCatalogStore.setState({ liveWindows: { 'claude-opus-4-8': 200_000 } })
+    expect(useModelCatalogStore.getState().contextWindowFor('claude-opus-4-8-20260101')).toBe(200_000)
   })
 })
