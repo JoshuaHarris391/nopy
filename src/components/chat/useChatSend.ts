@@ -222,6 +222,9 @@ export function useChatSend({
             message,
           })
         },
+        // Stable per-conversation routing hint so Venice keeps hitting the
+        // backend holding this session's cached prefix (no-op elsewhere).
+        session.id,
       )
     } catch (error) {
       console.error('Chat setup error:', error)

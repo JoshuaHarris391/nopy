@@ -5,6 +5,12 @@ import type { ChatUsage } from '../types/chat'
 // We fold these into a single "tokens billed" estimate so the header reflects
 // what's actually charged — a turn served from cache adds almost nothing, which
 // is how the caching saving becomes visible.
+//
+// These are the *premium* rates (Claude-shaped). Venice's non-Claude models
+// discount cache reads less steeply (50-90%) and usually charge nothing for
+// writes, so for those the estimate reads slightly low. It's a display-only
+// figure over a raw breakdown the tooltip still shows, and keeping one set of
+// multipliers avoids a provider-conditional number in the header.
 const CACHE_WRITE_MULTIPLIER = 1.25
 const CACHE_READ_MULTIPLIER = 0.1
 
