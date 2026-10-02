@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/JoshuaHarris391/nopy/compare/v0.10.0...v0.11.0) (2026-10-02)
+
+
+### Features
+
+* add Venice AI as a hosted provider ([ee16371](https://github.com/JoshuaHarris391/nopy/commit/ee1637109035b385798df7db9d2b87a7d30efa8c))
+* report Venice cache usage and send prompt_cache_key ([c8647d7](https://github.com/JoshuaHarris391/nopy/commit/c8647d709d8ff4bf4096e377d271e366693af0e4))
+
 ## [0.10.0](https://github.com/JoshuaHarris391/nopy/compare/v0.9.0...v0.10.0) (2026-09-17)
 
 
