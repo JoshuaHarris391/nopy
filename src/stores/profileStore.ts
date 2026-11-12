@@ -7,7 +7,7 @@ import {
 } from '../services/fs'
 import { PsychologicalProfileSchema } from '../schemas/profile'
 import { useSettingsStore } from './settingsStore'
-import { processAllEntries, generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
+import { generateProfileFromEntries, generateFullProfile, computeLocalStats } from '../services/entryProcessor'
 import { buildCorpusReport, selectEntriesForFullProfile, isStaleIndex, applyProfileScope } from '../services/entryRecords'
 import { CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { getModelContextWindow } from '../services/models'
@@ -275,12 +275,14 @@ export const useProfileStore = create<ProfileState>()((setState, getState) => ({
     if (unindexed.length > 0) {
       const s = stepNum('index')
       setPhase(`Step ${s}/${totalSteps} — Indexing ${unindexed.length} unprocessed entries...`)
-      const results = await processAllEntries(entries, config, 'unindexed', setProgress, signal)
-      if (results.size > 0) {
-        await useJournalStore.getState().applyProcessedMetadata(results)
+      // Same path as Update Index, limited to the entries in scope: each
+      // record is saved as it comes back, and a provider error stops
+      // generation here with its own message.
+      const run = await useJournalStore.getState().processEntries(config, 'unindexed', setProgress, signal, entries)
+      if (run.indexed > 0) {
         entries = applyProfileScope(useJournalStore.getState().entries, scope)
-        console.log(`[profileStore] Step ${s}/${totalSteps}: processed`, results.size, 'entries')
       }
+      console.log(`[profileStore] Step ${s}/${totalSteps}: indexed`, run.indexed, '| failed', run.failed.length)
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')

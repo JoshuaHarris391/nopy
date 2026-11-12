@@ -21,7 +21,7 @@ vi.mock('idb-keyval', () => ({
  * vi.hoisted is needed because vi.mock factories run before top-level consts.
  */
 const { processAllEntriesMock, processEntryMock, profileNarrativeMock, fullProfileMock } = vi.hoisted(() => ({
-  processAllEntriesMock: vi.fn(async () => new Map()),
+  processAllEntriesMock: vi.fn(async () => ({ results: new Map(), attempted: 0, indexed: 0, failed: [] })),
   processEntryMock: vi.fn(async () => ({ mood: { value: 3, label: 'neutral' }, domains: ['work'], summary: 'Indexed.', insight: null, indexModel: 'test' })),
   profileNarrativeMock: vi.fn(),
   fullProfileMock: vi.fn(),
@@ -63,7 +63,7 @@ describe('Private mode blocks the LLM at the store level', () => {
      *
      * Input: private mode on; call processEntries, reindexEntry and
      * generateProfile with a fully configured provider.
-     * Expected: processEntries resolves 0, the entry stays unindexed, the
+     * Expected: processEntries reports nothing attempted, the entry stays unindexed, the
      * profile store never enters its generating state, and the entry
      * processor is never called.
      */
@@ -71,11 +71,11 @@ describe('Private mode blocks the LLM at the store level', () => {
     const config = selectLlmConfig(useSettingsStore.getState())
     const noProgress = () => {}
 
-    const count = await useJournalStore.getState().processEntries(config, 'all', noProgress)
+    const run = await useJournalStore.getState().processEntries(config, 'all', noProgress)
     await useJournalStore.getState().reindexEntry('e1', config)
     await useProfileStore.getState().generateProfile([entry], config)
 
-    expect(count).toBe(0)
+    expect(run).toEqual({ attempted: 0, indexed: 0, failed: [] })
     expect(useJournalStore.getState().entries[0].indexed).toBe(false)
     expect(useProfileStore.getState().generating).toBe(false)
     expect(useProfileStore.getState().profile).toBeNull()

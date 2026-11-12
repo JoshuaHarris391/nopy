@@ -379,7 +379,12 @@ export async function sendMessage(
     throw translateFetchError(e)
   }
   if (!response.ok) throw await translateHttpError(response)
-  const json = (await response.json()) as { choices?: { message?: { content?: string } }[] }
+  const json = (await response.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
+  // Reasoning tokens count against the cap, so a reasoning model can spend
+  // it before the answer is complete. Surface that instead of partial text.
+  if (json.choices?.[0]?.finish_reason === 'length') {
+    throw new LlmError('OUTPUT_TRUNCATED', LLM_ERROR_MESSAGES.OUTPUT_TRUNCATED)
+  }
   return json.choices?.[0]?.message?.content ?? ''
 }
 

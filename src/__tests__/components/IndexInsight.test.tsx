@@ -15,11 +15,13 @@ vi.mock('idb-keyval', () => ({
 
 import { IndexView } from '../../components/index/IndexView'
 import { useJournalStore } from '../../stores/journalStore'
+import { useIndexingStore } from '../../stores/indexingStore'
 import { makeEntry, makeInsight } from '../fixtures/insight'
 
 describe('Index page: structured index markers and detail panel', () => {
   beforeEach(() => {
     idbStore.clear()
+    useIndexingStore.setState({ failures: {} })
     useJournalStore.setState({
       entries: [
         makeEntry({
@@ -37,6 +39,33 @@ describe('Index page: structured index markers and detail panel', () => {
   })
   afterEach(() => {
     cleanup()
+  })
+
+  it('marks a row the last indexing run could not index, with the reason', () => {
+    /**
+     * When a run fails on an entry, the writer should be able to find that
+     * entry in the Index and see why, without opening the developer console.
+     * The indexing store keeps the reason against the entry id until the
+     * next run; the row shows it until the entry has a usable record.
+     *
+     * Input: an unindexed entry, and a failure recorded against its id.
+     * Expected: its row shows a "not indexed" marker whose tooltip is the
+     * reason; the indexed row beside it is unaffected.
+     */
+    useJournalStore.setState({
+      entries: [
+        ...useJournalStore.getState().entries,
+        makeEntry({ id: 'failed', title: 'A hard one', indexed: false, insight: null, indexVersion: 0, summary: null, tags: [] }),
+      ],
+    })
+    useIndexingStore.setState({ failures: { failed: 'The model did not return valid JSON.' } })
+
+    render(<MemoryRouter><IndexView /></MemoryRouter>)
+
+    const marker = screen.getByTestId('marker-index-failed')
+    expect(marker).toHaveTextContent('not indexed')
+    expect(marker).toHaveAttribute('title', 'The model did not return valid JSON.')
+    expect(screen.getByTestId('marker-safety')).toHaveTextContent('monitor')
   })
 
   it('shows key markers in the row and the full record, with raw JSON, when expanded', () => {

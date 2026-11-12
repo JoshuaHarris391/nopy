@@ -50,6 +50,11 @@ export function AppShell() {
             <NotificationCard
               title="Indexing..."
               inProgress
+              description={
+                indexingProgress.total > 0
+                  ? `${indexingProgress.indexed} saved${indexingProgress.failed > 0 ? `, ${indexingProgress.failed} failed` : ''}`
+                  : undefined
+              }
               progress={
                 indexingProgress.total > 0
                   ? { current: indexingProgress.current, total: indexingProgress.total, label: indexingProgress.title }

@@ -171,7 +171,7 @@ describe('Repairing an unusable index response', () => {
     /**
      * Retries are bounded so one stubborn entry cannot burn through an
      * API budget. After the first attempt plus MAX_INDEX_RETRIES repairs the
-     * indexer throws; processAllEntries logs it and moves on.
+     * indexer throws; processAllEntries records the failure and moves on.
      * Input: the model returns prose every time.
      * Expected: exactly 1 + MAX_INDEX_RETRIES calls, then a thrown error.
      */

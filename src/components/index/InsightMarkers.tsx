@@ -1,6 +1,7 @@
 import { AlertTriangle, Repeat, Zap, Compass } from 'lucide-react'
 import type { JournalEntry } from '../../types/journal'
 import { hasStructuredIndex, isStaleIndex } from '../../services/entryRecords'
+import { useIndexingStore } from '../../stores/indexingStore'
 
 const pill: React.CSSProperties = {
   fontFamily: 'var(--font-ui)', fontSize: 11, padding: '1px 6px', borderRadius: 10,
@@ -16,9 +17,21 @@ const SAFETY_STYLE: Record<'monitor' | 'concern', React.CSSProperties> = {
  * The at-a-glance markers for one entry's structured index: safety first,
  * then the strongest emotion, who was there, recurring phrases, and dots
  * for a focal event or a prediction. Renders nothing for unindexed entries
- * and a single "legacy" pill for entries indexed with the old shape.
+ * and a single "legacy" pill for entries indexed with the old shape. An
+ * entry the latest indexing run could not index shows a "not indexed" pill
+ * with the reason as its tooltip.
  */
 export function InsightMarkers({ entry }: { entry: JournalEntry }) {
+  const failure = useIndexingStore((s) => s.failures[entry.id])
+  // The reason belongs to the run that failed; once the entry has a usable
+  // record (a later run, or a single re-index) it no longer applies.
+  if (failure && !hasStructuredIndex(entry)) {
+    return (
+      <span data-testid="marker-index-failed" style={{ ...pill, ...SAFETY_STYLE.concern }} title={failure}>
+        <AlertTriangle size={11} strokeWidth={2} />not indexed
+      </span>
+    )
+  }
   if (!entry.indexed) return null
   if (!hasStructuredIndex(entry)) {
     return isStaleIndex(entry)

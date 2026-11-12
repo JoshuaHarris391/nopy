@@ -240,7 +240,7 @@ Steps:
 2. Index both sides by `id`, and disk entries also by `title.toLowerCase()`.
 3. If two files carry the same frontmatter `id` (a copied file, or a rename whose old file survived), only the most recently updated one is loaded, no write-back is attempted for that id, and `lastError` names both files so the writer can delete one. Otherwise, for each disk entry matched by id to a memory entry, **disk wins when `disk.updatedAt >= memory.updatedAt`.** Disk entries with no memory match are added. Memory entries not found by id or title on disk are removed.
 4. Sort the merged result by `createdAt` descending and write it to IndexedDB.
-5. **Write-back pass:** any disk entry that originally lacked an `id` in its frontmatter (typically a plain-markdown import that was just assigned a fresh UUID by [`loadEntriesFromDisk`](#reading-entries)) is saved back to disk so it gains full frontmatter for next time.
+5. **Write-back pass:** any disk entry that originally lacked an `id` in its frontmatter (typically a plain-markdown import that was just assigned a fresh UUID by [`loadEntriesFromDisk`](#reading-entries)) is saved back to disk so it gains full frontmatter for next time. The write-back names the file after the entry's title, so an import like `My Day.md` becomes `my-day.md`; the new name is stored in the entry's `sourceFilename`. An entry matched by id also adopts the filename found on disk. Every later save targets that name, so a stale one would be refused as a collision with another entry's file.
 6. Return `{ added, updated, removed }` counts for the UI to show.
 
 Disk wins on timestamp ties. External edits to a `.md` file are picked up on the next sync, regardless of whether the memory copy was also modified.
@@ -252,23 +252,26 @@ Disk wins on timestamp ties. External edits to a `.md` file are picked up on the
 When the user clicks "Update Index" (or Re-index on an entry, or "Re-index un-indexed entries" in Settings), the selected entries are sent to the lightweight model one at a time, oldest first:
 
 ```
-processAllEntries(entries, config, mode, onProgress, signal)
-  ├─ mode: 'unindexed' | 'stale' | 'needed' | 'all'
-  └─ for each entry sequentially:
-       hints = buildIndexHints(...)                 ← stated mood, people roster, recurring phrases
-       processEntry(entry, config, signal, hints)
-         ├─ provider call (lightweight slot, max 2500 output tokens)
-         ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant Zod
-         ├─ finaliseRecord(...)                                ← vocabularies, verbatim quotes, roster, confidence floor
-         └─ findRecordProblems(...) → repair retry (max 3)
-       journalStore.applyProcessedMetadata(results)
-         ├─ writer-rated mood kept; indexer mood refreshed
-         ├─ tags ← domains, summary, insight, indexVersion, indexModel
-         ├─ IndexedDB write
-         └─ disk write (frontmatter)
+journalStore.processEntries(config, mode, onProgress, signal)
+  └─ processAllEntries(entries, config, mode, onProgress, signal, { onRecord })
+       ├─ mode: 'unindexed' | 'stale' | 'needed' | 'all'
+       └─ for each entry sequentially:
+            hints = buildIndexHints(...)                 ← stated mood, people roster, recurring phrases
+            processEntry(entry, config, signal, hints)
+              ├─ provider call (lightweight slot, max 8000 output tokens)
+              ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant Zod
+              ├─ finaliseRecord(...)                                ← vocabularies, verbatim quotes, roster, confidence floor
+              └─ findRecordProblems(...) → repair retry (max 3)
+            onRecord → journalStore.applyProcessedMetadata(this entry)
+              ├─ writer-rated mood kept; indexer mood refreshed
+              ├─ tags ← domains, summary, insight, indexVersion, indexModel
+              ├─ IndexedDB write
+              └─ disk write (frontmatter); the returned filename is stored in sourceFilename
 ```
 
-Entries are processed **sequentially, not in parallel**, so the roster and recurring phrases accumulate in the order the writer lived them and rate limits stay predictable. A thrown error on one entry is logged and the loop continues — one bad entry does not block the rest.
+Entries are processed **sequentially, not in parallel**, so the roster and recurring phrases accumulate in the order the writer lived them and rate limits stay predictable.
+
+Each entry is **saved as soon as its record comes back**, so a stopped run or a closed app keeps what was finished. A failure on one entry is recorded with its reason and the run continues; a provider error that would fail every entry (bad key, rate limit, no connection) stops the run. Nothing is swallowed: the outcome, including which entries failed and why, is shown to the writer. A record whose markdown file could not be written counts as a failure and is put in `lastError`, because the cache is rebuilt from disk when the journal is reopened.
 
 The full record shape, the hints, the guards and the repair loop are described in [`llm-pipeline.md`](llm-pipeline.md#entry-indexing).
 

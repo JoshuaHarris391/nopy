@@ -23,6 +23,8 @@ export type LlmErrorCode =
   | 'INVALID_API_KEY'
   | 'RATE_LIMITED'
   | 'CONTEXT_TOO_LARGE'
+  | 'OUTPUT_TRUNCATED'
+  | 'REFUSED'
   | 'UNKNOWN'
 
 export class LlmError extends Error {
@@ -62,6 +64,10 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
     'Too many requests. Wait a moment and try again.',
   CONTEXT_TOO_LARGE:
     "Your prompt is too large for this model's context window. In LM Studio, click Eject and re-load the model with a larger Context Length (Tools → Model loader). For long journal sessions, load a model with at least 32k context.",
+  OUTPUT_TRUNCATED:
+    'The model ran out of output tokens before it finished its answer.',
+  REFUSED:
+    'The model declined to answer this request.',
   UNKNOWN:
     'Something went wrong with the AI request. Check the console for details.',
 }

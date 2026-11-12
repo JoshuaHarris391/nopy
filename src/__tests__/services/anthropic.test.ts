@@ -320,8 +320,7 @@ describe('sendMessage', () => {
   it('returns the first text block and defaults max_tokens to 500', async () => {
     /**
      * `sendMessage` is what `entryProcessor` uses to summarize/tag entries.
-     * It picks the first content block and reads `.text` only when
-     * `type === 'text'`; anything else returns `''`. The default 500-token
+     * It returns the text of the response's `text` blocks. The default 500-token
      * cap is documented as a "small task, fast response" budget — increasing
      * it silently would inflate cost on every entry import.
      */

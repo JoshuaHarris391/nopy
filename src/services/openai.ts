@@ -131,6 +131,11 @@ export async function sendMessage(
     )
     const text = response.choices[0]?.message?.content ?? ''
     console.log('[openai] sendMessage: response', text.length, 'chars | finish_reason', response.choices[0]?.finish_reason)
+    // Reasoning tokens count against the cap, so a reasoning model can spend
+    // it before the answer is complete. Surface that instead of partial text.
+    if (response.choices[0]?.finish_reason === 'length') {
+      throw new LlmError('OUTPUT_TRUNCATED', LLM_ERROR_MESSAGES.OUTPUT_TRUNCATED)
+    }
     return text
   } catch (error) {
     throw toLlmError(error)
