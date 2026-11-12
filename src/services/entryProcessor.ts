@@ -67,6 +67,10 @@ export function findRecordProblems(record: EntryRecord): string[] {
  * problems, up to MAX_INDEX_RETRIES times. The last usable record wins;
  * if none is usable the final error is thrown and the entry stays
  * unindexed for this run.
+ *
+ * Errors from the provider itself (bad key, rate limit, a truncated or
+ * declined answer) are not repaired here: they propagate to the caller,
+ * which decides whether they end the run (see `processAllEntries`).
  */
 export async function processEntry(
   entry: JournalEntry,
@@ -83,6 +87,15 @@ export async function processEntry(
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const response = await sendMessage(config, 'lightweight', ENTRY_METADATA_SYSTEM, [...messages], TOKEN_LIMITS.entryMetadata, signal)
     console.log('[entryProcessor] processEntry: attempt', attempt + 1, '| response', response.length, 'chars')
+
+    // Nothing to repair in an empty reply, and an empty assistant turn is
+    // rejected by the API: ask again with the conversation as it stands.
+    if (!response.trim()) {
+      lastError = new Error('The model returned an empty response.')
+      if (attempt === MAX_INDEX_RETRIES) break
+      console.warn('[entryProcessor] processEntry: attempt', attempt + 1, 'returned no text — asking again')
+      continue
+    }
 
     let problems: string[]
     try {
@@ -129,21 +142,114 @@ function buildRepairMessage(problems: string[]): string {
   ].join('\n')
 }
 
+/** One entry an indexing run could not index, with a reason fit to show the writer. */
+export interface IndexFailure {
+  id: string
+  title: string
+  reason: string
+}
+
+/** What an indexing run did. `attempted` is how many entries it set out to index. */
+export interface IndexRunSummary {
+  attempted: number
+  indexed: number
+  failed: IndexFailure[]
+}
+
+export interface IndexBatchResult extends IndexRunSummary {
+  results: Map<string, ProcessedEntry>
+}
+
+/** Progress callback: the entry about to be indexed, plus the tallies so far. */
+export type IndexProgress = (
+  current: number,
+  total: number,
+  entryTitle: string,
+  counts?: { indexed: number; failed: number },
+) => void
+
+export interface IndexRunHooks {
+  /**
+   * Called as soon as one entry's record is ready, before the next entry is
+   * sent. The store saves the record here, so a run that is stopped or cut
+   * short keeps everything it finished. If this throws, the entry is
+   * reported as failed with the thrown message.
+   */
+  onRecord?: (entryId: string, record: ProcessedEntry) => Promise<void> | void
+}
+
+/**
+ * Thrown when a run is stopped early by a problem that would fail every
+ * remaining entry the same way. Carries what the run achieved before it
+ * stopped; those entries are already saved.
+ */
+export class IndexRunError extends Error {
+  readonly summary: IndexRunSummary
+  constructor(message: string, summary: IndexRunSummary, cause?: unknown) {
+    super(message, { cause })
+    this.name = 'IndexRunError'
+    this.summary = summary
+  }
+}
+
+/** A run stops after this many entries fail back to back: the setup is broken, not the entries. */
+export const MAX_CONSECUTIVE_INDEX_FAILURES = 3
+
+/**
+ * Provider errors that are about this one entry (its answer was cut off or
+ * declined, or the entry is too long for the model). Every other provider
+ * error (bad key, rate limit, no connection, no model) would hit the next
+ * entry too, so it ends the run.
+ */
+const ENTRY_SPECIFIC_LLM_CODES = new Set(['OUTPUT_TRUNCATED', 'REFUSED', 'CONTEXT_TOO_LARGE'])
+
+/** Duck-typed on `name`/`code` rather than `instanceof` so it survives module mocking in tests. */
+function llmErrorCode(e: unknown): string | null {
+  const err = e as { name?: unknown; code?: unknown } | null
+  return err && err.name === 'LlmError' && typeof err.code === 'string' ? err.code : null
+}
+
+/** One sentence the writer can read, for a failure on a single entry. */
+function describeIndexFailure(e: unknown): string {
+  if (e instanceof LLMParseError) {
+    return e.cause instanceof ZodError
+      ? "The model's response did not match the index format."
+      : 'The model did not return valid JSON.'
+  }
+  const message = e instanceof Error ? e.message : String(e)
+  return message.length > 240 ? `${message.slice(0, 240)}…` : message
+}
+
+/**
+ * Index a batch, one entry at a time, oldest first.
+ *
+ * Each finished record is handed to `hooks.onRecord` straight away, so
+ * nothing waits for the end of the run to be saved. A failure on one entry
+ * is recorded with its reason and the run moves on; a provider error that
+ * is not about the entry, or MAX_CONSECUTIVE_INDEX_FAILURES failures in a
+ * row, stops the run with an `IndexRunError`. Stopping via `signal` ends the
+ * run quietly and returns what was done.
+ */
 export async function processAllEntries(
   entries: JournalEntry[],
   config: LlmConfig,
   mode: IndexRunMode,
-  onProgress: (current: number, total: number, entryTitle: string) => void,
+  onProgress: IndexProgress,
   signal?: AbortSignal,
-): Promise<Map<string, ProcessedEntry>> {
+  hooks: IndexRunHooks = {},
+): Promise<IndexBatchResult> {
   // Oldest first, so the roster and recurring phrases accumulate in the
-  // order the writer lived them. Metadata is only applied to the store after
-  // the batch, so the hints are threaded through `results` in memory.
+  // order the writer lived them. The hints are threaded through `results`
+  // in memory, independent of when the caller saves each record.
   const toProcess = selectEntriesForIndexing(entries, mode)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   const processingIds = new Set(toProcess.map((e) => e.id))
   console.log('[entryProcessor] processAllEntries: total', entries.length, '| to process', toProcess.length, '| mode:', mode)
   const results = new Map<string, ProcessedEntry>()
+  const failed: IndexFailure[] = []
+  let indexed = 0
+  let consecutiveFailures = 0
+  const summary = (): IndexRunSummary => ({ attempted: toProcess.length, indexed, failed: [...failed] })
 
   const withResults = (): JournalEntry[] => entries.map((e) => {
     const r = results.get(e.id)
@@ -156,18 +262,36 @@ export async function processAllEntries(
   for (let i = 0; i < toProcess.length; i++) {
     if (signal?.aborted) break
     const entry = toProcess[i]
-    onProgress(i + 1, toProcess.length, entry.title)
+    onProgress(i + 1, toProcess.length, entry.title, { indexed, failed: failed.length })
     try {
       const hints = buildIndexHints(withResults(), entry)
       const record = await processEntry(entry, config, signal, hints)
+      // A record that arrives after Stop was pressed is not saved.
+      if (signal?.aborted) break
       results.set(entry.id, record)
+      await hooks.onRecord?.(entry.id, record)
+      indexed++
+      consecutiveFailures = 0
     } catch (e) {
+      // A stopped run surfaces as whatever the provider SDK throws on abort.
+      if (signal?.aborted) break
       console.error('[entryProcessor] processAllEntries: entry', i + 1, 'of', toProcess.length, 'failed —', e)
+      const code = llmErrorCode(e)
+      if (code && !ENTRY_SPECIFIC_LLM_CODES.has(code)) {
+        const reason = e instanceof Error ? e.message : String(e)
+        throw new IndexRunError(indexed > 0 ? `Stopped after ${indexed} of ${toProcess.length} entries. ${reason}` : reason, summary(), e)
+      }
+      failed.push({ id: entry.id, title: entry.title, reason: describeIndexFailure(e) })
+      consecutiveFailures++
+      if (consecutiveFailures >= MAX_CONSECUTIVE_INDEX_FAILURES && i < toProcess.length - 1) {
+        const last = failed[failed.length - 1].reason
+        throw new IndexRunError(`Stopped after ${consecutiveFailures} entries in a row failed. ${last}`, summary(), e)
+      }
     }
   }
 
-  console.log('[entryProcessor] processAllEntries: complete —', results.size, 'of', toProcess.length, 'succeeded')
-  return results
+  console.log('[entryProcessor] processAllEntries: complete —', indexed, 'of', toProcess.length, 'indexed |', failed.length, 'failed')
+  return { results, ...summary() }
 }
 
 export interface NarrativeProfileOptions {

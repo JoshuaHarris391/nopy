@@ -95,10 +95,7 @@ export function IndexView() {
 
   const handleUpdateIndex = () => {
     if (!ready) return
-    indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(llmConfig, 'unindexed', onProgress, signal)
-      return count > 0 ? `${count} ${count === 1 ? 'entry' : 'entries'} indexed` : 'Already up to date'
-    })
+    indexing.run((onProgress, signal) => useJournalStore.getState().processEntries(llmConfig, 'unindexed', onProgress, signal))
   }
 
   useEffect(() => {

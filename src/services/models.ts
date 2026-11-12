@@ -6,11 +6,17 @@ import type { LlmConfig } from '../types/settings'
 export const DEFAULT_ANTHROPIC_MAIN_MODEL = 'claude-sonnet-4-5-20250514'
 export const DEFAULT_ANTHROPIC_LIGHTWEIGHT_MODEL = 'claude-haiku-4-5-20251001'
 
+/**
+ * Output ceilings per task. These are caps, not spend: a response is billed
+ * for what it writes. `entryMetadata` and `titleGeneration` leave room for
+ * thinking, which current models do by default and which counts against the
+ * cap; sized for the answer alone, the cap is spent before any text arrives.
+ */
 export const TOKEN_LIMITS = {
-  entryMetadata: 2500,
+  entryMetadata: 8000,
   profileNarrative: 4000,
   fullProfile: 10000,
-  titleGeneration: 50,
+  titleGeneration: 1024,
 } as const
 
 /**

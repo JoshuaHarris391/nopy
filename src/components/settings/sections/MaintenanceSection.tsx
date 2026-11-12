@@ -23,17 +23,11 @@ export function MaintenanceSection() {
   if (!isLlmConfigured(llmConfig)) return null
 
   const handleForceUpdate = () => {
-    indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(llmConfig, 'all', onProgress, signal)
-      return `Done — ${count} entries reprocessed`
-    })
+    indexing.run((onProgress, signal) => useJournalStore.getState().processEntries(llmConfig, 'all', onProgress, signal))
   }
 
   const handleReindexStale = () => {
-    indexing.run(async (onProgress, signal) => {
-      const count = await useJournalStore.getState().processEntries(llmConfig, 'needed', onProgress, signal)
-      return `Done — ${count} entries indexed`
-    })
+    indexing.run((onProgress, signal) => useJournalStore.getState().processEntries(llmConfig, 'needed', onProgress, signal))
   }
   const named = needing.slice(0, 3).map((t) => `"${t || 'Untitled'}"`).join(', ') + (needing.length > 3 ? ` and ${needing.length - 3} more` : '')
 

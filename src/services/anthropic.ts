@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import { LlmError, LLM_ERROR_MESSAGES, isOutputCapRejection } from './llm'
 import type { ChatUsage } from '../types/chat'
 
 let clientInstance: Anthropic | null = null
@@ -67,6 +67,11 @@ function toLlmError(error: unknown): LlmError {
     }
     if (status === 429) {
       return new LlmError('RATE_LIMITED', LLM_ERROR_MESSAGES.RATE_LIMITED, error)
+    }
+    // Checked before the context test: a rejected output cap also talks
+    // about maximum tokens, but the remedy is a smaller cap or another model.
+    if (isOutputCapRejection(status, message)) {
+      return new LlmError('OUTPUT_CAP_REJECTED', LLM_ERROR_MESSAGES.OUTPUT_CAP_REJECTED, error)
     }
     if (status === 400 && /context|maximum.*token|too\s*long/i.test(message)) {
       return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, error)
@@ -170,9 +175,23 @@ export async function sendMessage(
       },
       { signal },
     )
-    const block = response.content[0]
-    const text = block?.type === 'text' ? block.text : ''
+    // Read the answer by block type, never by position: models that think by
+    // default (Haiku 5.5 and the other current models) put one or more
+    // `thinking` blocks ahead of the text.
+    const text = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('')
     console.log('[anthropic] sendMessage: response', text.length, 'chars | stop_reason', response.stop_reason)
+    // Thinking counts against max_tokens, so the cap can be spent before the
+    // answer is complete (or started). A cut-off or declined answer is a
+    // failure the caller must see, not text to parse.
+    if (response.stop_reason === 'max_tokens') {
+      throw new LlmError('OUTPUT_TRUNCATED', LLM_ERROR_MESSAGES.OUTPUT_TRUNCATED)
+    }
+    if (response.stop_reason === 'refusal') {
+      throw new LlmError('REFUSED', LLM_ERROR_MESSAGES.REFUSED)
+    }
     return text
   } catch (error) {
     throw toLlmError(error)

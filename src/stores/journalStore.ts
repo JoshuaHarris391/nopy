@@ -2,7 +2,10 @@ import { create } from 'zustand'
 import { get, set, del } from 'idb-keyval'
 import type { JournalEntry } from '../types/journal'
 import { saveEntryToDisk, deleteEntryFromDisk, loadEntriesFromDisk } from '../services/fs'
-import { processAllEntries, processEntry, type ProcessedEntry, type IndexRunMode } from '../services/entryProcessor'
+import {
+  processAllEntries, processEntry,
+  type ProcessedEntry, type IndexRunMode, type IndexProgress, type IndexRunSummary,
+} from '../services/entryProcessor'
 import { buildIndexHints, isWriterRated } from '../services/entryRecords'
 import { CURRENT_INDEX_VERSION } from '../schemas/journal'
 import { useSettingsStore } from './settingsStore'
@@ -38,8 +41,14 @@ interface JournalState {
   updateEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
   syncFromDisk: () => Promise<{ added: number; updated: number; removed: number }>
-  applyProcessedMetadata: (results: Map<string, ProcessedEntry>) => Promise<void>
-  processEntries: (config: LlmConfig, mode: IndexRunMode, onProgress: (current: number, total: number, title: string) => void, signal?: AbortSignal) => Promise<number>
+  /** Resolves with the entries whose markdown file could not be written (id → reason). */
+  applyProcessedMetadata: (results: Map<string, ProcessedEntry>) => Promise<Record<string, string>>
+  /**
+   * Index the entries `mode` selects, saving each record as it comes back.
+   * `within` limits the run to a subset (profile generation indexes only the
+   * entries in its scope); by default it runs over the whole journal.
+   */
+  processEntries: (config: LlmConfig, mode: IndexRunMode, onProgress: IndexProgress, signal?: AbortSignal, within?: JournalEntry[]) => Promise<IndexRunSummary>
   reindexEntry: (id: string, config: LlmConfig, signal?: AbortSignal) => Promise<void>
   clear: () => Promise<void>
 }
@@ -162,7 +171,9 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
             result.push(diskEntry)
             updated++
           } else {
-            result.push(match)
+            // Same entry, but the file may have been renamed outside the app:
+            // the name on disk is the one every later save must target.
+            result.push(match.sourceFilename === diskEntry.sourceFilename ? match : { ...match, sourceFilename: diskEntry.sourceFilename })
           }
         } else {
           result.push(diskEntry)
@@ -186,10 +197,14 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
       await set('nopy-entries', result)
 
       // Write back any new entries that lacked frontmatter (so they get IDs for future syncs)
+      const renamed = new Map<string, string>()
       for (const diskEntry of diskEntries) {
         if (!existingById.has(diskEntry.id) && !clashes.has(diskEntry.id)) {
           try {
-            await saveEntryToDisk(diskEntry, journalPath, diskEntry.sourceFilename)
+            // The write-back names the file after the entry's title, which
+            // renames an import like "My Day.md" to "my-day.md".
+            const filename = await saveEntryToDisk(diskEntry, journalPath, diskEntry.sourceFilename)
+            if (filename !== diskEntry.sourceFilename) renamed.set(diskEntry.id, filename)
           } catch (e) {
             // Two disk files can slugify to the same name (e.g. duplicate plain
             // imports). Skip the colliding write-back rather than aborting the
@@ -197,6 +212,14 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
             console.warn('[sync] Skipped frontmatter write-back for', diskEntry.sourceFilename, e)
           }
         }
+      }
+      // Track the new names. An entry still pointing at its old filename has
+      // its next save (an edit, or an index record) refused as a collision
+      // with the file it was just renamed to.
+      if (renamed.size > 0) {
+        const tracked = getState().entries.map((e) => (renamed.has(e.id) ? { ...e, sourceFilename: renamed.get(e.id) } : e))
+        setState({ entries: tracked })
+        await set('nopy-entries', tracked)
       }
 
       console.log(`[sync] Complete: ${added} added, ${updated} updated, ${removed} removed`)
@@ -207,7 +230,8 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
   },
 
   applyProcessedMetadata: async (results) => {
-    if (results.size === 0) return
+    const writeErrors: Record<string, string> = {}
+    if (results.size === 0) return writeErrors
     const now = new Date().toISOString()
     const entries = getState().entries.map((e) => {
       const meta = results.get(e.id)
@@ -232,27 +256,45 @@ export const useJournalStore = create<JournalState>()((setState, getState) => ({
     setState({ entries })
     await set('nopy-entries', entries)
     const journalPath = getJournalPath()
+    const renamed = new Map<string, string>()
     for (const [id] of results) {
       const entry = entries.find((e) => e.id === id)
       if (!entry) continue
       try {
-        await saveEntryToDisk(entry, journalPath, entry.sourceFilename)
+        const filename = await saveEntryToDisk(entry, journalPath, entry.sourceFilename)
+        if (filename !== entry.sourceFilename) renamed.set(id, filename)
       } catch (e) {
-        // Don't let one entry's filename collision abort metadata writes for the rest.
-        console.warn('[journalStore] Skipped metadata write for', entry.sourceFilename, e)
+        // One entry's failed write must not stop the rest, but it must be
+        // seen: the record lives only in the cache until its file is written,
+        // and the cache is rebuilt from disk when the journal is reopened.
+        const msg = e instanceof Error ? e.message : String(e)
+        console.warn('[journalStore] Index record not written for', entry.sourceFilename, e)
+        writeErrors[id] = msg
+        setState({ lastError: `Indexed "${entry.title}" but could not write its file: ${msg}` })
       }
     }
+    if (renamed.size > 0) {
+      const tracked = getState().entries.map((e) => (renamed.has(e.id) ? { ...e, sourceFilename: renamed.get(e.id) } : e))
+      setState({ entries: tracked })
+      await set('nopy-entries', tracked)
+    }
+    return writeErrors
   },
 
-  processEntries: async (config, mode, onProgress, signal) => {
+  processEntries: async (config, mode, onProgress, signal, within) => {
     // Private mode: never touch the LLM, even if a UI path slipped through.
-    if (useSettingsStore.getState().privateMode) return 0
+    if (useSettingsStore.getState().privateMode) return { attempted: 0, indexed: 0, failed: [] }
     console.log('[process] processEntries called with journalPath:', getJournalPath(), 'entries:', getState().entries.length)
-    const { entries } = getState()
-    const results = await processAllEntries(entries, config, mode, onProgress, signal)
-    if (results.size === 0) return 0
-    await getState().applyProcessedMetadata(results)
-    return results.size
+    const entries = within ?? getState().entries
+    // Each record is saved (state, IndexedDB, markdown) the moment it comes
+    // back, so stopping the run or quitting the app keeps what was done.
+    const { attempted, indexed, failed } = await processAllEntries(entries, config, mode, onProgress, signal, {
+      onRecord: async (id, record) => {
+        const writeErrors = await getState().applyProcessedMetadata(new Map([[id, record]]))
+        if (writeErrors[id]) throw new Error(`Indexed, but its file could not be written: ${writeErrors[id]}`)
+      },
+    })
+    return { attempted, indexed, failed }
   },
 
   reindexEntry: async (id, config, signal) => {

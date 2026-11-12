@@ -47,7 +47,7 @@ describe('Settings: re-index un-indexed entries', () => {
       ],
       loaded: true,
     })
-    const processEntries = vi.fn(async () => 3)
+    const processEntries = vi.fn(async () => ({ attempted: 3, indexed: 3, failed: [] }))
     useJournalStore.setState({ processEntries })
 
     render(<MaintenanceSection />)

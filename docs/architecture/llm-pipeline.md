@@ -54,18 +54,23 @@ For the user-facing walk-through of local mode see [`local-llm-integration.md`](
 Indexing is the only place an entry's body is handed to a model. `processEntry()` in `src/services/entryProcessor.ts` runs one entry; `processAllEntries()` runs a batch, oldest first, sequentially.
 
 ```
-processAllEntries(entries, config, mode, onProgress, signal)
-  ├─ mode selects the batch: 'unindexed' | 'stale' | 'needed' (both) | 'all'
-  └─ for each entry, oldest first:
-       hints = buildIndexHints(entries so far, entry)     ← roster, recurring phrases, stated mood
-       processEntry(entry, config, signal, hints)
-         ├─ sendMessage(lightweight, ENTRY_METADATA_SYSTEM, [hints + entry text], 2500 tokens)
-         ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant shape
-         ├─ finaliseRecord(...)                                ← local guards (below)
-         ├─ findRecordProblems(...)  → repair loop, up to 3 retries
-         └─ returns { mood, domains, summary, insight, indexModel }
-     journalStore.applyProcessedMetadata(results)             ← memory → IndexedDB → disk
+journalStore.processEntries(config, mode, onProgress, signal)
+  └─ processAllEntries(entries, config, mode, onProgress, signal, { onRecord })
+       ├─ mode selects the batch: 'unindexed' | 'stale' | 'needed' (both) | 'all'
+       └─ for each entry, oldest first:
+            hints = buildIndexHints(entries so far, entry)     ← roster, recurring phrases, stated mood
+            processEntry(entry, config, signal, hints)
+              ├─ sendMessage(lightweight, ENTRY_METADATA_SYSTEM, [hints + entry text], 8000 tokens)
+              ├─ parseLLMJson(response, EntryRecordCoercedSchema)   ← tolerant shape
+              ├─ finaliseRecord(...)                                ← local guards (below)
+              ├─ findRecordProblems(...)  → repair loop, up to 3 retries
+              └─ returns { mood, domains, summary, insight, indexModel }
+            onRecord(entry.id, record)
+              └─ journalStore.applyProcessedMetadata(...)           ← memory → IndexedDB → disk, for this entry
+       returns { attempted, indexed, failed: [{ id, title, reason }] }
 ```
+
+Each record is saved the moment it comes back, not at the end of the batch. Stopping a run, or quitting the app part-way, keeps every entry finished so far.
 
 ### The record
 
@@ -105,7 +110,47 @@ Nothing the model returns is stored unchecked. After parsing, `finaliseRecord()`
 
 ### Repair loop
 
-If the response is not JSON, fails the tolerant schema, or is degenerate (no summary, no domains, or mostly off-vocabulary), the model is asked to fix it: the conversation is extended with its own output and the specific problems, up to `MAX_INDEX_RETRIES` (3) times. A still-unusable entry is logged and stays unindexed for that run.
+If the response is not JSON, fails the tolerant schema, or is degenerate (no summary, no domains, or mostly off-vocabulary), the model is asked to fix it: the conversation is extended with its own output and the specific problems, up to `MAX_INDEX_RETRIES` (3) times. An empty response is asked again with the conversation unchanged, because an empty assistant turn is rejected by the API. A still-unusable entry stays unindexed for that run and is reported as failed.
+
+### Failures and reporting
+
+A run never fails silently. `processAllEntries` sorts every error into one of two kinds:
+
+| Kind | Examples | What happens |
+|---|---|---|
+| About this entry | Unparseable or unusable record after the repair loop; `OUTPUT_TRUNCATED`, `REFUSED`, `CONTEXT_TOO_LARGE` from the provider; the entry's file could not be written | Recorded in `failed` with a one-sentence reason; the run moves on to the next entry |
+| About the setup | Invalid API key, rate limit, no connection, no model loaded, a model whose output limit is too low (`OUTPUT_CAP_REJECTED`) | The run stops with an `IndexRunError` carrying the provider's message and what was indexed before it |
+
+Three entry failures in a row (`MAX_CONSECUTIVE_INDEX_FAILURES`) also stop the run, so a broken setup that fails every entry does not bill a whole journal.
+
+`indexingStore` turns the outcome into what the writer sees:
+
+- While running, the bottom-right card shows the current entry and the counts saved and failed.
+- "Already up to date" appears only when no entry needed indexing.
+- A run with failures shows "N indexed, M failed" next to the button and a notification naming up to three failed entries and the first reason. The Index page marks those rows "not indexed", with the reason as the tooltip.
+- A run that indexed nothing ends in the error state with the reason.
+
+### Reading the provider's answer
+
+The non-streaming `sendMessage` of each provider returns the answer text and throws on anything that is not a complete answer:
+
+- **Anthropic**: the answer is every `text` block, read by type. Current Claude models think by default, so a response starts with one or more `thinking` blocks; reading `content[0]` returns nothing. `stop_reason: "max_tokens"` throws `OUTPUT_TRUNCATED`, and `"refusal"` throws `REFUSED`.
+- **OpenAI, Venice, local**: `finish_reason: "length"` throws `OUTPUT_TRUNCATED`.
+
+Thinking and reasoning tokens count against the output cap, which is why `entryMetadata` and `titleGeneration` are sized well above the answer itself.
+
+### Models with a small output limit
+
+The 8,000-token indexing cap is more than some older or smaller models can output at all (Claude 3 Haiku, gpt-3.5-turbo and gpt-4-turbo stop at 4,096), and such a model rejects the request outright. Each provider's error translator recognises that rejection (`isOutputCapRejection` in `src/services/llm.ts`) and raises `OUTPUT_CAP_REJECTED`, checked ahead of the context-overflow test because both messages mention maximum tokens.
+
+The dispatcher's `sendMessage` then:
+
+1. Retries the request once at `FALLBACK_OUTPUT_CAP` (4,096).
+2. Remembers the lower cap for that `provider:model` for the rest of the session, so a run pays for the rejected request once.
+3. If the fallback is rejected too, throws `OUTPUT_CAP_REJECTED` with a message naming the model, the refused limit and the provider's own wording, and telling the writer to choose a different model. This stops an indexing run.
+4. If the fallback is accepted but the answer is cut off, throws `OUTPUT_TRUNCATED` naming the model and its 4,096-token limit and recommending a model with a larger one. This fails that entry.
+
+The streaming calls (chat, profile generation) are not retried; a rejected cap there surfaces the same code with the generic "choose a different model" copy.
 
 ### Versions and re-indexing
 
@@ -188,7 +233,7 @@ Strips markdown fences and trailing prose, `JSON.parse`s, pipes through `schema.
 
 **File**: `src/services/models.ts`
 
-`TOKEN_LIMITS` holds the output caps per operation (`entryMetadata: 2500`, `profileNarrative: 4000`, `fullProfile: 10000`, `titleGeneration: 50`). `getModelContextWindow()` resolves the active model's context window (manual override → LM Studio's reported window → provider-reported window → LiteLLM catalog → static map → provider default); the profile steps use it to decide how many records fit.
+`TOKEN_LIMITS` holds the output caps per operation (`entryMetadata: 8000`, `profileNarrative: 4000`, `fullProfile: 10000`, `titleGeneration: 1024`). They are ceilings, not spend; the two short tasks leave room for the thinking that current models do by default. `getModelContextWindow()` resolves the active model's context window (manual override → LM Studio's reported window → provider-reported window → LiteLLM catalog → static map → provider default); the profile steps use it to decide how many records fit.
 
 The provider-reported layer matters for Venice: its `/models` response carries each text model's real usable window at `model_spec.availableContextTokens` (e.g. 1M for the Kimi models), which LiteLLM doesn't index under Venice's ids. `useVeniceModels` records those windows into `modelCatalogStore` on fetch, so the Context budget bar and message budgeting use the true number instead of the conservative Venice default.
 
