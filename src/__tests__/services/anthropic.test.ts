@@ -336,10 +336,50 @@ describe('sendMessage', () => {
     expect(createArgs.max_tokens).toBe(500)
   })
 
-  it('returns empty string when the first block is not text', async () => {
+  it('returns the answer when the response starts with a thinking block', async () => {
     /**
-     * Defensive contract for `entryProcessor` callers — a tool-use block as
-     * the first response should not blow up the import flow. The wrapper
+     * Claude Haiku 5.5 and the other current models think by default, so a
+     * response is a `thinking` block (its text empty unless summaries are
+     * requested) followed by the `text` block. Reading only the first block
+     * returned `''` for every request, which is why indexing saved nothing.
+     * The answer is every text block, wherever it sits.
+     * Input: a response with a thinking block, then a text block.
+     * Expected: the text block's text.
+     */
+    mockState.createImpl = vi.fn(async () => ({
+      content: [
+        { type: 'thinking', thinking: '', signature: 'sig' },
+        { type: 'text', text: '{"summary":"A quiet day."}' },
+      ],
+      stop_reason: 'end_turn',
+    }))
+    const result = await mod.sendMessage('k', 'm', 's', [{ role: 'user', content: 'q' }], 100)
+    expect(result).toBe('{"summary":"A quiet day."}')
+  })
+
+  it('fails with OUTPUT_TRUNCATED when the model runs out of output tokens', async () => {
+    /**
+     * Thinking counts against `max_tokens`, so a cap sized for the answer
+     * alone can be spent before any text is written. A cut-off answer is not
+     * an answer: callers parse it as JSON or store it as a title, so it must
+     * surface as a named error rather than as partial or empty text.
+     * Input: a response that stopped on `max_tokens` after a thinking block.
+     * Expected: an LlmError with code OUTPUT_TRUNCATED.
+     */
+    mockState.createImpl = vi.fn(async () => ({
+      content: [{ type: 'thinking', thinking: '', signature: 'sig' }],
+      stop_reason: 'max_tokens',
+    }))
+    await expect(mod.sendMessage('k', 'm', 's', [{ role: 'user', content: 'q' }], 100)).rejects.toMatchObject({
+      name: 'LlmError',
+      code: 'OUTPUT_TRUNCATED',
+    })
+  })
+
+  it('returns empty string when the response has no text block', async () => {
+    /**
+     * Defensive contract for `entryProcessor` callers — a response made only
+     * of a tool-use block should not blow up the import flow. The wrapper
      * returns `''` and lets the caller decide whether that's a failure.
      */
     mockState.createImpl = vi.fn(async () => ({
