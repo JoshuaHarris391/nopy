@@ -1,5 +1,5 @@
 import OpenAI, { APIError } from 'openai'
-import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import { LlmError, LLM_ERROR_MESSAGES, isOutputCapRejection } from './llm'
 import type { ChatUsage } from '../types/chat'
 
 let clientInstance: OpenAI | null = null
@@ -32,6 +32,11 @@ function toLlmError(error: unknown): LlmError {
     }
     if (error.status === 429) {
       return new LlmError('RATE_LIMITED', LLM_ERROR_MESSAGES.RATE_LIMITED, error)
+    }
+    // Checked before the context test: a rejected output cap also talks
+    // about maximum tokens, but the remedy is a smaller cap or another model.
+    if (isOutputCapRejection(error.status, error.message)) {
+      return new LlmError('OUTPUT_CAP_REJECTED', LLM_ERROR_MESSAGES.OUTPUT_CAP_REJECTED, error)
     }
     if (error.status === 400 && /context|maximum.*token|too\s*long/i.test(error.message)) {
       return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, error)

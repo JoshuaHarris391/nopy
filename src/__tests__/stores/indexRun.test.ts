@@ -63,6 +63,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
 import { useJournalStore } from '../../stores/journalStore'
 import { useSettingsStore, selectLlmConfig } from '../../stores/settingsStore'
 import { MAX_INDEX_RETRIES } from '../../services/entryProcessor'
+import { resetOutputCaps, FALLBACK_OUTPUT_CAP } from '../../services/llm'
 import { makeEntry } from '../fixtures/insight'
 import type { JournalEntry } from '../../types/journal'
 
@@ -112,6 +113,19 @@ function askedAbout(request: unknown): string {
   return messages[0].content
 }
 
+/**
+ * The provider's reply when the output cap asked for is more than the model
+ * can produce: Anthropic's wording for a model limited to `limit` tokens.
+ */
+function capRejection(asked: number, limit: number): Error {
+  return Object.assign(
+    new Error(`max_tokens: ${asked} > ${limit}, which is the maximum allowed number of output tokens for claude-small`),
+    { status: 400 },
+  )
+}
+
+const askedFor = (request: unknown) => (request as { max_tokens: number }).max_tokens
+
 const fileOf = (name: string) => mockFs.files.get(`${JOURNAL}/${name}`) ?? ''
 const entryById = (id: string) => useJournalStore.getState().entries.find((e) => e.id === id)!
 const noProgress = () => {}
@@ -121,9 +135,12 @@ beforeEach(() => {
   mockFs.reset()
   mockFs.dirs.add(JOURNAL)
   vi.clearAllMocks()
+  resetOutputCaps()
   // hasFileSystem() checks for this on the window object.
   ;(globalThis as unknown as { window: { __TAURI_INTERNALS__?: object } }).window.__TAURI_INTERNALS__ = {}
-  useSettingsStore.setState({ provider: 'anthropic', apiKey: 'sk-test', privateMode: false, journalPath: JOURNAL })
+  useSettingsStore.setState({
+    provider: 'anthropic', apiKey: 'sk-test', anthropicLightweightModel: 'claude-small', privateMode: false, journalPath: JOURNAL,
+  })
   useJournalStore.setState({ entries: [], loaded: true, lastError: null })
 })
 
@@ -277,5 +294,94 @@ describe('An indexing run saves what the model returned', () => {
     expect(useJournalStore.getState().entries[0].sourceFilename).toBe('my-day.md')
     expect(fileOf('my-day.md')).toContain('summary: A walk to the harbour, turning the move over.')
     expect(mockFs.files.has(`${JOURNAL}/My Day.md`)).toBe(false)
+  })
+})
+
+describe('A lightweight model with a small output limit', () => {
+  it('is retried at a lower cap once, then indexes the whole run at that cap', async () => {
+    /**
+     * Indexing asks for a generous output cap so models that think have
+     * room. Older and smaller models cannot output that much and reject the
+     * request outright. Rather than fail, the request is retried at 4,096
+     * tokens, which those models accept, and the lower cap is remembered so
+     * the rejection is paid for once, not once per entry.
+     * Input: three unindexed entries; a model that rejects any cap above
+     * 4,096 and otherwise answers normally.
+     * Expected: all three entries are indexed; the provider saw one rejected
+     * request at the full cap and three at the fallback cap.
+     */
+    useJournalStore.setState({
+      entries: [unindexed('a', 'Monday', '02'), unindexed('b', 'Tuesday', '03'), unindexed('c', 'Wednesday', '04')],
+    })
+    createMock.mockImplementation(async (request: unknown) => {
+      if (askedFor(request) > 4096) throw capRejection(askedFor(request), 4096)
+      return { content: [{ type: 'text', text: recordJson('A steady day of work with nothing left unfinished.') }], stop_reason: 'end_turn' }
+    })
+
+    const config = selectLlmConfig(useSettingsStore.getState())
+    const run = await useJournalStore.getState().processEntries(config, 'unindexed', noProgress)
+
+    expect(run).toMatchObject({ attempted: 3, indexed: 3, failed: [] })
+    const caps = createMock.mock.calls.map(([request]) => askedFor(request))
+    expect(caps.filter((cap) => cap > FALLBACK_OUTPUT_CAP)).toHaveLength(1)
+    expect(caps.filter((cap) => cap === FALLBACK_OUTPUT_CAP)).toHaveLength(3)
+  })
+
+  it('stops the run and says to choose a different model when even the lower cap is refused', async () => {
+    /**
+     * A model whose limit is below the fallback cannot index anything, and
+     * every entry would fail the same way. The writer needs one clear
+     * message: which model, that its output limit is the problem, and that
+     * the fix is to pick another model. The provider's own words are
+     * included because they carry the actual limit.
+     * Input: three unindexed entries; a model limited to 2,048 output tokens.
+     * Expected: the run rejects after two requests (the full cap, then the
+     * fallback) with a message naming the model, the refused limit, the
+     * provider's message, and the recommendation; nothing is indexed.
+     */
+    useJournalStore.setState({
+      entries: [unindexed('a', 'Monday', '02'), unindexed('b', 'Tuesday', '03'), unindexed('c', 'Wednesday', '04')],
+    })
+    createMock.mockImplementation(async (request: unknown) => {
+      throw capRejection(askedFor(request), 2048)
+    })
+
+    const config = selectLlmConfig(useSettingsStore.getState())
+    const failure = await useJournalStore.getState().processEntries(config, 'unindexed', noProgress).catch((e: Error) => e)
+
+    expect(failure).toBeInstanceOf(Error)
+    const message = (failure as Error).message
+    expect(message).toContain('"claude-small"')
+    expect(message).toContain('4,096 tokens')
+    expect(message).toContain('Choose a different model in Settings')
+    expect(message).toContain('max_tokens: 4096 > 2048')
+    expect(createMock).toHaveBeenCalledTimes(2)
+    expect(useJournalStore.getState().entries.every((e) => !e.indexed)).toBe(true)
+  })
+
+  it('names the limit when the lower cap is accepted but too small for the record', async () => {
+    /**
+     * The fallback cap can be accepted and still not be enough: the model
+     * runs out of output part-way through the record. That must not read as
+     * a generic failure. The reason shown against the entry says what the
+     * model's limit is and recommends a model with a larger one.
+     * Input: two unindexed entries; a model that rejects caps above 4,096
+     * and, at 4,096, stops on max_tokens before finishing.
+     * Expected: both entries are reported as failed, with a reason naming
+     * the model, the 4,096-token limit, and a model with a larger limit.
+     */
+    useJournalStore.setState({ entries: [unindexed('a', 'Monday', '02'), unindexed('b', 'Tuesday', '03')] })
+    createMock.mockImplementation(async (request: unknown) => {
+      if (askedFor(request) > 4096) throw capRejection(askedFor(request), 4096)
+      return { content: [{ type: 'text', text: '{"summary": "Monday was sp' }], stop_reason: 'max_tokens' }
+    })
+
+    const config = selectLlmConfig(useSettingsStore.getState())
+    const run = await useJournalStore.getState().processEntries(config, 'unindexed', noProgress)
+
+    expect(run.indexed).toBe(0)
+    expect(run.failed).toHaveLength(2)
+    expect(run.failed[0].reason).toContain('"claude-small" allows at most 4,096 output tokens')
+    expect(run.failed[0].reason).toContain('Choose a model with a larger output limit')
   })
 })

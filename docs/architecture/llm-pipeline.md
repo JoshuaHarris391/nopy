@@ -119,7 +119,7 @@ A run never fails silently. `processAllEntries` sorts every error into one of tw
 | Kind | Examples | What happens |
 |---|---|---|
 | About this entry | Unparseable or unusable record after the repair loop; `OUTPUT_TRUNCATED`, `REFUSED`, `CONTEXT_TOO_LARGE` from the provider; the entry's file could not be written | Recorded in `failed` with a one-sentence reason; the run moves on to the next entry |
-| About the setup | Invalid API key, rate limit, no connection, no model loaded | The run stops with an `IndexRunError` carrying the provider's message and what was indexed before it |
+| About the setup | Invalid API key, rate limit, no connection, no model loaded, a model whose output limit is too low (`OUTPUT_CAP_REJECTED`) | The run stops with an `IndexRunError` carrying the provider's message and what was indexed before it |
 
 Three entry failures in a row (`MAX_CONSECUTIVE_INDEX_FAILURES`) also stop the run, so a broken setup that fails every entry does not bill a whole journal.
 
@@ -138,6 +138,19 @@ The non-streaming `sendMessage` of each provider returns the answer text and thr
 - **OpenAI, Venice, local**: `finish_reason: "length"` throws `OUTPUT_TRUNCATED`.
 
 Thinking and reasoning tokens count against the output cap, which is why `entryMetadata` and `titleGeneration` are sized well above the answer itself.
+
+### Models with a small output limit
+
+The 8,000-token indexing cap is more than some older or smaller models can output at all (Claude 3 Haiku, gpt-3.5-turbo and gpt-4-turbo stop at 4,096), and such a model rejects the request outright. Each provider's error translator recognises that rejection (`isOutputCapRejection` in `src/services/llm.ts`) and raises `OUTPUT_CAP_REJECTED`, checked ahead of the context-overflow test because both messages mention maximum tokens.
+
+The dispatcher's `sendMessage` then:
+
+1. Retries the request once at `FALLBACK_OUTPUT_CAP` (4,096).
+2. Remembers the lower cap for that `provider:model` for the rest of the session, so a run pays for the rejected request once.
+3. If the fallback is rejected too, throws `OUTPUT_CAP_REJECTED` with a message naming the model, the refused limit and the provider's own wording, and telling the writer to choose a different model. This stops an indexing run.
+4. If the fallback is accepted but the answer is cut off, throws `OUTPUT_TRUNCATED` naming the model and its 4,096-token limit and recommending a model with a larger one. This fails that entry.
+
+The streaming calls (chat, profile generation) are not retried; a rejected cap there surfaces the same code with the generic "choose a different model" copy.
 
 ### Versions and re-indexing
 

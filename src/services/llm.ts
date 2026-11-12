@@ -24,6 +24,7 @@ export type LlmErrorCode =
   | 'RATE_LIMITED'
   | 'CONTEXT_TOO_LARGE'
   | 'OUTPUT_TRUNCATED'
+  | 'OUTPUT_CAP_REJECTED'
   | 'REFUSED'
   | 'UNKNOWN'
 
@@ -66,6 +67,8 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
     "Your prompt is too large for this model's context window. In LM Studio, click Eject and re-load the model with a larger Context Length (Tools → Model loader). For long journal sessions, load a model with at least 32k context.",
   OUTPUT_TRUNCATED:
     'The model ran out of output tokens before it finished its answer.',
+  OUTPUT_CAP_REJECTED:
+    "This model's output limit is lower than the task needs. Choose a different model in Settings → AI Provider.",
   REFUSED:
     'The model declined to answer this request.',
   UNKNOWN:
@@ -73,6 +76,81 @@ export const LLM_ERROR_MESSAGES: Record<LlmErrorCode, string> = {
 }
 
 export type Message = { role: 'user' | 'assistant'; content: string }
+
+/**
+ * True when a provider's error says the *output cap we asked for* is more
+ * than the model allows, e.g. Anthropic's "max_tokens: 8000 > 4096, which is
+ * the maximum allowed number of output tokens for ..." or OpenAI's
+ * "max_tokens is too large: 8000. This model supports at most 4096
+ * completion tokens". Each provider's error translator calls this before its
+ * context-overflow check, because these messages also talk about maximum
+ * tokens. An error that mentions the context window is left to that check:
+ * there the prompt is too long, and a smaller cap alone may not fix it.
+ */
+export function isOutputCapRejection(status: unknown, message: string): boolean {
+  if (status !== 400 && status !== 422) return false
+  if (/context/i.test(message)) return false
+  return /max_(completion_)?tokens|(output|completion) tokens/i.test(message)
+}
+
+/**
+ * The cap a one-shot request is retried at when the provider rejects the one
+ * it asked for. 4,096 is the output limit of the older small models (Claude
+ * 3 Haiku, gpt-3.5-turbo, gpt-4-turbo), so it is the largest value they all
+ * accept.
+ */
+export const FALLBACK_OUTPUT_CAP = 4096
+
+/**
+ * Models that rejected a requested cap this session (`provider:model` → the
+ * cap that worked). Remembered so an indexing run pays for the rejected
+ * request once, not once per entry.
+ */
+const reducedOutputCaps = new Map<string, number>()
+
+/** Test helper: forget every remembered cap. */
+export function resetOutputCaps(): void {
+  reducedOutputCaps.clear()
+}
+
+const tokens = (n: number) => n.toLocaleString('en-US')
+const CHOOSE_ANOTHER = 'Choose a different model in Settings → AI Provider.'
+
+/** What the provider itself said, when the translated error kept it. */
+function providerDetail(e: LlmError): string {
+  const cause = e.cause as { message?: unknown; body?: unknown } | null | undefined
+  const raw = typeof cause?.message === 'string' ? cause.message : typeof cause?.body === 'string' ? cause.body : ''
+  const text = raw.replace(/\s+/g, ' ').trim()
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text
+}
+
+/**
+ * Rewrite an output-limit failure so it names the model, the limit that
+ * applied, and what to do about it. The provider modules only know "the cap
+ * was rejected" or "the answer was cut off"; the dispatcher knows which
+ * model was asked and how much room it was given. Other errors pass through.
+ */
+function explainOutputLimit(e: unknown, model: string, cap: number, requested: number): unknown {
+  if (!(e instanceof LlmError)) return e
+  if (e.code === 'OUTPUT_CAP_REJECTED') {
+    const detail = providerDetail(e)
+    return new LlmError(
+      'OUTPUT_CAP_REJECTED',
+      `"${model}" cannot be used for this task: the provider refused an output limit of ${tokens(cap)} tokens, so this model's own limit is lower than the answer needs. ${CHOOSE_ANOTHER}${detail ? ` Provider message: ${detail}` : ''}`,
+      e,
+    )
+  }
+  if (e.code === 'OUTPUT_TRUNCATED') {
+    return new LlmError(
+      'OUTPUT_TRUNCATED',
+      cap < requested
+        ? `"${model}" allows at most ${tokens(cap)} output tokens per response (the provider refused the ${tokens(requested)} this task asks for), and that was not enough to finish the answer. Choose a model with a larger output limit in Settings → AI Provider.`
+        : `"${model}" used all ${tokens(cap)} output tokens it was allowed before finishing its answer. If this keeps happening, choose a different model in Settings → AI Provider.`,
+      e,
+    )
+  }
+  return e
+}
 
 /**
  * Readiness gate shared by every AI-using surface (ChatView, ProfileView,
@@ -186,6 +264,17 @@ export async function streamChatResponse(
   )
 }
 
+/**
+ * One-shot request (entry indexing, chat titles).
+ *
+ * The caps these tasks ask for leave room for thinking, which is more than
+ * some older or smaller models can output at all; such a model rejects the
+ * request outright. When that happens the request is retried once at
+ * FALLBACK_OUTPUT_CAP and the lower cap is remembered for that model, so the
+ * model keeps working if the answer fits. If it does not fit, or the model
+ * rejects the fallback too, the error says which model, which limit, and to
+ * pick a different one.
+ */
 export async function sendMessage(
   config: LlmConfig,
   role: LlmModelRole,
@@ -195,16 +284,34 @@ export async function sendMessage(
   signal?: AbortSignal,
 ): Promise<string> {
   const model = resolveModel(config, role)
-  if (config.provider === 'local') {
-    return localServer.sendMessage(config.localBaseUrl, model, system, messages, maxTokens, signal)
+  const send = (cap: number): Promise<string> => {
+    if (config.provider === 'local') {
+      return localServer.sendMessage(config.localBaseUrl, model, system, messages, cap, signal)
+    }
+    if (config.provider === 'openai') {
+      return openai.sendMessage(config.openaiApiKey, model, system, messages, cap, signal)
+    }
+    if (config.provider === 'venice') {
+      return venice.sendMessage(config.veniceApiKey, model, system, messages, cap, signal)
+    }
+    return anthropic.sendMessage(config.apiKey, model, system, messages, cap, signal)
   }
-  if (config.provider === 'openai') {
-    return openai.sendMessage(config.openaiApiKey, model, system, messages, maxTokens, signal)
+
+  const key = `${config.provider}:${model}`
+  const cap = Math.min(maxTokens, reducedOutputCaps.get(key) ?? maxTokens)
+  try {
+    return await send(cap)
+  } catch (e) {
+    const rejected = e instanceof LlmError && e.code === 'OUTPUT_CAP_REJECTED'
+    if (!rejected || cap <= FALLBACK_OUTPUT_CAP) throw explainOutputLimit(e, model, cap, maxTokens)
+    console.warn('[llm] sendMessage:', model, 'rejected an output cap of', cap, '— retrying at', FALLBACK_OUTPUT_CAP)
+    reducedOutputCaps.set(key, FALLBACK_OUTPUT_CAP)
+    try {
+      return await send(FALLBACK_OUTPUT_CAP)
+    } catch (retryError) {
+      throw explainOutputLimit(retryError, model, FALLBACK_OUTPUT_CAP, maxTokens)
+    }
   }
-  if (config.provider === 'venice') {
-    return venice.sendMessage(config.veniceApiKey, model, system, messages, maxTokens, signal)
-  }
-  return anthropic.sendMessage(config.apiKey, model, system, messages, maxTokens, signal)
 }
 
 export async function sendMessageStreaming(

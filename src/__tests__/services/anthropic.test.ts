@@ -481,6 +481,29 @@ describe('provider parity with localServer', () => {
 })
 
 describe('toLlmError mapping (provider error contract)', () => {
+  it('maps a rejected output cap to OUTPUT_CAP_REJECTED, not to a context overflow', async () => {
+    /**
+     * A model with a small output limit rejects a request whose max_tokens
+     * is above it. The message talks about "maximum ... tokens", which the
+     * context-overflow check also matches; classed that way, the writer was
+     * told to load a larger context window in LM Studio. It is a different
+     * problem with a different remedy (a smaller cap, or another model), so
+     * it gets its own code, which the dispatcher uses to retry lower.
+     * Input: a 400 with Anthropic's wording for max_tokens above the limit.
+     * Expected: an LlmError with code OUTPUT_CAP_REJECTED.
+     */
+    mockState.createImpl = vi.fn(async () => {
+      throw Object.assign(
+        new Error('max_tokens: 8000 > 4096, which is the maximum allowed number of output tokens for claude-3-haiku-20240307'),
+        { status: 400 },
+      )
+    })
+    await expect(mod.sendMessage('k', 'm', 's', [], 8000)).rejects.toMatchObject({
+      name: 'LlmError',
+      code: 'OUTPUT_CAP_REJECTED',
+    })
+  })
+
   it('maps a 401 from the SDK to INVALID_API_KEY so the UI shows the curated copy', async () => {
     /**
      * The dispatcher contract: every provider (openai, localServer, and now

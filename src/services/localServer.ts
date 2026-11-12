@@ -1,5 +1,5 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
-import { LlmError, LLM_ERROR_MESSAGES } from './llm'
+import { LlmError, LLM_ERROR_MESSAGES, isOutputCapRejection } from './llm'
 import { hasFileSystem } from './fs'
 import type { ChatUsage } from '../types/chat'
 
@@ -209,6 +209,11 @@ async function translateHttpError(res: Response): Promise<LlmError> {
   const text = await res.text().catch(() => '')
   if (res.status === 401) return new LlmError('INVALID_API_KEY', LLM_ERROR_MESSAGES.INVALID_API_KEY)
   if (res.status === 429) return new LlmError('RATE_LIMITED', LLM_ERROR_MESSAGES.RATE_LIMITED)
+  // Checked before the context test: a rejected output cap also talks about
+  // maximum tokens, but the remedy is a smaller cap or another model.
+  if (isOutputCapRejection(res.status, text)) {
+    return new LlmError('OUTPUT_CAP_REJECTED', LLM_ERROR_MESSAGES.OUTPUT_CAP_REJECTED, { status: res.status, body: text })
+  }
   if (res.status === 400 || res.status === 404) {
     if (looksLikeContextOverflow(text)) {
       return new LlmError('CONTEXT_TOO_LARGE', LLM_ERROR_MESSAGES.CONTEXT_TOO_LARGE, { status: res.status, body: text })
