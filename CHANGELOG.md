@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/JoshuaHarris391/nopy/compare/v0.11.0...v0.11.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* retry at a lower output cap for models with a small output limit ([9248073](https://github.com/JoshuaHarris391/nopy/commit/92480737fee1333e2b9c0fb9272464191e7e0aa1))
+* save index records when the model thinks first and report failed runs ([aec98ab](https://github.com/JoshuaHarris391/nopy/commit/aec98ab7011b99ff1b837717a90372e38a51e92c))
+
 ## [0.11.0](https://github.com/JoshuaHarris391/nopy/compare/v0.10.0...v0.11.0) (2026-10-02)
 
 
